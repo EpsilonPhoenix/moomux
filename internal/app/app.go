@@ -178,6 +178,19 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 		}
 		var err error
 		if existingBranch != "" {
+			if staleWT, ferr := a.Git.WorktreeForBranch(proj.Repo, branch); ferr == nil && staleWT != "" && staleWT != wt {
+				clean, cerr := a.Git.IsWorktreeClean(staleWT)
+				if cerr != nil {
+					return session.Session{}, "", fmt.Errorf("check existing worktree %s: %w", staleWT, cerr)
+				}
+				if !clean {
+					return session.Session{}, "", fmt.Errorf("branch %q is already checked out at %s with uncommitted changes", branch, staleWT)
+				}
+				if err := a.Git.RemoveWorktree(proj.Repo, staleWT); err != nil {
+					return session.Session{}, "", fmt.Errorf("remove stale worktree %s: %w", staleWT, err)
+				}
+				slog.Info("removed stale clean worktree for branch", "branch", branch, "path", staleWT)
+			}
 			err = a.Git.AddWorktreeExisting(proj.Repo, wt, branch)
 		} else {
 			err = a.Git.AddWorktree(proj.Repo, wt, branch, proj.BaseBranch)

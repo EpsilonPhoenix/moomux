@@ -104,6 +104,34 @@ func (c *Client) AddWorktree(repoDir, worktreePath, branch, baseBranch string) e
 	return err
 }
 
+// WorktreeForBranch returns the path of the worktree that currently has
+// branch checked out, or "" if none does.
+func (c *Client) WorktreeForBranch(repoDir, branch string) (string, error) {
+	out, err := c.Runner.Run(repoDir, "worktree", "list", "--porcelain")
+	if err != nil {
+		return "", err
+	}
+	var path string
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			path = strings.TrimPrefix(line, "worktree ")
+		case line == "branch refs/heads/"+branch:
+			return path, nil
+		}
+	}
+	return "", nil
+}
+
+// IsWorktreeClean reports whether worktreePath has no uncommitted changes.
+func (c *Client) IsWorktreeClean(worktreePath string) (bool, error) {
+	out, err := c.Runner.Run(worktreePath, "status", "--porcelain")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) == "", nil
+}
+
 // BranchExists reports whether a local branch with the given name exists.
 func (c *Client) BranchExists(repoDir, branch string) bool {
 	_, err := c.Runner.Run(repoDir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
