@@ -31,6 +31,8 @@ func (m *Model) renderList(width, height int) (string, []linkHit) {
 	} else if m.showArchived {
 		title = "ARCHIVED"
 		empty = "  no archived sessions"
+	} else if n := m.archivedCount(); n > 0 {
+		title += superscript(n)
 	}
 	b.WriteString(titleStyle.Render(title))
 	b.WriteString("\n\n")
