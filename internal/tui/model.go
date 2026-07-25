@@ -302,6 +302,21 @@ func newProjectForm() projectForm {
 	return pf
 }
 
+// archivedCount returns how many archived sessions the active project has.
+func (m *Model) archivedCount() int {
+	if len(m.projects) == 0 {
+		return 0
+	}
+	proj := m.projects[m.activeProj]
+	n := 0
+	for _, s := range m.backend.Sessions() {
+		if s.Project == proj && s.Archived {
+			n++
+		}
+	}
+	return n
+}
+
 func (m *Model) refreshSessions() {
 	if len(m.projects) == 0 {
 		m.sessions = nil
