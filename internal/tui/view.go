@@ -1,10 +1,22 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
+
+var superDigits = [...]string{"⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"}
+
+// superscript renders n using superscript Unicode digits, e.g. 12 -> "¹²".
+func superscript(n int) string {
+	var b strings.Builder
+	for _, r := range strconv.Itoa(n) {
+		b.WriteString(superDigits[r-'0'])
+	}
+	return b.String()
+}
 
 // truncateToWidth clips s to at most w cells, appending an ellipsis if it
 // had to cut. Used to keep footer rows to a single, fixed-height line so the
@@ -93,12 +105,22 @@ func (m *Model) renderHeader() string {
 	wordmark := titleStyle.Render("moomux")
 	left := lipgloss.JoinHorizontal(lipgloss.Center, cow, "  ", wordmark)
 
+	counts := map[string]int{}
+	for _, s := range m.backend.Sessions() {
+		if !s.Archived {
+			counts[s.Project]++
+		}
+	}
 	tabs := []string{}
 	for i, p := range m.projects {
+		label := p
+		if n := counts[p]; n > 0 {
+			label = p + superscript(n)
+		}
 		if i == m.activeProj {
-			tabs = append(tabs, tabActive.Render(p))
+			tabs = append(tabs, tabActive.Render(label))
 		} else {
-			tabs = append(tabs, tabInactive.Render(p))
+			tabs = append(tabs, tabInactive.Render(label))
 		}
 	}
 	right := strings.Join(tabs, " ")
