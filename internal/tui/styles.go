@@ -11,7 +11,7 @@ var (
 	colParked  = lipgloss.AdaptiveColor{Light: "#7d7d85", Dark: "#565a6e"}
 	colDanger  = lipgloss.AdaptiveColor{Light: "#c0293f", Dark: "#f7768e"}
 	colBorder  = lipgloss.AdaptiveColor{Light: "#9a9aa5", Dark: "#2d2f3a"}
-	colSelBg   = lipgloss.AdaptiveColor{Light: "#dce3f5", Dark: "#1f2233"}
+	colSelBg   = lipgloss.AdaptiveColor{Light: "#a9bdf0", Dark: "#2f395e"}
 
 	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
 	cowStyle    = lipgloss.NewStyle().Foreground(colMute)
@@ -32,12 +32,17 @@ var (
 	infoFlashStyle  = lipgloss.NewStyle().Foreground(colFg).Bold(true)
 	errorFlashStyle = lipgloss.NewStyle().Foreground(colDanger).Bold(true)
 
-	dotWorking = lipgloss.NewStyle().Foreground(colWorking).Render("⬤")
-	dotWaiting = lipgloss.NewStyle().Foreground(colWaiting).Render("⬤")
-	dotParked  = lipgloss.NewStyle().Foreground(colParked).Render("⬤")
+	dotWorkingStyle = lipgloss.NewStyle().Foreground(colWorking)
+	dotWaitingStyle = lipgloss.NewStyle().Foreground(colWaiting)
+	dotParkedStyle  = lipgloss.NewStyle().Foreground(colParked)
+	dotWorking      = dotWorkingStyle.Render("⬤")
+	dotWaiting      = dotWaitingStyle.Render("⬤")
+	dotParked       = dotParkedStyle.Render("⬤")
 
-	iconTicket = lipgloss.NewStyle().Foreground(colMute).Render("🎫")
-	iconPR     = lipgloss.NewStyle().Foreground(colMute).Render("🔀")
+	iconTicketStyle = lipgloss.NewStyle().Foreground(colMute)
+	iconPRStyle     = lipgloss.NewStyle().Foreground(colMute)
+	iconTicket      = iconTicketStyle.Render("🎫")
+	iconPR          = iconPRStyle.Render("🔀")
 
 	overlayBox = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).

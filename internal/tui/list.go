@@ -59,7 +59,8 @@ func (m *Model) renderList(width, height int) (string, []linkHit) {
 	var hits []linkHit
 	for i := start; i < end; i++ {
 		s := m.sessions[i]
-		row, rowHits := renderRow(s, m.effectiveState(s), width-4)
+		selected := i == m.cursor
+		row, rowHits := renderRow(s, m.effectiveState(s), width-4, selected)
 		for _, h := range rowHits {
 			h.sessionID = s.ID
 			// +2 lines for the "SESSIONS" title and blank line above;
@@ -69,7 +70,7 @@ func (m *Model) renderList(width, height int) (string, []linkHit) {
 			h.col1++
 			hits = append(hits, h)
 		}
-		if i == m.cursor {
+		if selected {
 			row = listRowSelected.Render(row)
 		} else {
 			row = listRow.Render(row)
@@ -80,28 +81,35 @@ func (m *Model) renderList(width, height int) (string, []linkHit) {
 	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), hits
 }
 
-func renderRow(s session.Session, st watcher.State, width int) (string, []linkHit) {
-	dot := dotParked
+func renderRow(s session.Session, st watcher.State, width int, selected bool) (string, []linkHit) {
+	dotStyle := dotParkedStyle
 	switch st {
 	case watcher.Working:
-		dot = dotWorking
+		dotStyle = dotWorkingStyle
 	case watcher.Waiting:
-		dot = dotWaiting
+		dotStyle = dotWaitingStyle
 	}
+	iconTicketStyle, iconPRStyle := iconTicketStyle, iconPRStyle
+	if selected {
+		dotStyle = dotStyle.Background(colSelBg)
+		iconTicketStyle = iconTicketStyle.Background(colSelBg)
+		iconPRStyle = iconPRStyle.Background(colSelBg)
+	}
+	dot := dotStyle.Render("⬤")
 	var icons string
 	var hits []linkHit
 	col := 0
-	addIcon := func(icon, url string) {
-		w := lipgloss.Width(icon)
+	addIcon := func(style lipgloss.Style, glyph, url string) {
+		w := lipgloss.Width(glyph)
 		hits = append(hits, linkHit{url: url, col0: col, col1: col + w})
-		icons += icon + " "
+		icons += style.Render(glyph + " ")
 		col += w + 1
 	}
 	if s.Ticket != "" {
-		addIcon(iconTicket, s.Ticket)
+		addIcon(iconTicketStyle, "🎫", s.Ticket)
 	}
 	if s.PR != "" {
-		addIcon(iconPR, s.PR)
+		addIcon(iconPRStyle, "🔀", s.PR)
 	}
 	suffix := icons + dot
 	nameWidth := width - 1 - lipgloss.Width(suffix)
