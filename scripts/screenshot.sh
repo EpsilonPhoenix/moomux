@@ -6,16 +6,17 @@
 # <screen> is one of the scenarios uishot knows about: run
 # `go run ./cmd/uishot -screen=bogus` to print the current list.
 #
-# How it works: builds cmd/uishot, runs it inside a pty (via `script`) so
-# lipgloss emits color even though stdout isn't a real terminal, strips the
-# terminal-query escape sequences bubbletea/termenv emit on startup,
-# converts the ANSI capture to HTML with ansi2html, then rasterizes that
-# HTML with a headless Chromium via Playwright (scripts/render_html.js).
+# How it works: builds cmd/uishot, runs it inside a pty (via Python's stdlib
+# pty module) so lipgloss emits color even though stdout isn't a real
+# terminal, strips the terminal-query escape sequences bubbletea/termenv
+# emit on startup, converts the ANSI capture to HTML with ansi2html, then
+# rasterizes that HTML with a headless Chromium via Playwright
+# (scripts/render_html.js).
 #
-# Requires: go, script (bsdutils/util-linux), python3 with the ansi2html
-# package (`pip install ansi2html`), and node with playwright installed
-# (`npm install -g playwright` plus a Chromium build — set
-# PLAYWRIGHT_CHROMIUM_PATH if it's not on Playwright's default search path).
+# Requires: go, python3 with the ansi2html package (`pip install ansi2html`),
+# and node with playwright installed (`npm install -g playwright` plus a
+# Chromium build — set PLAYWRIGHT_CHROMIUM_PATH if it's not on Playwright's
+# default search path).
 set -euo pipefail
 
 screen="${1:?usage: screenshot.sh <screen> <output.png> [width] [height]}"
@@ -40,7 +41,10 @@ bin="$workdir/uishot"
 go build -o "$bin" "$repo_root/cmd/uishot"
 
 raw="$workdir/raw.ansi"
-TERM=xterm-256color COLORTERM=truecolor script -qec "'$bin' -screen='$screen' -width='$cols' -height='$rows'" /dev/null >"$raw"
+TERM=xterm-256color COLORTERM=truecolor python3 - "$bin" "-screen=$screen" "-width=$cols" "-height=$rows" >"$raw" <<'PY'
+import pty, sys
+sys.exit(pty.spawn(sys.argv[1:]) or 0)
+PY
 
 clean="$workdir/clean.ansi"
 python3 - "$raw" "$clean" <<'PY'
