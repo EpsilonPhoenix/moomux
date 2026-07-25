@@ -7,12 +7,13 @@ import (
 
 type fakeRunner struct {
 	calls [][]string
+	out   string
 }
 
 func (f *fakeRunner) Run(dir string, args ...string) (string, error) {
 	c := append([]string{"@" + dir}, args...)
 	f.calls = append(f.calls, c)
-	return "", nil
+	return f.out, nil
 }
 
 func TestFetch(t *testing.T) {
@@ -60,6 +61,42 @@ func TestRemoveWorktree(t *testing.T) {
 	want := []string{"@/repo", "worktree", "remove", "/wt/foo", "--force"}
 	if !reflect.DeepEqual(fr.calls[0], want) {
 		t.Fatalf("calls = %v", fr.calls)
+	}
+}
+
+func TestWorktreeForBranch(t *testing.T) {
+	fr := &fakeRunner{
+		out: "worktree /wt/foo\nbranch refs/heads/user/foo\n\nworktree /wt/bar\nbranch refs/heads/user/bar\n",
+	}
+	c := &Client{Runner: fr}
+	got, err := c.WorktreeForBranch("/repo", "user/bar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "/wt/bar" {
+		t.Fatalf("got %q, want /wt/bar", got)
+	}
+	got, err = c.WorktreeForBranch("/repo", "user/missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "" {
+		t.Fatalf("got %q, want empty", got)
+	}
+}
+
+func TestIsWorktreeClean(t *testing.T) {
+	fr := &fakeRunner{}
+	c := &Client{Runner: fr}
+	clean, err := c.IsWorktreeClean("/wt/foo")
+	if err != nil || !clean {
+		t.Fatalf("clean=%v err=%v, want clean", clean, err)
+	}
+
+	fr.out = " M some/file.go\n"
+	clean, err = c.IsWorktreeClean("/wt/foo")
+	if err != nil || clean {
+		t.Fatalf("clean=%v err=%v, want dirty", clean, err)
 	}
 }
 

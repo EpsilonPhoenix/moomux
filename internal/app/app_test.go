@@ -19,6 +19,7 @@ import (
 type fakeGitRunner struct {
 	calls  [][]string
 	failOn map[string]bool
+	out    map[string]string
 }
 
 func (f *fakeGitRunner) Run(dir string, args ...string) (string, error) {
@@ -26,7 +27,7 @@ func (f *fakeGitRunner) Run(dir string, args ...string) (string, error) {
 	if f.failOn[strings.Join(args, " ")] {
 		return "", errors.New("git failed: " + strings.Join(args, " "))
 	}
-	return "", nil
+	return f.out[strings.Join(args, " ")], nil
 }
 
 // fakeTmuxRunner records tmux invocations; failOn works like fakeGitRunner's
@@ -80,7 +81,7 @@ func noBranch(fr *fakeGitRunner, branch string) {
 func newTestApp(t *testing.T, projects map[string]config.Project) (*App, *fakeGitRunner, *fakeTmuxRunner, *fakeTerminal) {
 	t.Helper()
 	dir := t.TempDir()
-	git := &fakeGitRunner{failOn: map[string]bool{}}
+	git := &fakeGitRunner{failOn: map[string]bool{}, out: map[string]string{}}
 	tm := &fakeTmuxRunner{out: map[string]string{}, failOn: map[string]bool{}}
 	term := &fakeTerminal{}
 	store := &session.Store{Path: filepath.Join(dir, "sessions.json")}
@@ -266,6 +267,48 @@ func TestCreateSessionExistingBranch(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no worktree add (existing) call; calls = %v", git.calls)
+	}
+}
+
+func TestCreateSessionExistingBranchRemovesStaleCleanWorktree(t *testing.T) {
+	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	tm.out["list-panes -t moomux-login-page -F #{pane_id}"] = "%0\n"
+	staleWT := filepath.Join(a.WorktreeRoot, "demo", "old-login-page")
+	git.out["worktree list --porcelain"] = "worktree " + staleWT + "\nbranch refs/heads/feature/login-page\n"
+
+	s, _, err := a.CreateSession("demo", "", "", "feature/login-page", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Branch != "feature/login-page" {
+		t.Fatalf("session = %+v", s)
+	}
+	wantRemove := "@/repo worktree remove " + staleWT + " --force"
+	found := false
+	for _, c := range git.calls {
+		if strings.Join(c, " ") == wantRemove {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no stale worktree removal; calls = %v", git.calls)
+	}
+}
+
+func TestCreateSessionExistingBranchDirtyStaleWorktreeBlocks(t *testing.T) {
+	a, git, _, _ := newTestApp(t, gitProject("/repo"))
+	staleWT := filepath.Join(a.WorktreeRoot, "demo", "old-login-page")
+	git.out["worktree list --porcelain"] = "worktree " + staleWT + "\nbranch refs/heads/feature/login-page\n"
+	git.out["status --porcelain"] = " M dirty/file.go\n"
+
+	_, _, err := a.CreateSession("demo", "", "", "feature/login-page", "")
+	if err == nil {
+		t.Fatal("expected error for dirty stale worktree")
+	}
+	for _, c := range git.calls {
+		if strings.HasPrefix(strings.Join(c, " "), "@/repo worktree remove") {
+			t.Fatalf("should not remove dirty worktree; calls = %v", git.calls)
+		}
 	}
 }
 
