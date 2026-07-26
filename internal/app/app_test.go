@@ -171,6 +171,10 @@ func TestNextOpenCodePort(t *testing.T) {
 	if got := a.nextOpenCodePort(); got != 4101 {
 		t.Fatalf("got %d, want 4101", got)
 	}
+	_ = a.Store.Put(session.Session{ID: "demo:z", Project: "demo", Name: "z", Agent: "codex", AgentPort: 4102})
+	if got := a.nextOpenCodePort(); got != 4103 {
+		t.Fatalf("retained port: got %d, want 4103", got)
+	}
 }
 
 func TestExpandHome(t *testing.T) {
@@ -403,7 +407,10 @@ func TestCreateSessionErrors(t *testing.T) {
 func TestOpenSessionAlive(t *testing.T) {
 	a, _, tm, term := newTestApp(t, gitProject("/repo"))
 	term.hint = "run: tmux attach -t moomux-feat"
-	_ = a.Store.Put(session.Session{ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat", WorktreePath: "/wt/feat"})
+	_ = a.Store.Put(session.Session{
+		ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat",
+		WorktreePath: "/wt/feat", Agent: "codex",
+	})
 	tm.out["list-panes -t moomux-feat -F #{pane_current_path}"] = "/wt/feat\n"
 
 	hint, err := a.OpenSession("demo:feat")
@@ -418,6 +425,27 @@ func TestOpenSessionAlive(t *testing.T) {
 	}
 	if len(term.calls) != 1 {
 		t.Fatalf("terminal calls = %v", term.calls)
+	}
+}
+
+func TestOpenSessionDeadAllocatesOpenCodePort(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
+	_ = a.Store.Put(session.Session{
+		ID: "demo:oc", Project: "demo", Name: "oc", TmuxSession: "moomux-oc",
+		WorktreePath: "/wt/oc", Agent: "opencode",
+	})
+	tm.failOn["has-session -t moomux-oc"] = true
+	tm.out["list-panes -t moomux-oc -F #{pane_id}"] = "%0\n"
+
+	if _, err := a.OpenSession("demo:oc"); err != nil {
+		t.Fatal(err)
+	}
+	if !tm.called("send-keys -t %0 opencode --port 4096 Enter") {
+		t.Fatalf("expected allocated opencode port; calls = %v", tm.calls)
+	}
+	got, ok := a.Store.Get("demo:oc")
+	if !ok || got.AgentPort != 4096 {
+		t.Fatalf("stored session = %+v, ok=%v", got, ok)
 	}
 }
 
@@ -587,6 +615,141 @@ func TestAddProject(t *testing.T) {
 	}
 	if _, err := os.Stat(a.CfgPath); err != nil {
 		t.Fatalf("config not saved: %v", err)
+	}
+}
+
+func TestUpdateProject(t *testing.T) {
+	repo := t.TempDir()
+	mustGit(t, repo, "init", "-b", "main")
+	a, _, _, _ := newTestApp(t, map[string]config.Project{
+		"demo": {Kind: "git", Repo: repo, BaseBranch: "main", Agent: "claude"},
+	})
+
+	updated := config.Project{
+		Repo: repo, BaseBranch: "trunk", BranchPrefix: "alan",
+		Agent: "codex", NoWorktree: true,
+	}
+	if err := a.UpdateProject("demo", updated); err != nil {
+		t.Fatal(err)
+	}
+	got := a.Cfg.Projects["demo"]
+	if got.Kind != "git" || got.BaseBranch != "trunk" ||
+		got.BranchPrefix != "alan" || got.Agent != "codex" || !got.NoWorktree {
+		t.Fatalf("project = %+v", got)
+	}
+
+	loaded, err := config.Load(a.CfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.Projects["demo"]; got.Agent != "codex" || got.Kind != "git" {
+		t.Fatalf("persisted project = %+v", got)
+	}
+}
+
+func TestUpdatePlainProjectPreservesKindAndClearsGitSettings(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "notes")
+	a, _, _, _ := newTestApp(t, map[string]config.Project{
+		"notes": {Kind: "plain", Repo: t.TempDir(), Agent: "claude"},
+	})
+
+	err := a.UpdateProject("notes", config.Project{
+		Kind: "git", Repo: repo, BaseBranch: "main", BranchPrefix: "x",
+		Agent: "opencode", NoWorktree: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := a.Cfg.Projects["notes"]
+	if got.Kind != "plain" || got.Repo != repo || got.Agent != "opencode" ||
+		got.BaseBranch != "" || got.BranchPrefix != "" || got.NoWorktree {
+		t.Fatalf("project = %+v", got)
+	}
+	if _, err := os.Stat(repo); err != nil {
+		t.Fatalf("plain repo was not created: %v", err)
+	}
+}
+
+func TestUpdateProjectValidationAndRollback(t *testing.T) {
+	repo := t.TempDir()
+	mustGit(t, repo, "init", "-b", "main")
+	original := config.Project{Kind: "git", Repo: repo, BaseBranch: "main", Agent: "claude"}
+	a, _, _, _ := newTestApp(t, map[string]config.Project{"demo": original})
+
+	if err := a.UpdateProject("missing", original); err == nil {
+		t.Fatal("unknown project must fail")
+	}
+	invalid := original
+	invalid.Agent = "other"
+	if err := a.UpdateProject("demo", invalid); err == nil {
+		t.Fatal("unknown agent must fail")
+	}
+	invalid = original
+	invalid.Repo = t.TempDir()
+	if err := a.UpdateProject("demo", invalid); !errors.Is(err, gitwt.ErrNotGitRepo) {
+		t.Fatalf("non-repository error = %v", err)
+	}
+
+	a.CfgPath = t.TempDir()
+	updated := original
+	updated.Agent = "codex"
+	if err := a.UpdateProject("demo", updated); err == nil {
+		t.Fatal("config write must fail")
+	}
+	if got := a.Cfg.Projects["demo"]; got != original {
+		t.Fatalf("project after rollback = %+v, want %+v", got, original)
+	}
+}
+
+func TestSetSessionAgentDoesNotTouchTmux(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
+	original := session.Session{
+		ID: "demo:a", Project: "demo", Name: "a",
+		Agent: "claude", AgentPort: 4099,
+	}
+	if err := a.Store.Put(original); err != nil {
+		t.Fatal(err)
+	}
+	tm.calls = nil
+
+	got, err := a.SetSessionAgent(original.ID, "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Agent != "codex" || got.AgentPort != 4099 {
+		t.Fatalf("session = %+v", got)
+	}
+	if len(tm.calls) != 0 {
+		t.Fatalf("tmux calls = %v", tm.calls)
+	}
+
+	stored, ok := a.Store.Get(original.ID)
+	if !ok || stored.Agent != "codex" {
+		t.Fatalf("stored session = %+v, ok=%v", stored, ok)
+	}
+}
+
+func TestSetSessionAgentValidationAndRollback(t *testing.T) {
+	a, _, _, _ := newTestApp(t, gitProject("/repo"))
+	original := session.Session{ID: "demo:a", Project: "demo", Name: "a", Agent: "claude"}
+	if err := a.Store.Put(original); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := a.SetSessionAgent("demo:missing", "codex"); err == nil {
+		t.Fatal("unknown session must fail")
+	}
+	if _, err := a.SetSessionAgent(original.ID, "other"); err == nil {
+		t.Fatal("unknown agent must fail")
+	}
+
+	a.Store.Path = t.TempDir()
+	if _, err := a.SetSessionAgent(original.ID, "codex"); err == nil {
+		t.Fatal("session write must fail")
+	}
+	got, ok := a.Store.Get(original.ID)
+	if !ok || got != original {
+		t.Fatalf("session after rollback = %+v, ok=%v", got, ok)
 	}
 }
 

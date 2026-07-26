@@ -50,6 +50,10 @@ type SessionArchivedMsg struct {
 	Err      error
 }
 type SessionTaggedMsg struct{ Session session.Session }
+type SessionAgentUpdatedMsg struct {
+	Session session.Session
+	Err     error
+}
 type TmuxKilledMsg struct{ ID string }
 
 // SessionMovedMsg is the result of an async reorder (MoveSession) call.
@@ -80,6 +84,11 @@ type ProjectRemovedMsg struct {
 // Update() re-syncs m.projects and re-anchors activeProj on Name once this
 // arrives; Err is set if the persisted reorder failed.
 type ProjectMovedMsg struct {
+	Name string
+	Err  error
+}
+
+type ProjectUpdatedMsg struct {
 	Name string
 	Err  error
 }

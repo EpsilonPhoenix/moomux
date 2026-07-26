@@ -40,6 +40,7 @@ func (m *Model) helpGroups() []helpGroup {
 				{"a", archiveDesc},
 				{"A", archivedDesc},
 				{"t", "tag ticket / PR"},
+				{"e", "edit session"},
 			},
 		},
 		{
@@ -58,6 +59,7 @@ func (m *Model) helpGroups() []helpGroup {
 			title: "Projects",
 			entries: []helpEntry{
 				{"P", "add project"},
+				{"E", "edit project"},
 				{"D", "remove project"},
 			},
 		},

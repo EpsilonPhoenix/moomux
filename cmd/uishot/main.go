@@ -35,6 +35,8 @@ var screens = map[string][]string{
 	"new-session":            {"n"},
 	"new-project":            {"P"},
 	"tag":                    {"t"},
+	"edit-session":           {"e"},
+	"edit-project":           {"E"},
 	"confirm-delete":         {"d"},
 	"confirm-delete-project": {"D"},
 	"archived":               {"A"},
@@ -113,6 +115,9 @@ func (f *fakeBackend) MoveProject(name string, delta int) error { return nil }
 func (f *fakeBackend) SetSessionTags(id, ticket, pr string) (session.Session, error) {
 	return session.Session{}, nil
 }
+func (f *fakeBackend) SetSessionAgent(id, agent string) (session.Session, error) {
+	return session.Session{}, nil
+}
 func (f *fakeBackend) SetSessionArchived(id string, archived bool) (session.Session, error) {
 	return session.Session{}, nil
 }
@@ -122,6 +127,7 @@ func (f *fakeBackend) Projects() []string                                    { r
 func (f *fakeBackend) AddProject(name string, p config.Project) error        { return gitwt.ErrNotGitRepo }
 func (f *fakeBackend) InitProjectAndAdd(name string, p config.Project) error { return nil }
 func (f *fakeBackend) AddPlainProject(name string, p config.Project) error   { return nil }
+func (f *fakeBackend) UpdateProject(name string, p config.Project) error     { return nil }
 func (f *fakeBackend) RemoveProject(name string) error                       { return nil }
 
 func sampleSessions() []session.Session {
@@ -175,7 +181,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	cfg := &config.Config{Projects: map[string]config.Project{"demo": {Repo: "/tmp/demo"}}}
+	cfg := &config.Config{Projects: map[string]config.Project{
+		"demo": {
+			Kind: "git", Repo: "/tmp/demo", BaseBranch: "main",
+			BranchPrefix: "feature", Agent: "codex",
+		},
+	}}
 	sessions := sampleSessions()
 	if *screen == "no-projects" {
 		cfg = &config.Config{Projects: map[string]config.Project{}}

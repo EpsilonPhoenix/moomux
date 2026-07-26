@@ -146,6 +146,7 @@ func TestTagFormFlow(t *testing.T) {
 		{ID: "demo:a", Project: "demo", Name: "a", Ticket: "old-ticket", PR: "old-pr"},
 	}}
 	m := newTestModel(be)
+	m.prompts["demo:a"] = "old agent prompt"
 
 	m.Update(keyRune("t"))
 	if m.mode != ModeTagForm {
@@ -223,6 +224,150 @@ func TestNewProjectFlow(t *testing.T) {
 	}
 	if m.mode != ModeList || !strings.Contains(m.flash, "added project newproj") {
 		t.Fatalf("mode=%v flash=%q", m.mode, m.flash)
+	}
+}
+
+func TestEditSessionFlow(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "demo:a", Project: "demo", Name: "a", Agent: "codex"},
+	}}
+	m := newTestModel(be)
+
+	m.Update(keyRune("e"))
+	if m.mode != ModeEditSession {
+		t.Fatalf("mode = %v", m.mode)
+	}
+	if got := agentChoices[m.sessionForm.agentIdx]; got != "codex" {
+		t.Fatalf("prefilled agent = %q", got)
+	}
+	if view := m.View(); !strings.Contains(view, "Edit session") ||
+		!strings.Contains(view, "demo") || !strings.Contains(view, "a") {
+		t.Fatalf("edit session view:\n%s", view)
+	}
+
+	press(m, tea.KeyRight)
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(be.sessionAgentCalls) != 1 ||
+		be.sessionAgentCalls[0] != (sessionAgentCall{"demo:a", "opencode"}) {
+		t.Fatalf("sessionAgentCalls = %v", be.sessionAgentCalls)
+	}
+	if m.mode != ModeList || !strings.Contains(m.flash, "updated session a") {
+		t.Fatalf("mode=%v flash=%q", m.mode, m.flash)
+	}
+	if _, ok := m.prompts["demo:a"]; ok {
+		t.Fatal("agent edit must invalidate the cached prompt")
+	}
+}
+
+func TestEditSessionCancelAndError(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "demo:a", Project: "demo", Name: "a", Agent: "claude"},
+	}}
+	m := newTestModel(be)
+	m.Update(keyRune("e"))
+	press(m, tea.KeyEsc)
+	if m.mode != ModeList || len(be.sessionAgentCalls) != 0 {
+		t.Fatalf("mode=%v calls=%v", m.mode, be.sessionAgentCalls)
+	}
+
+	be.sessionAgentErr = errors.New("disk full")
+	m.Update(keyRune("e"))
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != ModeEditSession || !strings.Contains(m.sessionForm.err, "disk full") {
+		t.Fatalf("mode=%v err=%q", m.mode, m.sessionForm.err)
+	}
+}
+
+func TestEditProjectFlow(t *testing.T) {
+	cfg := &config.Config{Projects: map[string]config.Project{
+		"demo": {
+			Kind: "git", Repo: "/tmp/demo", BaseBranch: "main",
+			BranchPrefix: "old", Agent: "codex",
+		},
+	}}
+	be := &fakeBackend{}
+	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
+	m.width, m.height = 100, 32
+
+	m.Update(keyRune("E"))
+	if m.mode != ModeEditProject {
+		t.Fatalf("mode = %v", m.mode)
+	}
+	if m.projForm.inputs[1].Value() != "/tmp/demo" ||
+		m.projForm.inputs[2].Value() != "main" ||
+		m.projForm.inputs[3].Value() != "old" ||
+		agentChoices[m.projForm.agentIdx] != "codex" {
+		t.Fatalf("project form = %+v", m.projForm)
+	}
+	if view := m.View(); !strings.Contains(view, "Edit project") ||
+		!strings.Contains(view, "demo") {
+		t.Fatalf("edit project view:\n%s", view)
+	}
+
+	m.projForm.inputs[1].SetValue("/tmp/renamed")
+	m.projForm.inputs[2].SetValue("trunk")
+	m.projForm.inputs[3].SetValue("alan")
+	m.projForm.agentIdx = 2
+	m.projForm.noWorktree = true
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if len(be.updateProjectCalls) != 1 {
+		t.Fatalf("updateProjectCalls = %v", be.updateProjectCalls)
+	}
+	got := be.updateProjectCalls[0]
+	if got.name != "demo" || got.p.Kind != "git" || got.p.Repo != "/tmp/renamed" ||
+		got.p.BaseBranch != "trunk" || got.p.BranchPrefix != "alan" ||
+		got.p.Agent != "opencode" || !got.p.NoWorktree {
+		t.Fatalf("call = %+v", got)
+	}
+	if m.mode != ModeList || !strings.Contains(m.flash, "updated project demo") {
+		t.Fatalf("mode=%v flash=%q", m.mode, m.flash)
+	}
+}
+
+func TestEditProjectCancelAndError(t *testing.T) {
+	be := &fakeBackend{updateProjectErr: errors.New("not a git repo")}
+	m := newTestModel(be)
+	m.Update(keyRune("E"))
+	press(m, tea.KeyEsc)
+	if m.mode != ModeList || len(be.updateProjectCalls) != 0 {
+		t.Fatalf("mode=%v calls=%v", m.mode, be.updateProjectCalls)
+	}
+
+	m.Update(keyRune("E"))
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != ModeEditProject || !strings.Contains(m.projForm.err, "not a git repo") {
+		t.Fatalf("mode=%v err=%q", m.mode, m.projForm.err)
+	}
+}
+
+func TestEditPlainProjectShowsOnlyRepoAndAgent(t *testing.T) {
+	cfg := &config.Config{Projects: map[string]config.Project{
+		"notes": {Kind: "plain", Repo: "/tmp/notes", Agent: "claude"},
+	}}
+	be := &fakeBackend{}
+	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
+	m.width, m.height = 80, 24
+
+	m.Update(keyRune("E"))
+	view := m.View()
+	for _, hidden := range []string{"base branch:", "branch prefix:", "worktrees:"} {
+		if strings.Contains(view, hidden) {
+			t.Fatalf("plain project editor contains %q:\n%s", hidden, view)
+		}
+	}
+	press(m, tea.KeyTab)
+	if m.projForm.focus != projFormInputCount {
+		t.Fatalf("focus = %d, want agent selector", m.projForm.focus)
+	}
+	m.projForm.agentIdx = agentChoiceIndex("codex")
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(be.updateProjectCalls) != 1 {
+		t.Fatalf("updateProjectCalls = %v", be.updateProjectCalls)
+	}
+	got := be.updateProjectCalls[0].p
+	if got.Kind != "plain" || got.Repo != "/tmp/notes" || got.Agent != "codex" {
+		t.Fatalf("project = %+v", got)
 	}
 }
 

@@ -27,6 +27,7 @@ type Backend interface {
 	DeleteSession(id string) error
 	KillTmux(id string) error
 	SetSessionTags(id, ticket, pr string) (session.Session, error)
+	SetSessionAgent(id, agent string) (session.Session, error)
 	// SetSessionArchived hides (or restores) a session from the default
 	// list without touching its tmux session or worktree.
 	SetSessionArchived(id string, archived bool) (session.Session, error)
@@ -40,6 +41,7 @@ type Backend interface {
 	AddProject(name string, p config.Project) error
 	InitProjectAndAdd(name string, p config.Project) error
 	AddPlainProject(name string, p config.Project) error
+	UpdateProject(name string, p config.Project) error
 	RemoveProject(name string) error
 }
 
@@ -54,6 +56,8 @@ const (
 	ModeProjectInitChoice
 	ModeTagForm
 	ModeHelp
+	ModeEditSession
+	ModeEditProject
 )
 
 var agentChoices = []string{"claude", "codex", "opencode"}
@@ -76,6 +80,14 @@ type pendingProject struct {
 type tagForm struct {
 	inputs []textinput.Model // [0]=ticket, [1]=PR
 	focus  int
+}
+
+type sessionForm struct {
+	id       string
+	project  string
+	name     string
+	agentIdx int
+	err      string
 }
 
 func newTagForm(ticket, pr string) tagForm {
@@ -120,6 +132,8 @@ type Model struct {
 	newFormFocus    int // 0=nameInput, 1=branchInput, 2=ticketInput
 	newFormAgentIdx int // agent selector in the new-session form
 	projForm        projectForm
+	sessionForm     sessionForm
+	editProjectName string
 	tagForm         tagForm
 	pending         pendingProject
 	flash           string
@@ -130,6 +144,15 @@ type Model struct {
 	width, height int
 
 	linkHits []resolvedLinkHit
+}
+
+func agentChoiceIndex(agent string) int {
+	for i, choice := range agentChoices {
+		if choice == agent {
+			return i
+		}
+	}
+	return 0
 }
 
 // resolvedLinkHit is a linkHit translated into absolute terminal
@@ -299,6 +322,20 @@ func newProjectForm() projectForm {
 		pf.inputs[1].SetValue(cwd)
 	}
 	pf.inputs[0].Focus()
+	return pf
+}
+
+func editProjectForm(name string, p config.Project) projectForm {
+	pf := newProjectForm()
+	pf.inputs[0].SetValue(name)
+	pf.inputs[1].SetValue(p.Repo)
+	pf.inputs[2].SetValue(p.BaseBranch)
+	pf.inputs[3].SetValue(p.BranchPrefix)
+	pf.inputs[0].Blur()
+	pf.inputs[1].Focus()
+	pf.focus = 1
+	pf.agentIdx = agentChoiceIndex(p.AgentName())
+	pf.noWorktree = p.NoWorktree
 	return pf
 }
 

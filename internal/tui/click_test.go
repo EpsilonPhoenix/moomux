@@ -36,6 +36,9 @@ type fakeBackend struct {
 	tagCalls []tagCall
 	tagErr   error
 
+	sessionAgentCalls []sessionAgentCall
+	sessionAgentErr   error
+
 	archiveCalls []archiveCall
 	archiveErr   error
 
@@ -46,12 +49,16 @@ type fakeBackend struct {
 	plainCalls       []projectCall
 	plainErr         error
 
+	updateProjectCalls []projectCall
+	updateProjectErr   error
+
 	removeProjectCalls []string
 	removeProjectErr   error
 }
 
 type createCall struct{ project, name, agent, branch, ticket string }
 type tagCall struct{ id, ticket, pr string }
+type sessionAgentCall struct{ id, agent string }
 type archiveCall struct {
 	id       string
 	archived bool
@@ -109,6 +116,19 @@ func (f *fakeBackend) SetSessionTags(id, ticket, pr string) (session.Session, er
 	}
 	return session.Session{ID: id, Ticket: ticket, PR: pr}, nil
 }
+func (f *fakeBackend) SetSessionAgent(id, agent string) (session.Session, error) {
+	f.sessionAgentCalls = append(f.sessionAgentCalls, sessionAgentCall{id, agent})
+	if f.sessionAgentErr != nil {
+		return session.Session{}, f.sessionAgentErr
+	}
+	for i, s := range f.sessions {
+		if s.ID == id {
+			f.sessions[i].Agent = agent
+			return f.sessions[i], nil
+		}
+	}
+	return session.Session{ID: id, Agent: agent}, nil
+}
 func (f *fakeBackend) SetSessionArchived(id string, archived bool) (session.Session, error) {
 	f.archiveCalls = append(f.archiveCalls, archiveCall{id, archived})
 	if f.archiveErr != nil {
@@ -144,6 +164,10 @@ func (f *fakeBackend) InitProjectAndAdd(name string, p config.Project) error {
 func (f *fakeBackend) AddPlainProject(name string, p config.Project) error {
 	f.plainCalls = append(f.plainCalls, projectCall{name, p})
 	return f.plainErr
+}
+func (f *fakeBackend) UpdateProject(name string, p config.Project) error {
+	f.updateProjectCalls = append(f.updateProjectCalls, projectCall{name, p})
+	return f.updateProjectErr
 }
 func (f *fakeBackend) RemoveProject(name string) error {
 	f.removeProjectCalls = append(f.removeProjectCalls, name)
