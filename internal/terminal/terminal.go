@@ -77,10 +77,24 @@ func Detect() TerminalOpener {
 		if _, err := exec.LookPath("gnome-terminal"); err == nil {
 			return &windowOpener{binary: "gnome-terminal", args: gnomeTerminalArgs}
 		}
-		return &fallbackOpener{}
+		return fallback()
 	case os.Getenv("WT_SESSION") != "":
 		return &windowOpener{binary: "wt.exe", args: windowsTerminalArgs}
 	default:
-		return &fallbackOpener{}
+		return fallback()
 	}
+}
+
+// fallback is used when no terminal emulator was identified by env vars. If
+// moomux itself is running inside a tmux client (detected via $TMUX), the
+// env vars Detect relies on are often gone by now — tmux only snapshots the
+// environment once, at server start — so fall back to walking the process
+// tree to find the terminal emulator actually hosting this pane.
+func fallback() TerminalOpener {
+	if os.Getenv("TMUX") != "" {
+		if opener := detectFromProcessTree(); opener != nil {
+			return opener
+		}
+	}
+	return &fallbackOpener{}
 }
