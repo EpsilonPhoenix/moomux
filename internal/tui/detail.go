@@ -16,7 +16,7 @@ func (m *Model) renderDetail(width, height int) string {
 	b.WriteString("\n\n")
 	if len(m.sessions) == 0 {
 		b.WriteString(muteStyle.Render("nothing selected"))
-		return lipgloss.NewStyle().Width(width).Height(height).Render(b.String())
+		return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String())
 	}
 	s := m.sessions[m.cursor]
 	st := m.effectiveState(s)
@@ -65,7 +65,7 @@ func (m *Model) renderDetail(width, height int) string {
 		cowMsg = pickQuip(s.ID, quipsParked)
 	}
 	b.WriteString(cowStyle.Render(cowsay(cowMsg, valueWidth+10, st)))
-	return lipgloss.NewStyle().Width(width).Height(height).Render(b.String())
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String())
 }
 
 func cowsay(msg string, maxWidth int, st watcher.State) string {

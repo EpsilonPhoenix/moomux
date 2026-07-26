@@ -11,6 +11,12 @@ import (
 // panels stack vertically instead of side by side (phone-sized SSH clients).
 const narrowWidthBreak = 72
 
+// minStackedPaneHeight is the minimum usable content height for each panel in
+// the narrow stacked layout. When a mobile keyboard leaves fewer rows than
+// this for both panes, the list gets the full body instead of being pushed
+// above the visible viewport by the detail pane.
+const minStackedPaneHeight = 10
+
 var superDigits = [...]string{"⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"}
 
 // superscript renders n using superscript Unicode digits, e.g. 12 -> "¹²".
@@ -74,19 +80,24 @@ func (m *Model) View() string {
 		if panelW < 20 {
 			panelW = 20
 		}
-		listH := bodyHeight / 2
-		if listH < 5 {
-			listH = 5
+
+		// A stacked layout has two pairs of horizontal borders, while
+		// bodyHeight reserves room for one. Account for the second pair before
+		// splitting the content height between the panes.
+		stackedHeight := bodyHeight - 2
+		if stackedHeight < 2*minStackedPaneHeight {
+			var listContent string
+			listContent, hits = m.renderList(panelW-2, bodyHeight)
+			body = panelBorder.Width(panelW).Height(bodyHeight).Render(listContent)
+		} else {
+			listH := stackedHeight / 2
+			detailH := stackedHeight - listH
+			var listContent string
+			listContent, hits = m.renderList(panelW-2, listH)
+			top := panelBorder.Width(panelW).Height(listH).Render(listContent)
+			bottom := panelBorder.Width(panelW).Height(detailH).Render(m.renderDetail(panelW-2, detailH))
+			body = lipgloss.JoinVertical(lipgloss.Left, top, bottom)
 		}
-		detailH := bodyHeight - listH
-		if detailH < 5 {
-			detailH = 5
-		}
-		var listContent string
-		listContent, hits = m.renderList(panelW-2, listH-2)
-		top := panelBorder.Width(panelW).Height(listH).Render(listContent)
-		bottom := panelBorder.Width(panelW).Height(detailH).Render(m.renderDetail(panelW-2, detailH-2))
-		body = lipgloss.JoinVertical(lipgloss.Left, top, bottom)
 	} else {
 		listW := 42
 		if m.width-listW < 30 {
@@ -110,6 +121,10 @@ func (m *Model) View() string {
 	m.updateLinkHits(header, hits)
 
 	base := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+	// Very small terminal sizes can be shorter than the fixed header and
+	// footer combined. Never emit more rows than the terminal reported,
+	// otherwise terminal viewport panning can hide the top of the list.
+	base = lipgloss.NewStyle().MaxHeight(m.height).Render(base)
 
 	switch m.mode {
 	case ModeNewForm:
