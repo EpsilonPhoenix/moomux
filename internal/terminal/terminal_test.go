@@ -112,6 +112,7 @@ func TestDetectReturnsFallbackForUnknown(t *testing.T) {
 	t.Setenv("XTERM_VERSION", "")
 	t.Setenv("VTE_VERSION", "")
 	t.Setenv("GHOSTTY_RESOURCES_DIR", "")
+	t.Setenv("TMUX", "")
 	got := Detect()
 	if _, ok := got.(*fallbackOpener); !ok {
 		t.Fatalf("expected *fallbackOpener, got %T", got)
@@ -179,7 +180,7 @@ func clearLinuxTerminalEnv(t *testing.T) {
 		"TERM_PROGRAM", "__CFBundleIdentifier", "KITTY_WINDOW_ID",
 		"KITTY_LISTEN_ON", "WEZTERM_PANE", "TERM", "ALACRITTY_WINDOW_ID",
 		"ALACRITTY_SOCKET", "TILIX_ID", "KONSOLE_VERSION", "XTERM_VERSION",
-		"GNOME_TERMINAL_SCREEN", "GNOME_TERMINAL_SERVICE", "VTE_VERSION",
+		"GNOME_TERMINAL_SCREEN", "GNOME_TERMINAL_SERVICE", "VTE_VERSION", "TMUX",
 	} {
 		t.Setenv(v, "")
 	}
