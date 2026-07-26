@@ -7,6 +7,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// narrowWidthBreak is the terminal width below which the list and detail
+// panels stack vertically instead of side by side (phone-sized SSH clients).
+const narrowWidthBreak = 72
+
 var superDigits = [...]string{"⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"}
 
 // superscript renders n using superscript Unicode digits, e.g. 12 -> "¹²".
@@ -53,18 +57,6 @@ func (m *Model) View() string {
 	header := m.renderHeader()
 	footer := m.renderFooter()
 
-	listW := 42
-	if m.width-listW < 30 {
-		listW = m.width / 2
-	}
-	if listW < 20 {
-		listW = 20
-	}
-	detailW := m.width - listW - 2
-	if detailW < 20 {
-		detailW = 20
-	}
-
 	// -2 accounts for panelBorder's top/bottom border lines, which sit
 	// outside the Height() passed to it below.
 	bodyHeight := m.height - lipgloss.Height(header) - lipgloss.Height(footer) - 2
@@ -72,10 +64,48 @@ func (m *Model) View() string {
 		bodyHeight = 5
 	}
 
-	listContent, hits := m.renderList(listW-2, bodyHeight-2)
-	left := panelBorder.Width(listW).Height(bodyHeight).Render(listContent)
-	right := panelBorder.Width(detailW).Height(bodyHeight).Render(m.renderDetail(detailW-2, bodyHeight-2))
-	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	var body string
+	var hits []linkHit
+	// Below this width a side-by-side list+detail split leaves too little
+	// room for either panel (common on phone-sized SSH clients), so stack
+	// them instead.
+	if m.width < narrowWidthBreak {
+		panelW := m.width - 2
+		if panelW < 20 {
+			panelW = 20
+		}
+		listH := bodyHeight / 2
+		if listH < 5 {
+			listH = 5
+		}
+		detailH := bodyHeight - listH
+		if detailH < 5 {
+			detailH = 5
+		}
+		var listContent string
+		listContent, hits = m.renderList(panelW-2, listH-2)
+		top := panelBorder.Width(panelW).Height(listH).Render(listContent)
+		bottom := panelBorder.Width(panelW).Height(detailH).Render(m.renderDetail(panelW-2, detailH-2))
+		body = lipgloss.JoinVertical(lipgloss.Left, top, bottom)
+	} else {
+		listW := 42
+		if m.width-listW < 30 {
+			listW = m.width / 2
+		}
+		if listW < 20 {
+			listW = 20
+		}
+		detailW := m.width - listW - 2
+		if detailW < 20 {
+			detailW = 20
+		}
+
+		var listContent string
+		listContent, hits = m.renderList(listW-2, bodyHeight-2)
+		left := panelBorder.Width(listW).Height(bodyHeight).Render(listContent)
+		right := panelBorder.Width(detailW).Height(bodyHeight).Render(m.renderDetail(detailW-2, bodyHeight-2))
+		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	}
 
 	m.updateLinkHits(header, hits)
 
