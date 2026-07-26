@@ -38,7 +38,7 @@ func (m *Model) renderList(width, height int) (string, []linkHit) {
 	b.WriteString("\n\n")
 	if len(m.sessions) == 0 {
 		b.WriteString(muteStyle.Render(empty))
-		return lipgloss.NewStyle().Width(width).Height(height).Render(b.String()), nil
+		return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), nil
 	}
 	visible := height - 2 // header + blank line above
 	if visible < 1 {
