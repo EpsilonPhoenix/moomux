@@ -107,6 +107,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshSessions()
 		return m, nil
 
+	case SessionAgentUpdatedMsg:
+		m.busy = false
+		if msg.Err != nil {
+			m.sessionForm.err = msg.Err.Error()
+			m.mode = ModeEditSession
+			return m, nil
+		}
+		m.refreshSessions()
+		for i, s := range m.sessions {
+			if s.ID == msg.Session.ID {
+				m.cursor = i
+				break
+			}
+		}
+		delete(m.prompts, msg.Session.ID)
+		m.mode = ModeList
+		m.setFlash("info", "updated session "+msg.Session.Name)
+		return m, refreshStatusCmd(m)
+
 	case SessionMovedMsg:
 		if msg.Err != nil {
 			m.setError(msg.Err)
@@ -182,6 +201,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case ProjectUpdatedMsg:
+		m.busy = false
+		if msg.Err != nil {
+			m.projForm.err = msg.Err.Error()
+			m.mode = ModeEditProject
+			return m, nil
+		}
+		m.activateProject(msg.Name)
+		m.mode = ModeList
+		m.setFlash("info", "updated project "+msg.Name)
+		return m, nil
+
 	case ProjectRemovedMsg:
 		if msg.Err != nil {
 			m.mode = ModeList
@@ -228,6 +259,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateTagForm(msg)
 		case ModeHelp:
 			return m.updateHelp(msg)
+		case ModeEditSession:
+			return m.updateEditSession(msg)
+		case ModeEditProject:
+			return m.updateEditProject(msg)
 		default:
 			return m.updateList(msg)
 		}
@@ -366,9 +401,29 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = ModeTagForm
 			m.tagForm = newTagForm(s.Ticket, s.PR)
 		}
+	case key.Matches(msg, m.keys.EditSession):
+		if len(m.sessions) > 0 {
+			s := m.sessions[m.cursor]
+			m.mode = ModeEditSession
+			m.sessionForm = sessionForm{
+				id:       s.ID,
+				project:  s.Project,
+				name:     s.Name,
+				agentIdx: agentChoiceIndex(s.AgentName()),
+			}
+		}
 	case key.Matches(msg, m.keys.NewProject):
 		m.mode = ModeNewProject
 		m.projForm = newProjectForm()
+		return m, nil
+	case key.Matches(msg, m.keys.EditProject):
+		if len(m.projects) == 0 {
+			return m.flashError(fmt.Errorf("no projects to edit"))
+		}
+		name := m.projects[m.activeProj]
+		m.editProjectName = name
+		m.projForm = editProjectForm(name, m.cfg.Projects[name])
+		m.mode = ModeEditProject
 		return m, nil
 	case key.Matches(msg, m.keys.DelProject):
 		if len(m.projects) == 0 {
@@ -564,6 +619,115 @@ func (m *Model) updateNewProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	if m.projForm.focus < projFormInputCount {
+		var cmd tea.Cmd
+		m.projForm.inputs[m.projForm.focus], cmd = m.projForm.inputs[m.projForm.focus].Update(msg)
+		return m, cmd
+	}
+	return m, nil
+}
+
+func (m *Model) updateEditSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.busy {
+		return m, nil
+	}
+	switch {
+	case key.Matches(msg, m.keys.Cancel):
+		m.mode = ModeList
+	case key.Matches(msg, m.keys.Left):
+		m.sessionForm.agentIdx = (m.sessionForm.agentIdx - 1 + len(agentChoices)) % len(agentChoices)
+	case key.Matches(msg, m.keys.Right):
+		m.sessionForm.agentIdx = (m.sessionForm.agentIdx + 1) % len(agentChoices)
+	case key.Matches(msg, m.keys.Enter):
+		id := m.sessionForm.id
+		agent := agentChoices[m.sessionForm.agentIdx]
+		m.busy = true
+		m.sessionForm.err = ""
+		return m, func() tea.Msg {
+			s, err := m.backend.SetSessionAgent(id, agent)
+			return SessionAgentUpdatedMsg{Session: s, Err: err}
+		}
+	}
+	return m, nil
+}
+
+func editProjectFocuses(p config.Project) []int {
+	if p.IsPlain() {
+		return []int{1, projFormInputCount}
+	}
+	return []int{1, 2, 3, projFormInputCount, projFormInputCount + 1}
+}
+
+func (m *Model) cycleEditProjectFocus(forward bool) {
+	focuses := editProjectFocuses(m.cfg.Projects[m.editProjectName])
+	current := 0
+	for i, focus := range focuses {
+		if focus == m.projForm.focus {
+			current = i
+			break
+		}
+	}
+	if m.projForm.focus < len(m.projForm.inputs) {
+		m.projForm.inputs[m.projForm.focus].Blur()
+	}
+	if forward {
+		current = (current + 1) % len(focuses)
+	} else {
+		current = (current - 1 + len(focuses)) % len(focuses)
+	}
+	m.projForm.focus = focuses[current]
+	if m.projForm.focus < len(m.projForm.inputs) {
+		m.projForm.inputs[m.projForm.focus].Focus()
+	}
+}
+
+func (m *Model) updateEditProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.busy {
+		return m, nil
+	}
+	project := m.cfg.Projects[m.editProjectName]
+	switch {
+	case key.Matches(msg, m.keys.Cancel):
+		m.mode = ModeList
+		return m, nil
+	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.FormDown):
+		m.cycleEditProjectFocus(true)
+		return m, nil
+	case key.Matches(msg, m.keys.ShiftTab), key.Matches(msg, m.keys.FormUp):
+		m.cycleEditProjectFocus(false)
+		return m, nil
+	case key.Matches(msg, m.keys.Left):
+		switch m.projForm.focus {
+		case projFormInputCount:
+			m.projForm.agentIdx = (m.projForm.agentIdx - 1 + len(agentChoices)) % len(agentChoices)
+		case projFormInputCount + 1:
+			m.projForm.noWorktree = !m.projForm.noWorktree
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Right):
+		switch m.projForm.focus {
+		case projFormInputCount:
+			m.projForm.agentIdx = (m.projForm.agentIdx + 1) % len(agentChoices)
+		case projFormInputCount + 1:
+			m.projForm.noWorktree = !m.projForm.noWorktree
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Enter):
+		project.Repo = m.projForm.inputs[1].Value()
+		project.Agent = agentChoices[m.projForm.agentIdx]
+		if !project.IsPlain() {
+			project.BaseBranch = m.projForm.inputs[2].Value()
+			project.BranchPrefix = m.projForm.inputs[3].Value()
+			project.NoWorktree = m.projForm.noWorktree
+		}
+		name := m.editProjectName
+		m.busy = true
+		m.projForm.err = ""
+		return m, func() tea.Msg {
+			err := m.backend.UpdateProject(name, project)
+			return ProjectUpdatedMsg{Name: name, Err: err}
+		}
+	}
+	if m.projForm.focus < len(m.projForm.inputs) {
 		var cmd tea.Cmd
 		m.projForm.inputs[m.projForm.focus], cmd = m.projForm.inputs[m.projForm.focus].Update(msg)
 		return m, cmd

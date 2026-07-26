@@ -41,6 +41,9 @@ func TestHelpToggle(t *testing.T) {
 	if !strings.Contains(view, "moomux commands") {
 		t.Fatalf("help view missing title, got:\n%s", view)
 	}
+	if !strings.Contains(view, "edit session") || !strings.Contains(view, "edit project") {
+		t.Fatalf("help view missing edit commands, got:\n%s", view)
+	}
 	if m.linkHits != nil {
 		t.Fatalf("expected link hits cleared behind overlay, got %v", m.linkHits)
 	}

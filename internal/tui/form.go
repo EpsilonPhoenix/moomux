@@ -72,6 +72,38 @@ func (m *Model) renderNewFormAgentSelector() string {
 	return b.String()
 }
 
+func (m *Model) renderEditSession() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Edit session"))
+	b.WriteString("\n\n")
+	b.WriteString(muteStyle.Render("project: "))
+	b.WriteString(m.sessionForm.project)
+	b.WriteString("\n")
+	b.WriteString(muteStyle.Render("session: "))
+	b.WriteString(m.sessionForm.name)
+	b.WriteString("\n\n")
+	b.WriteString(muteStyle.Render("agent:  "))
+	for i, agent := range agentChoices {
+		if i > 0 {
+			b.WriteString("  ")
+		}
+		if i == m.sessionForm.agentIdx {
+			b.WriteString(titleStyle.Render("[" + agent + "]"))
+		} else {
+			b.WriteString(muteStyle.Render(agent))
+		}
+	}
+	if m.sessionForm.err != "" {
+		b.WriteString("\n\n")
+		b.WriteString(dangerStyle.Render(m.sessionForm.err))
+	}
+	b.WriteString("\n\n")
+	b.WriteString(renderFormHint("agent used the next time this session's tmux process is created"))
+	b.WriteString("\n\n")
+	b.WriteString(muteStyle.Render("←→ to pick agent   enter to save   esc to cancel"))
+	return b.String()
+}
+
 // projFormFieldHints gives a one-line explanation for whichever field of the
 // add-project form is currently focused (index projFormInputCount is the
 // agent selector), so terms like "base branch" or "branch prefix" don't need
@@ -83,6 +115,15 @@ var projFormFieldHints = []string{
 	3: "prepended to every new session's branch name, e.g. \"alice/\" → alice/feature-x — leave blank to skip",
 	4: "coding agent launched by default for new sessions in this project",
 	5: "off: every session runs directly in the repo folder instead of its own worktree/branch",
+}
+
+var editProjectFieldHints = []string{
+	0: "project names cannot be changed",
+	1: "repository path used by new sessions — existing worktrees stay where they are",
+	2: "base branch used when creating new session worktrees",
+	3: "prepended to branches created for new sessions — leave blank to skip",
+	4: "coding agent copied into new sessions by default",
+	5: "changes worktree behavior for new sessions only",
 }
 
 func (m *Model) renderNewProject() string {
@@ -108,6 +149,46 @@ func (m *Model) renderNewProject() string {
 	b.WriteString(renderFormHint(projFormFieldHints[m.projForm.focus]))
 	b.WriteString("\n\n")
 	b.WriteString(muteStyle.Render("tab/↑↓ to move   ←→ to pick agent/toggle   enter to save   esc to cancel"))
+	return b.String()
+}
+
+func (m *Model) renderEditProject() string {
+	project := m.cfg.Projects[m.editProjectName]
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Edit project"))
+	b.WriteString("\n\n")
+	b.WriteString(muteStyle.Render(fmt.Sprintf("%-15s", "name:")))
+	b.WriteString(m.editProjectName)
+	b.WriteString(muteStyle.Render(" (fixed)"))
+	b.WriteString("\n")
+	b.WriteString(muteStyle.Render(fmt.Sprintf("%-15s", "repo:")))
+	b.WriteString(m.projForm.inputs[1].View())
+	b.WriteString("\n")
+	if !project.IsPlain() {
+		b.WriteString(muteStyle.Render(fmt.Sprintf("%-15s", "base branch:")))
+		b.WriteString(m.projForm.inputs[2].View())
+		b.WriteString("\n")
+		b.WriteString(muteStyle.Render(fmt.Sprintf("%-15s", "branch prefix:")))
+		b.WriteString(m.projForm.inputs[3].View())
+		b.WriteString("\n")
+	}
+	b.WriteString(muteStyle.Render(fmt.Sprintf("%-15s", "agent:")))
+	b.WriteString(m.renderAgentSelector())
+	b.WriteString("\n")
+	if !project.IsPlain() {
+		b.WriteString(muteStyle.Render(fmt.Sprintf("%-15s", "worktrees:")))
+		b.WriteString(m.renderWorktreeToggle())
+		b.WriteString("\n")
+	}
+	if m.projForm.err != "" {
+		b.WriteString("\n")
+		b.WriteString(dangerStyle.Render(m.projForm.err))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(renderFormHint(editProjectFieldHints[m.projForm.focus]))
+	b.WriteString("\n\n")
+	b.WriteString(muteStyle.Render("tab/↑↓ to move   ←→ to change   enter to save   esc to cancel"))
 	return b.String()
 }
 

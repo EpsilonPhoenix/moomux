@@ -38,6 +38,15 @@ func agentCmd(agent string) string {
 	}
 }
 
+func validateAgent(agent string) error {
+	switch agent {
+	case "claude", "codex", "opencode":
+		return nil
+	default:
+		return fmt.Errorf("unknown agent %q", agent)
+	}
+}
+
 func WorktreeRootDefault() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".local", "share", "moomux", "worktrees")
@@ -48,7 +57,7 @@ func WorktreeRootDefault() string {
 func (a *App) nextOpenCodePort() int {
 	port := 4096
 	for _, s := range a.Store.All() {
-		if s.AgentName() == "opencode" && s.AgentPort >= port {
+		if s.AgentPort >= port {
 			port = s.AgentPort + 1
 		}
 	}
@@ -283,6 +292,23 @@ func (a *App) SetSessionTags(id, ticket, pr string) (session.Session, error) {
 	return s, nil
 }
 
+func (a *App) SetSessionAgent(id, agent string) (session.Session, error) {
+	if err := validateAgent(agent); err != nil {
+		return session.Session{}, err
+	}
+	s, ok := a.Store.Get(id)
+	if !ok {
+		return session.Session{}, fmt.Errorf("unknown session %q", id)
+	}
+	previous := s
+	s.Agent = agent
+	if err := a.Store.Put(s); err != nil {
+		_ = a.Store.Put(previous)
+		return session.Session{}, fmt.Errorf("store: %w", err)
+	}
+	return s, nil
+}
+
 // SetSessionArchived hides (or restores) a session from the default list
 // without touching its tmux session or worktree — the reverse of
 // DeleteSession, which is destructive.
@@ -314,7 +340,13 @@ func (a *App) OpenSession(id string) (string, error) {
 	if !has {
 		slog.Info("tmux session absent, recreating", "tmux_session", s.TmuxSession, "cwd", s.WorktreePath)
 		cmd := agentCmd(s.AgentName())
-		if s.AgentName() == "opencode" && s.AgentPort > 0 {
+		if s.AgentName() == "opencode" {
+			if s.AgentPort == 0 {
+				s.AgentPort = a.nextOpenCodePort()
+				if err := a.Store.Put(s); err != nil {
+					return "", fmt.Errorf("store opencode port: %w", err)
+				}
+			}
 			cmd = fmt.Sprintf("opencode --port %d", s.AgentPort)
 		}
 		if err := a.Tmux.NewSession(s.TmuxSession, s.WorktreePath, cmd, s.Name); err != nil {
@@ -431,6 +463,44 @@ func (a *App) AddPlainProject(name string, p config.Project) error {
 	p.BaseBranch = ""
 	p.BranchPrefix = ""
 	return a.saveProject(name, p)
+}
+
+func (a *App) UpdateProject(name string, updated config.Project) error {
+	previous, ok := a.Cfg.Projects[name]
+	if !ok {
+		return fmt.Errorf("unknown project %q", name)
+	}
+	if err := validateAgent(updated.Agent); err != nil {
+		return err
+	}
+	if updated.Repo == "" {
+		return fmt.Errorf("repo path required")
+	}
+	updated.Repo = expandHome(updated.Repo)
+	updated.Kind = previous.Kind
+
+	if previous.IsPlain() {
+		if err := os.MkdirAll(updated.Repo, 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", updated.Repo, err)
+		}
+		updated.BaseBranch = ""
+		updated.BranchPrefix = ""
+		updated.NoWorktree = false
+	} else {
+		if err := gitwt.IsRepo(updated.Repo); err != nil {
+			return err
+		}
+		if updated.BaseBranch == "" {
+			updated.BaseBranch = "main"
+		}
+	}
+
+	a.Cfg.Projects[name] = updated
+	if err := config.Save(a.CfgPath, a.Cfg); err != nil {
+		a.Cfg.Projects[name] = previous
+		return fmt.Errorf("save config: %w", err)
+	}
+	return nil
 }
 
 func (a *App) RemoveProject(name string) error {

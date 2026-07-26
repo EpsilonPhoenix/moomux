@@ -23,6 +23,8 @@ type KeyMap struct {
 	Confirm       key.Binding
 	NewProject    key.Binding
 	DelProject    key.Binding
+	EditSession   key.Binding
+	EditProject   key.Binding
 	Tag           key.Binding
 	Enter         key.Binding
 	Left          key.Binding
@@ -55,6 +57,8 @@ func DefaultKeyMap() KeyMap {
 		Confirm:       key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "confirm")),
 		NewProject:    key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "add project")),
 		DelProject:    key.NewBinding(key.WithKeys("D"), key.WithHelp("D", "remove project")),
+		EditSession:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit session")),
+		EditProject:   key.NewBinding(key.WithKeys("E"), key.WithHelp("E", "edit project")),
 		Tag:           key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "tag")),
 		Enter:         key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "submit")),
 		Left:          key.NewBinding(key.WithKeys("left"), key.WithHelp("←", "left")),
