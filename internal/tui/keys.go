@@ -33,6 +33,7 @@ type KeyMap struct {
 	FormUp        key.Binding
 	FormDown      key.Binding
 	Help          key.Binding
+	RemoteLinks   key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -65,8 +66,9 @@ func DefaultKeyMap() KeyMap {
 		Right:         key.NewBinding(key.WithKeys("right"), key.WithHelp("→", "right")),
 		No:            key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "no")),
 		// Arrow-only (no j/k) for forms with text inputs, so typing "j"/"k" isn't hijacked as navigation.
-		FormUp:   key.NewBinding(key.WithKeys("up"), key.WithHelp("↑", "up")),
-		FormDown: key.NewBinding(key.WithKeys("down"), key.WithHelp("↓", "down")),
-		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+		FormUp:      key.NewBinding(key.WithKeys("up"), key.WithHelp("↑", "up")),
+		FormDown:    key.NewBinding(key.WithKeys("down"), key.WithHelp("↓", "down")),
+		Help:        key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+		RemoteLinks: key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "toggle ticket/PR link copy")),
 	}
 }

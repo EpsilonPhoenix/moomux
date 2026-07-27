@@ -21,13 +21,18 @@ type helpGroup struct {
 // helpGroups is the full command reference shown in the help overlay. The
 // footer only advertises "?:help"; this is the exhaustive list so users don't
 // have to memorize anything. The `a`/`A` copy is filled in per-render since it
-// depends on whether the archived view is active.
+// depends on whether the archived view is active, and `R`'s since it depends
+// on whether copy-instead-of-open is currently forced on.
 func (m *Model) helpGroups() []helpGroup {
 	archiveDesc := "archive session"
 	archivedDesc := "show archived"
 	if m.showArchived {
 		archiveDesc = "restore session"
 		archivedDesc = "show active"
+	}
+	linkDesc := "force-copy ticket/PR links: off"
+	if m.forceCopyLinks {
+		linkDesc = "force-copy ticket/PR links: on"
 	}
 	return []helpGroup{
 		{
@@ -53,6 +58,7 @@ func (m *Model) helpGroups() []helpGroup {
 				{"shift+tab", "prev project"},
 				{"shift+← / →", "reorder project"},
 				{"r", "refresh"},
+				{"R", linkDesc},
 			},
 		},
 		{

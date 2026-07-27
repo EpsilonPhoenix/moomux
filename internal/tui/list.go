@@ -22,6 +22,14 @@ type linkHit struct {
 	col0, col1 int // half-open column range
 }
 
+// hyperlink wraps text in an OSC 8 escape sequence so terminals that
+// recognize it (including most SSH clients on phones) can open url directly
+// on the device the terminal is running on, rather than moomux having to
+// shell out to a browser on whatever machine it happens to be running on.
+func hyperlink(url, text string) string {
+	return "\x1b]8;;" + url + "\x1b\\" + text + "\x1b]8;;\x1b\\"
+}
+
 func (m *Model) renderList(width, height int) (string, []linkHit) {
 	var b strings.Builder
 	title := "SESSIONS"
@@ -104,7 +112,7 @@ func renderRow(s session.Session, st watcher.State, width int, selected bool) (s
 	addIcon := func(style lipgloss.Style, glyph, url string) {
 		w := lipgloss.Width(glyph)
 		hits = append(hits, linkHit{url: url, col0: col, col1: col + w})
-		icons += style.Render(glyph + " ")
+		icons += hyperlink(url, style.Render(glyph)) + style.Render(" ")
 		col += w + 1
 	}
 	if s.Ticket != "" {
