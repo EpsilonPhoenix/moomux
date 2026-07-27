@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
@@ -111,6 +112,53 @@ func promptTmuxSetup(cfg *config.Config, cfgPath string) {
 	_ = config.Save(cfgPath, cfg)
 }
 
+// promptAutoTmux offers, on first run only, to always relaunch moomux
+// inside a dedicated tmux session ("moomux") from now on. Like
+// promptTmuxSetup, it always marks cfg.AutoTmuxAsked and saves immediately
+// so the prompt never reappears, and is skipped on a non-interactive stdin.
+func promptAutoTmux(cfg *config.Config, cfgPath string) {
+	cfg.AutoTmuxAsked = true
+
+	if !isatty.IsTerminal(os.Stdin.Fd()) {
+		_ = config.Save(cfgPath, cfg)
+		return
+	}
+
+	fmt.Println("moomux can always start inside its own tmux session (attaching to one named")
+	fmt.Println("\"moomux\" if it already exists), so it survives closing your terminal.")
+	fmt.Print("Always start moomux inside tmux? [y/N] ")
+
+	answer := ""
+	if line, err := bufio.NewReader(os.Stdin).ReadString('\n'); err == nil {
+		answer = strings.ToLower(strings.TrimSpace(line))
+	}
+
+	if answer == "y" || answer == "yes" {
+		cfg.AutoTmux = true
+		fmt.Println("Enabled. Change any time by editing auto_tmux in", cfgPath)
+	} else {
+		fmt.Println("Skipped. Enable later by setting auto_tmux = true in", cfgPath)
+	}
+	fmt.Println()
+
+	_ = config.Save(cfgPath, cfg)
+}
+
+// relaunchInTmux replaces the current process with `tmux new-session -A -s
+// moomux <self>`, attaching to an existing "moomux" session or creating one.
+// checkDeps has already verified tmux is on $PATH by the time this runs.
+func relaunchInTmux() error {
+	self, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	tmuxBin, err := exec.LookPath("tmux")
+	if err != nil {
+		return err
+	}
+	return syscall.Exec(tmuxBin, []string{"tmux", "new-session", "-A", "-s", "moomux", self}, os.Environ())
+}
+
 func run() error {
 	cfgPath := config.DefaultPath()
 	cfg, err := config.Load(cfgPath)
@@ -125,6 +173,14 @@ func run() error {
 
 	if !cfg.TmuxSetupAsked {
 		promptTmuxSetup(cfg, cfgPath)
+	}
+	if !cfg.AutoTmuxAsked {
+		promptAutoTmux(cfg, cfgPath)
+	}
+	if cfg.AutoTmux && os.Getenv("TMUX") == "" {
+		if err := relaunchInTmux(); err != nil {
+			fmt.Fprintln(os.Stderr, "moomux: could not start inside tmux:", err)
+		}
 	}
 
 	home, _ := os.UserHomeDir()

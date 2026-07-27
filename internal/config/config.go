@@ -73,6 +73,12 @@ type Config struct {
 	// add moomux's recommended ~/.tmux.conf settings, so the prompt only
 	// ever runs once regardless of their answer.
 	TmuxSetupAsked bool `toml:"tmux_setup_asked,omitempty"`
+	// AutoTmux, when true, relaunches moomux inside a dedicated tmux
+	// session ("moomux") on startup if it isn't already running inside one.
+	AutoTmux bool `toml:"auto_tmux,omitempty"`
+	// AutoTmuxAsked marks that the user has already been asked whether to
+	// enable AutoTmux, so the prompt only ever runs once.
+	AutoTmuxAsked bool `toml:"auto_tmux_asked,omitempty"`
 }
 
 func Load(path string) (*Config, error) {
