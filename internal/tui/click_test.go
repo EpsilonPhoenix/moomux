@@ -212,3 +212,40 @@ func TestLinkHitsResolveClicks(t *testing.T) {
 		t.Errorf("click one column left of ticket icon resolved to %q, want empty", got)
 	}
 }
+
+func TestTruncatedDetailURLsRemainClickable(t *testing.T) {
+	ticketURL := "https://tickets.example.com/org/project/issues/12345"
+	prURL := "https://github.com/org/project/pull/67890"
+	cfg := &config.Config{Projects: map[string]config.Project{"demo": {Repo: "/tmp/demo"}}}
+	be := &fakeBackend{sessions: []session.Session{
+		{
+			ID:      "demo:one",
+			Project: "demo",
+			Name:    "one",
+			Ticket:  ticketURL,
+			PR:      prURL,
+		},
+	}}
+	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
+	m.width, m.height = 80, 24
+
+	frame := m.View()
+	lines := strings.Split(frame, "\n")
+
+	assertLink := func(visibleTail, wantURL string) {
+		t.Helper()
+		for line, rendered := range lines {
+			if idx := strings.Index(rendered, visibleTail); idx >= 0 {
+				col := lipgloss.Width(rendered[:idx])
+				if got := m.linkAt(col, line); got != wantURL {
+					t.Fatalf("click on detail URL tail %q at (%d,%d) = %q, want %q\n%s", visibleTail, col, line, got, wantURL, frame)
+				}
+				return
+			}
+		}
+		t.Fatalf("detail URL tail %q not found:\n%s", visibleTail, frame)
+	}
+
+	assertLink("issues/12345", ticketURL)
+	assertLink("pull/67890", prURL)
+}

@@ -18,6 +18,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.resizeFormInputs()
+		// Re-reveal the focused control after the usable viewport changes,
+		// including when a mobile keyboard opens or closes.
+		m.overlayFocus = -1
 		return m, nil
 
 	case StatusTickMsg:
@@ -231,6 +235,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseMsg:
+		if m.mode != ModeList {
+			var cmd tea.Cmd
+			m.overlayViewport, cmd = m.overlayViewport.Update(msg)
+			return m, cmd
+		}
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 			if url := m.linkAt(msg.X, msg.Y); url != "" {
 				return m, func() tea.Msg {
@@ -244,6 +253,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.mode != ModeList && m.mode != ModeHelp && isOverlayScrollKey(msg) {
+			var cmd tea.Cmd
+			m.overlayViewport, cmd = m.overlayViewport.Update(msg)
+			return m, cmd
+		}
 		switch m.mode {
 		case ModeNewForm:
 			return m.updateNewForm(msg)
@@ -270,6 +284,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func isOverlayScrollKey(msg tea.KeyMsg) bool {
+	switch msg.String() {
+	case "pgup", "pgdown", "ctrl+u", "ctrl+d":
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *Model) resetOverlayViewport() {
+	m.overlayViewport.GotoTop()
+	m.overlayMode = ModeList
+	m.overlayFocus = -1
+}
+
 func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
@@ -277,6 +306,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case key.Matches(msg, m.keys.Help):
 		m.mode = ModeHelp
+		m.resetOverlayViewport()
 		return m, nil
 	case key.Matches(msg, m.keys.Up):
 		if len(m.sessions) > 0 {
@@ -363,6 +393,8 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ticketInput.SetValue("")
 		m.ticketInput.Blur()
 		m.newFormFocus = 0
+		m.resetOverlayViewport()
+		m.resizeFormInputs()
 		// pre-select the project's default agent
 		proj := m.projects[m.activeProj]
 		defaultAgent := "claude"
@@ -400,11 +432,14 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			s := m.sessions[m.cursor]
 			m.mode = ModeTagForm
 			m.tagForm = newTagForm(s.Ticket, s.PR)
+			m.resetOverlayViewport()
+			m.resizeFormInputs()
 		}
 	case key.Matches(msg, m.keys.EditSession):
 		if len(m.sessions) > 0 {
 			s := m.sessions[m.cursor]
 			m.mode = ModeEditSession
+			m.resetOverlayViewport()
 			m.sessionForm = sessionForm{
 				id:       s.ID,
 				project:  s.Project,
@@ -415,6 +450,8 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.NewProject):
 		m.mode = ModeNewProject
 		m.projForm = newProjectForm()
+		m.resetOverlayViewport()
+		m.resizeFormInputs()
 		return m, nil
 	case key.Matches(msg, m.keys.EditProject):
 		if len(m.projects) == 0 {
@@ -424,6 +461,8 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.editProjectName = name
 		m.projForm = editProjectForm(name, m.cfg.Projects[name])
 		m.mode = ModeEditProject
+		m.resetOverlayViewport()
+		m.resizeFormInputs()
 		return m, nil
 	case key.Matches(msg, m.keys.DelProject):
 		if len(m.projects) == 0 {
@@ -456,8 +495,11 @@ func (m *Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Help), key.Matches(msg, m.keys.Cancel), key.Matches(msg, m.keys.Quit):
 		m.mode = ModeList
+		return m, nil
 	}
-	return m, nil
+	var cmd tea.Cmd
+	m.overlayViewport, cmd = m.overlayViewport.Update(msg)
+	return m, cmd
 }
 
 func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

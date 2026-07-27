@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -143,7 +144,10 @@ type Model struct {
 
 	width, height int
 
-	linkHits []resolvedLinkHit
+	linkHits        []resolvedLinkHit
+	overlayViewport viewport.Model
+	overlayMode     Mode
+	overlayFocus    int
 }
 
 func agentChoiceIndex(agent string) int {
@@ -165,26 +169,31 @@ type resolvedLinkHit struct {
 	x0, x1    int // half-open column range
 }
 
-// updateLinkHits recomputes m.linkHits in absolute terminal coordinates
-// from the list-local hits produced by renderList. It's a no-op (clearing
-// hits) outside ModeList, since the list isn't clickable behind an overlay.
-func (m *Model) updateLinkHits(header string, hits []linkHit) {
+// updateLinkHits recomputes m.linkHits in absolute terminal coordinates from
+// the list- and detail-local hits produced during rendering. It's a no-op
+// (clearing hits) outside ModeList, since panels aren't clickable behind an
+// overlay.
+func (m *Model) updateLinkHits(header string, listHits, detailHits []linkHit, detailX, detailY int) {
 	if m.mode != ModeList {
 		m.linkHits = nil
 		return
 	}
-	originX := panelBorder.GetBorderLeftSize() + panelBorder.GetPaddingLeft()
-	originY := lipgloss.Height(header) + panelBorder.GetBorderTopSize()
 	m.linkHits = m.linkHits[:0]
-	for _, h := range hits {
-		m.linkHits = append(m.linkHits, resolvedLinkHit{
-			sessionID: h.sessionID,
-			url:       h.url,
-			y:         originY + h.line,
-			x0:        originX + h.col0,
-			x1:        originX + h.col1,
-		})
+	appendHits := func(hits []linkHit, originX, originY int) {
+		for _, h := range hits {
+			m.linkHits = append(m.linkHits, resolvedLinkHit{
+				sessionID: h.sessionID,
+				url:       h.url,
+				y:         originY + h.line,
+				x0:        originX + h.col0,
+				x1:        originX + h.col1,
+			})
+		}
 	}
+	listX := panelBorder.GetBorderLeftSize() + panelBorder.GetPaddingLeft()
+	listY := lipgloss.Height(header) + panelBorder.GetBorderTopSize()
+	appendHits(listHits, listX, listY)
+	appendHits(detailHits, detailX, detailY)
 }
 
 // linkAt returns the URL of the ticket/PR icon at absolute terminal
@@ -215,17 +224,20 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 	tki.Width = 40
 
 	m := &Model{
-		cfg:         cfg,
-		backend:     backend,
-		keys:        DefaultKeyMap(),
-		states:      map[string]watcher.State{},
-		tmuxAlive:   map[string]bool{},
-		prompts:     map[string]string{},
-		statusCh:    statusCh,
-		cancelPoll:  cancel,
-		nameInput:   ti,
-		branchInput: bi,
-		ticketInput: tki,
+		cfg:             cfg,
+		backend:         backend,
+		keys:            DefaultKeyMap(),
+		states:          map[string]watcher.State{},
+		tmuxAlive:       map[string]bool{},
+		prompts:         map[string]string{},
+		statusCh:        statusCh,
+		cancelPoll:      cancel,
+		nameInput:       ti,
+		branchInput:     bi,
+		ticketInput:     tki,
+		overlayViewport: viewport.New(1, 1),
+		overlayMode:     ModeList,
+		overlayFocus:    -1,
 	}
 	m.projects = cfg.OrderedProjectNames()
 	m.refreshSessions()

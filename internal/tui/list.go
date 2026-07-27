@@ -140,3 +140,20 @@ func truncate(s string, n int) string {
 	}
 	return string(r[:n-1]) + "…"
 }
+
+// truncateLeft keeps the end of a value visible. It is useful for read-only
+// paths, where the directory or branch name at the right is usually more
+// informative than a common leading prefix.
+func truncateLeft(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	if n < 2 {
+		return string(r[len(r)-n:])
+	}
+	return "…" + string(r[len(r)-(n-1):])
+}

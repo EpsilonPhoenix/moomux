@@ -4,19 +4,116 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 )
 
 // formHintWidth and formHintLines keep every form's hint row a fixed size —
 // wrapped to this width and padded to this many lines — so switching fields
-// (and thus hint text) never resizes the overlay box.
+// (and thus hint text) never resizes the overlay box. formHintWidth is a cap;
+// on narrow terminals it shrinks to fit so the overlay never exceeds the
+// screen width.
 const (
 	formHintWidth = 72
 	formHintLines = 2
 )
 
-func renderFormHint(text string) string {
-	rendered := hintStyle.Width(formHintWidth).Render(text)
+// overlayWidth returns the content width available to overlay forms: capped
+// at max, but shrunk to fit narrow terminals (accounting for overlayBox's
+// border + padding).
+func (m *Model) overlayWidth(max int) int {
+	w := m.width - overlayBox.GetHorizontalFrameSize()
+	if w > max {
+		w = max
+	}
+	if w < 1 {
+		w = 1
+	}
+	return w
+}
+
+// clampInputWidth shrinks desired to fit avail, never grows it — text inputs
+// keep their designed width on normal terminals and only narrow on small ones.
+func clampInputWidth(desired, avail int) int {
+	if avail < 1 {
+		avail = 1
+	}
+	if desired > avail {
+		return avail
+	}
+	return desired
+}
+
+func textInputWidth(ti *textinput.Model, desired, avail int) int {
+	// textinput.Width does not include its prompt ("> " by default), so
+	// reserve those cells explicitly or the right edge of the value will be
+	// clipped by the surrounding overlay viewport.
+	return clampInputWidth(desired, avail-lipgloss.Width(ti.Prompt))
+}
+
+// setInputWidth sets a text input's Width and re-runs its overflow
+// calculation — textinput only recomputes its scroll offset on cursor/value
+// changes, not when Width is set directly, so a stale offset would otherwise
+// leave the old (wider) content un-truncated.
+func setInputWidth(ti *textinput.Model, w int) {
+	pos := ti.Position()
+	ti.Width = w
+	ti.SetCursor(pos)
+}
+
+// resizeFormInputs re-clamps every form's text-input widths to the current
+// terminal size. Called on resize and whenever a form is (re)opened, since
+// the forms are built with fixed default widths that only fit on typical
+// terminals.
+func (m *Model) resizeFormInputs() {
+	avail := m.overlayWidth(72)
+
+	setInputWidth(&m.nameInput, textInputWidth(&m.nameInput, 40, avail))
+	setInputWidth(&m.branchInput, textInputWidth(&m.branchInput, 40, avail))
+	setInputWidth(&m.ticketInput, textInputWidth(&m.ticketInput, 40, avail))
+
+	if len(m.tagForm.inputs) == 2 {
+		labels := []string{"ticket url", "pr url"}
+		for i := range m.tagForm.inputs {
+			w := textInputWidth(&m.tagForm.inputs[i], 48, avail-m.formLabelWidth(labels[i], 12))
+			setInputWidth(&m.tagForm.inputs[i], w)
+		}
+	}
+
+	labels := []string{"name", "repo", "base branch", "branch prefix"}
+	projWidths := [4]int{32, 48, 24, 24}
+	for i := range m.projForm.inputs {
+		if i < len(projWidths) {
+			labelWidth := m.formLabelWidth(labels[i], 15)
+			w := textInputWidth(&m.projForm.inputs[i], projWidths[i], avail-labelWidth)
+			setInputWidth(&m.projForm.inputs[i], w)
+		}
+	}
+}
+
+func (m *Model) formLabelWidth(label string, desired int) int {
+	available := m.overlayWidth(formHintWidth)
+	if available < 40 {
+		// Drop alignment-only padding on narrow screens and give the value or
+		// input the reclaimed cells.
+		desired = lipgloss.Width(label + ":")
+	}
+	if desired >= available {
+		desired = available - 1
+	}
+	if desired < 1 {
+		desired = 1
+	}
+	return desired
+}
+
+func (m *Model) renderFormLabel(label string, desired int) string {
+	width := m.formLabelWidth(label, desired)
+	return muteStyle.Width(width).Render(truncateToWidth(label+":", width))
+}
+
+func (m *Model) renderFormHint(text string) string {
+	rendered := hintStyle.Width(m.overlayWidth(formHintWidth)).Render(text)
 	for lipgloss.Height(rendered) < formHintLines {
 		rendered += "\n"
 	}
@@ -50,10 +147,6 @@ func (m *Model) renderNewForm() string {
 	b.WriteString(m.renderNewFormAgentSelector())
 	b.WriteString("\n\n")
 	b.WriteString(m.ticketInput.View())
-	b.WriteString("\n\n")
-	b.WriteString(renderFormHint(newFormFieldHints[m.newFormFocus]))
-	b.WriteString("\n\n")
-	b.WriteString(muteStyle.Render("tab/↑↓ to switch field   ←→ to pick agent   enter to create   esc to cancel"))
 	return b.String()
 }
 
@@ -97,10 +190,6 @@ func (m *Model) renderEditSession() string {
 		b.WriteString("\n\n")
 		b.WriteString(dangerStyle.Render(m.sessionForm.err))
 	}
-	b.WriteString("\n\n")
-	b.WriteString(renderFormHint("agent used the next time this session's tmux process is created"))
-	b.WriteString("\n\n")
-	b.WriteString(muteStyle.Render("←→ to pick agent   enter to save   esc to cancel"))
 	return b.String()
 }
 
@@ -132,23 +221,20 @@ func (m *Model) renderNewProject() string {
 	b.WriteString(titleStyle.Render("Add project"))
 	b.WriteString("\n\n")
 	for i, ti := range m.projForm.inputs {
-		b.WriteString(muteStyle.Render(fmt.Sprintf("%-15s", labels[i]+":")))
+		b.WriteString(m.renderFormLabel(labels[i], 15))
 		b.WriteString(ti.View())
 		b.WriteString("\n")
 	}
-	b.WriteString(muteStyle.Render(fmt.Sprintf("%-15s", "agent:")))
+	b.WriteString(m.renderFormLabel("agent", 15))
 	b.WriteString(m.renderAgentSelector())
 	b.WriteString("\n")
-	b.WriteString(muteStyle.Render(fmt.Sprintf("%-15s", "worktrees:")))
+	b.WriteString(m.renderFormLabel("worktrees", 15))
 	b.WriteString(m.renderWorktreeToggle())
 	b.WriteString("\n\n")
 	if m.projForm.err != "" {
 		b.WriteString(dangerStyle.Render(m.projForm.err))
-		b.WriteString("\n\n")
+		b.WriteString("\n")
 	}
-	b.WriteString(renderFormHint(projFormFieldHints[m.projForm.focus]))
-	b.WriteString("\n\n")
-	b.WriteString(muteStyle.Render("tab/↑↓ to move   ←→ to pick agent/toggle   enter to save   esc to cancel"))
 	return b.String()
 }
 
@@ -157,26 +243,26 @@ func (m *Model) renderEditProject() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Edit project"))
 	b.WriteString("\n\n")
-	b.WriteString(muteStyle.Render(fmt.Sprintf("%-15s", "name:")))
+	b.WriteString(m.renderFormLabel("name", 15))
 	b.WriteString(m.editProjectName)
 	b.WriteString(muteStyle.Render(" (fixed)"))
 	b.WriteString("\n")
-	b.WriteString(muteStyle.Render(fmt.Sprintf("%-15s", "repo:")))
+	b.WriteString(m.renderFormLabel("repo", 15))
 	b.WriteString(m.projForm.inputs[1].View())
 	b.WriteString("\n")
 	if !project.IsPlain() {
-		b.WriteString(muteStyle.Render(fmt.Sprintf("%-15s", "base branch:")))
+		b.WriteString(m.renderFormLabel("base branch", 15))
 		b.WriteString(m.projForm.inputs[2].View())
 		b.WriteString("\n")
-		b.WriteString(muteStyle.Render(fmt.Sprintf("%-15s", "branch prefix:")))
+		b.WriteString(m.renderFormLabel("branch prefix", 15))
 		b.WriteString(m.projForm.inputs[3].View())
 		b.WriteString("\n")
 	}
-	b.WriteString(muteStyle.Render(fmt.Sprintf("%-15s", "agent:")))
+	b.WriteString(m.renderFormLabel("agent", 15))
 	b.WriteString(m.renderAgentSelector())
 	b.WriteString("\n")
 	if !project.IsPlain() {
-		b.WriteString(muteStyle.Render(fmt.Sprintf("%-15s", "worktrees:")))
+		b.WriteString(m.renderFormLabel("worktrees", 15))
 		b.WriteString(m.renderWorktreeToggle())
 		b.WriteString("\n")
 	}
@@ -185,10 +271,6 @@ func (m *Model) renderEditProject() string {
 		b.WriteString(dangerStyle.Render(m.projForm.err))
 		b.WriteString("\n")
 	}
-	b.WriteString("\n")
-	b.WriteString(renderFormHint(editProjectFieldHints[m.projForm.focus]))
-	b.WriteString("\n\n")
-	b.WriteString(muteStyle.Render("tab/↑↓ to move   ←→ to change   enter to save   esc to cancel"))
 	return b.String()
 }
 
@@ -225,18 +307,23 @@ func (m *Model) renderAgentSelector() string {
 	return b.String()
 }
 
+// tagFormFieldHints gives a one-line explanation for whichever field of the
+// tag form is currently focused, matching the other forms' contextual hints.
+var tagFormFieldHints = []string{
+	0: "shown as a clickable ticket icon next to the session",
+	1: "shown as a clickable PR icon next to the session",
+}
+
 func (m *Model) renderTagForm() string {
 	labels := []string{"ticket url", "pr url"}
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Tag session"))
 	b.WriteString("\n\n")
 	for i, ti := range m.tagForm.inputs {
-		b.WriteString(muteStyle.Render(fmt.Sprintf("%-12s", labels[i]+":")))
+		b.WriteString(m.renderFormLabel(labels[i], 12))
 		b.WriteString(ti.View())
-		b.WriteString("\n")
+		b.WriteString("\n\n")
 	}
-	b.WriteString("\n")
-	b.WriteString(muteStyle.Render("tab to move   enter to save   esc to cancel"))
 	return b.String()
 }
 
