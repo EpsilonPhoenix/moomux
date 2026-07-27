@@ -43,6 +43,7 @@ var (
 	iconPRStyle     = lipgloss.NewStyle().Foreground(colMute)
 	iconTicket      = iconTicketStyle.Render("🎫")
 	iconPR          = iconPRStyle.Render("🔀")
+	detailLinkStyle = lipgloss.NewStyle().Foreground(colAccent).Underline(true)
 
 	overlayBox = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).

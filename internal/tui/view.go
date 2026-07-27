@@ -55,6 +55,170 @@ func truncateToWidth(s string, w int) string {
 	return string(out) + "…"
 }
 
+// compactOverlayContent removes decorative blank rows when a mobile keyboard
+// leaves little vertical space. The viewport still provides scrolling when
+// the compact content cannot fit.
+func (m *Model) compactOverlayContent(content string) string {
+	if m.height < 20 {
+		content = strings.ReplaceAll(content, "\n\n", "\n")
+	}
+	return strings.TrimRight(content, "\n")
+}
+
+func lineContaining(content, needle string) int {
+	if needle == "" {
+		return 0
+	}
+	if i := strings.Index(content, needle); i >= 0 {
+		return strings.Count(content[:i], "\n")
+	}
+	return 0
+}
+
+func lastLines(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m *Model) formFooter(hint, controls string) string {
+	if m.overlayWidth(formHintWidth) < 28 {
+		// Put escape first when there is not enough width for descriptive
+		// controls so the essential way out is never the truncated portion.
+		controls = "esc  tab/↑↓  enter"
+	}
+	hint = strings.TrimRight(m.renderFormHint(hint), "\n")
+	return hint + "\n" + muteStyle.Render(controls)
+}
+
+func (m *Model) helpFooter() string {
+	controls := "↑↓/jk/pg scroll  ?/esc close"
+	if m.overlayWidth(formHintWidth) < 28 {
+		controls = "?/esc close  ↑↓ scroll"
+	}
+	return muteStyle.Render(controls)
+}
+
+// focusedOverlayLine returns the rendered line containing the active form
+// control. It is used to bring that control back into view after focus or
+// terminal-size changes without overriding subsequent manual scrolling.
+func (m *Model) focusedOverlayLine(content string) int {
+	switch m.mode {
+	case ModeNewForm:
+		switch m.newFormFocus {
+		case 1:
+			return lineContaining(content, m.branchInput.View())
+		case 2:
+			return lineContaining(content, m.ticketInput.View())
+		default:
+			return lineContaining(content, m.nameInput.View())
+		}
+	case ModeNewProject:
+		if m.projForm.focus < len(m.projForm.inputs) {
+			return lineContaining(content, m.projForm.inputs[m.projForm.focus].View())
+		}
+		if m.projForm.focus == projFormInputCount {
+			return lineContaining(content, m.renderAgentSelector())
+		}
+		return lineContaining(content, m.renderWorktreeToggle())
+	case ModeTagForm:
+		if m.tagForm.focus < len(m.tagForm.inputs) {
+			return lineContaining(content, m.tagForm.inputs[m.tagForm.focus].View())
+		}
+	case ModeEditSession:
+		agent := agentChoices[m.sessionForm.agentIdx]
+		return lineContaining(content, titleStyle.Render("["+agent+"]"))
+	case ModeEditProject:
+		if m.projForm.focus < len(m.projForm.inputs) {
+			return lineContaining(content, m.projForm.inputs[m.projForm.focus].View())
+		}
+		if m.projForm.focus == projFormInputCount {
+			return lineContaining(content, m.renderAgentSelector())
+		}
+		return lineContaining(content, m.renderWorktreeToggle())
+	}
+	return -1
+}
+
+// renderOverlay constrains dialog content to the current terminal and gives
+// it a persistent vertical viewport. footer remains visible while content
+// scrolls; focusedLine is automatically revealed only after focus/size/mode
+// changes so explicit scrolling is not immediately undone on the next frame.
+func (m *Model) renderOverlay(content, footer string, focusedLine int) string {
+	content = m.compactOverlayContent(content)
+
+	maxWidth := m.overlayWidth(formHintWidth)
+	contentWidth := lipgloss.Width(content)
+	if fw := lipgloss.Width(footer); fw > contentWidth {
+		contentWidth = fw
+	}
+	if contentWidth > maxWidth {
+		contentWidth = maxWidth
+	}
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+
+	availableHeight := m.height - overlayBox.GetVerticalFrameSize()
+	if availableHeight < 1 {
+		availableHeight = 1
+	}
+	footerHeight := 0
+	separatorHeight := 0
+	if footer != "" && availableHeight >= 2 {
+		footerHeight = lipgloss.Height(footer)
+		if footerHeight > availableHeight-1 {
+			footerHeight = availableHeight - 1
+			footer = lastLines(footer, footerHeight)
+		}
+		if availableHeight-footerHeight >= 2 {
+			separatorHeight = 1
+		}
+	}
+	contentHeight := availableHeight - footerHeight - separatorHeight
+	if contentHeight < 1 {
+		contentHeight = 1
+	}
+	if h := lipgloss.Height(content); h < contentHeight {
+		contentHeight = h
+	}
+	if contentHeight < 1 {
+		contentHeight = 1
+	}
+
+	m.overlayViewport.Width = contentWidth
+	m.overlayViewport.Height = contentHeight
+	m.overlayViewport.SetContent(content)
+
+	if focusedLine >= 0 && (m.overlayMode != m.mode || m.overlayFocus != focusedLine) {
+		// Keep a row of context above and, where possible, two below for a
+		// nearby field hint. SetYOffset clamps against the current content.
+		offset := m.overlayViewport.YOffset
+		if focusedLine < offset+1 {
+			offset = focusedLine - 1
+		} else if focusedLine+2 >= offset+contentHeight {
+			offset = focusedLine + 3 - contentHeight
+		}
+		m.overlayViewport.SetYOffset(offset)
+	}
+	m.overlayMode = m.mode
+	m.overlayFocus = focusedLine
+
+	body := m.overlayViewport.View()
+	if footerHeight > 0 {
+		body += strings.Repeat("\n", separatorHeight)
+		body += lipgloss.NewStyle().
+			MaxWidth(contentWidth).
+			MaxHeight(footerHeight).
+			Render(footer)
+	}
+	box := overlayBox.Render(body)
+	placed := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	return lipgloss.NewStyle().MaxWidth(m.width).MaxHeight(m.height).Render(placed)
+}
+
 func (m *Model) View() string {
 	if m.width == 0 {
 		return "starting…"
@@ -72,6 +236,8 @@ func (m *Model) View() string {
 
 	var body string
 	var hits []linkHit
+	var detailHits []linkHit
+	var detailX, detailY int
 	// Below this width a side-by-side list+detail split leaves too little
 	// room for either panel (common on phone-sized SSH clients), so stack
 	// them instead.
@@ -95,7 +261,11 @@ func (m *Model) View() string {
 			var listContent string
 			listContent, hits = m.renderList(panelW-2, listH)
 			top := panelBorder.Width(panelW).Height(listH).Render(listContent)
-			bottom := panelBorder.Width(panelW).Height(detailH).Render(m.renderDetail(panelW-2, detailH))
+			var detailContent string
+			detailContent, detailHits = m.renderDetail(panelW-2, detailH)
+			bottom := panelBorder.Width(panelW).Height(detailH).Render(detailContent)
+			detailX = panelBorder.GetBorderLeftSize() + panelBorder.GetPaddingLeft()
+			detailY = lipgloss.Height(header) + lipgloss.Height(top) + panelBorder.GetBorderTopSize()
 			body = lipgloss.JoinVertical(lipgloss.Left, top, bottom)
 		}
 	} else {
@@ -114,11 +284,15 @@ func (m *Model) View() string {
 		var listContent string
 		listContent, hits = m.renderList(listW-2, bodyHeight-2)
 		left := panelBorder.Width(listW).Height(bodyHeight).Render(listContent)
-		right := panelBorder.Width(detailW).Height(bodyHeight).Render(m.renderDetail(detailW-2, bodyHeight-2))
+		var detailContent string
+		detailContent, detailHits = m.renderDetail(detailW-2, bodyHeight-2)
+		right := panelBorder.Width(detailW).Height(bodyHeight).Render(detailContent)
+		detailX = lipgloss.Width(left) + panelBorder.GetBorderLeftSize() + panelBorder.GetPaddingLeft()
+		detailY = lipgloss.Height(header) + panelBorder.GetBorderTopSize()
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 	}
 
-	m.updateLinkHits(header, hits)
+	m.updateLinkHits(header, hits, detailHits, detailX, detailY)
 
 	base := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 	// Very small terminal sizes can be shorter than the fixed header and
@@ -128,31 +302,47 @@ func (m *Model) View() string {
 
 	switch m.mode {
 	case ModeNewForm:
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlayBox.Render(m.renderNewForm()))
+		content := m.compactOverlayContent(m.renderNewForm())
+		footer := m.formFooter(newFormFieldHints[m.newFormFocus], "tab/↑↓ fields  ←→ agent  enter  esc cancel")
+		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))
 	case ModeConfirmDelete:
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlayBox.Render(m.renderConfirm()))
+		return m.renderOverlay(m.renderConfirm(), "", -1)
 	case ModeNewProject:
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlayBox.Render(m.renderNewProject()))
+		content := m.compactOverlayContent(m.renderNewProject())
+		footer := m.formFooter(projFormFieldHints[m.projForm.focus], "tab/↑↓  ←→ choose  enter save  esc cancel")
+		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))
 	case ModeConfirmDeleteProject:
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlayBox.Render(m.renderConfirmDeleteProject()))
+		return m.renderOverlay(m.renderConfirmDeleteProject(), "", -1)
 	case ModeProjectInitChoice:
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlayBox.Render(m.renderProjectInitChoice()))
+		return m.renderOverlay(m.renderProjectInitChoice(), "", -1)
 	case ModeTagForm:
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlayBox.Render(m.renderTagForm()))
+		content := m.compactOverlayContent(m.renderTagForm())
+		footer := m.formFooter(tagFormFieldHints[m.tagForm.focus], "tab/↑↓ fields  enter save  esc cancel")
+		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))
 	case ModeHelp:
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlayBox.Render(m.renderHelp()))
+		return m.renderOverlay(m.renderHelp(), m.helpFooter(), -1)
 	case ModeEditSession:
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlayBox.Render(m.renderEditSession()))
+		content := m.compactOverlayContent(m.renderEditSession())
+		footer := m.formFooter(
+			"agent used the next time this session's tmux process is created",
+			"←→ agent  enter save  esc cancel",
+		)
+		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))
 	case ModeEditProject:
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlayBox.Render(m.renderEditProject()))
+		content := m.compactOverlayContent(m.renderEditProject())
+		footer := m.formFooter(editProjectFieldHints[m.projForm.focus], "tab/↑↓  ←→ change  enter save  esc cancel")
+		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))
 	}
 	return base
 }
 
 func (m *Model) renderHeader() string {
 	cow := cowStyle.Render("  ^__^\n  (oo)\\_\n  (__)\\ )")
-	wordmark := titleStyle.Render("moomux")
-	left := lipgloss.JoinHorizontal(lipgloss.Center, cow, "  ", wordmark)
+	left := cow
+	if m.width >= narrowWidthBreak {
+		wordmark := titleStyle.Render("moomux")
+		left = lipgloss.JoinHorizontal(lipgloss.Center, cow, "  ", wordmark)
+	}
 
 	counts := map[string]int{}
 	for _, s := range m.backend.Sessions() {
@@ -160,24 +350,44 @@ func (m *Model) renderHeader() string {
 			counts[s.Project]++
 		}
 	}
-	tabs := []string{}
-	for i, p := range m.projects {
+
+	projectLabel := func(i int) string {
+		p := m.projects[i]
 		label := p
 		if n := counts[p]; n > 0 {
 			label = p + superscript(n)
 		}
-		if i == m.activeProj {
-			tabs = append(tabs, tabActive.Render(label))
-		} else {
-			tabs = append(tabs, tabInactive.Render(label))
-		}
+		return label
 	}
-	right := strings.Join(tabs, " ")
 
 	remaining := m.width - 2 - lipgloss.Width(left)
-	if remaining < lipgloss.Width(right) {
-		remaining = lipgloss.Width(right)
+	if remaining < 0 {
+		remaining = 0
 	}
+
+	var right string
+	if m.width < narrowWidthBreak {
+		if len(m.projects) > 0 && m.activeProj < len(m.projects) && remaining > 2 {
+			// tabActive contributes one padding cell on each side.
+			label := truncateToWidth(projectLabel(m.activeProj), remaining-2)
+			right = tabActive.Render(label)
+		}
+	} else {
+		tabs := make([]string, 0, len(m.projects))
+		for i := range m.projects {
+			label := projectLabel(i)
+			if i == m.activeProj {
+				tabs = append(tabs, tabActive.Render(label))
+			} else {
+				tabs = append(tabs, tabInactive.Render(label))
+			}
+		}
+		right = strings.Join(tabs, " ")
+		if remaining < lipgloss.Width(right) {
+			remaining = lipgloss.Width(right)
+		}
+	}
+
 	rightCol := lipgloss.NewStyle().Width(remaining).Align(lipgloss.Right).Render(right)
 	row := lipgloss.JoinHorizontal(lipgloss.Center, left, rightCol)
 	return lipgloss.NewStyle().Padding(0, 1).Render(row)

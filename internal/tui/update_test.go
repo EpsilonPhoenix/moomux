@@ -686,6 +686,19 @@ func TestWindowSizeMsg(t *testing.T) {
 	}
 }
 
+func TestWindowSizePreservesTextInputCursor(t *testing.T) {
+	m := newTestModel(&fakeBackend{})
+	m.mode = ModeNewForm
+	m.nameInput.SetValue("abcdef")
+	m.nameInput.SetCursor(2)
+
+	m.Update(tea.WindowSizeMsg{Width: 50, Height: 12})
+
+	if got := m.nameInput.Position(); got != 2 {
+		t.Fatalf("cursor position after resize = %d, want 2", got)
+	}
+}
+
 func TestStatusMessages(t *testing.T) {
 	be := &fakeBackend{sessions: []session.Session{{ID: "demo:a", Project: "demo", Name: "a", WorktreePath: "/wt/a"}}}
 	m := newTestModel(be)

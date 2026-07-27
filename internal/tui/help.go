@@ -75,13 +75,19 @@ func (m *Model) helpGroups() []helpGroup {
 
 // renderHelp renders the command reference shown behind the ModeHelp overlay.
 // Groups are laid out two per row so the panel stays compact on typical
-// terminals rather than scrolling off the bottom.
+// terminals rather than scrolling off the bottom; on narrow terminals they
+// stack one per row instead so the overlay never exceeds the screen width.
 func (m *Model) renderHelp() string {
 	groups := m.helpGroups()
 
-	// Render each group into its own fixed-width column so the two-up rows
-	// line up regardless of how long any single description is.
-	const colWidth = 34
+	// Keep two columns when each has enough room to remain readable; otherwise
+	// use the entire available width for one wrapping column.
+	avail := m.overlayWidth(formHintWidth)
+	perRow := 2
+	if avail < 56 {
+		perRow = 1
+	}
+	colWidth := avail / perRow
 	cols := make([]string, len(groups))
 	for i, g := range groups {
 		var b strings.Builder
@@ -96,24 +102,30 @@ func (m *Model) renderHelp() string {
 		for _, e := range g.entries {
 			key := helpKeyStyle.Render(e.key)
 			pad := strings.Repeat(" ", keyW-lipgloss.Width(e.key))
-			b.WriteString("  " + key + pad + "  " + helpDescStyle.Render(e.desc) + "\n")
+			prefix := "  " + key + pad + "  "
+			descWidth := colWidth - lipgloss.Width(prefix)
+			if descWidth < 8 {
+				descWidth = 8
+			}
+			desc := helpDescStyle.Width(descWidth).Render(e.desc)
+			b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, prefix, desc) + "\n")
 		}
 		cols[i] = lipgloss.NewStyle().Width(colWidth).Render(b.String())
 	}
 
 	var rows []string
-	for i := 0; i < len(cols); i += 2 {
+	for i := 0; i < len(cols); i += perRow {
 		if len(rows) > 0 {
 			rows = append(rows, "") // blank line between group-pairs, not after the last
 		}
-		if i+1 < len(cols) {
+		if perRow == 2 && i+1 < len(cols) {
 			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, cols[i], cols[i+1]))
 		} else {
 			rows = append(rows, cols[i])
 		}
 	}
 
-	tableWidth := colWidth * 2
+	tableWidth := colWidth * perRow
 	if len(groups) == 1 {
 		tableWidth = colWidth
 	}
@@ -126,7 +138,5 @@ func (m *Model) renderHelp() string {
 	b.WriteString(hintStyle.Width(tableWidth).Render(
 		"tip: add mouse/passthrough settings to ~/.tmux.conf for the best experience — see the README's \"Recommended tmux config\"",
 	))
-	b.WriteString("\n\n")
-	b.WriteString(muteStyle.Render("?/esc to close"))
 	return b.String()
 }
