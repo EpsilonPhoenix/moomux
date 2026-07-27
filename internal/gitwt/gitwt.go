@@ -148,20 +148,24 @@ func (c *Client) AddWorktreeExisting(repoDir, worktreePath, branch string) error
 
 func (c *Client) RemoveWorktree(repoDir, worktreePath string) error {
 	_, err := c.Runner.Run(repoDir, "worktree", "remove", worktreePath, "--force")
-	if _, statErr := os.Stat(worktreePath); statErr == nil {
-		// git reported the worktree gone (or failed) but left the directory on
-		// disk — seen in practice even on a clean --force removal. Finish the
-		// job ourselves rather than leaving an orphaned checkout behind.
-		if rmErr := os.RemoveAll(worktreePath); rmErr != nil {
-			if err == nil {
-				err = rmErr
-			}
-			return err
-		}
+	if _, statErr := os.Stat(worktreePath); statErr != nil {
+		// The checkout is already gone (e.g. another session removed it).
+		// Nothing left to remove — drop any stale registration and succeed
+		// instead of failing on a worktree that no longer exists.
 		_, _ = c.Runner.Run(repoDir, "worktree", "prune")
 		return nil
 	}
-	return err
+	// git reported the worktree gone (or failed) but left the directory on
+	// disk — seen in practice even on a clean --force removal. Finish the
+	// job ourselves rather than leaving an orphaned checkout behind.
+	if rmErr := os.RemoveAll(worktreePath); rmErr != nil {
+		if err == nil {
+			err = rmErr
+		}
+		return err
+	}
+	_, _ = c.Runner.Run(repoDir, "worktree", "prune")
+	return nil
 }
 
 // DeleteBranch force-deletes a local branch, e.g. after its worktree has been
