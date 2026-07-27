@@ -872,6 +872,37 @@ func TestDeleteSessionWorktree(t *testing.T) {
 	}
 }
 
+// A worktree another session already deleted must not block this delete.
+func TestDeleteSessionMissingWorktree(t *testing.T) {
+	a, git, _, _ := newTestApp(t, gitProject("/repo"))
+	wt := filepath.Join(a.WorktreeRoot, "demo", "feat") // gone from disk and from git
+	git.failOn["worktree remove "+wt+" --force"] = true
+	_ = a.Store.Put(session.Session{
+		ID: "demo:feat", Project: "demo", Name: "feat", Branch: "feat", NewBranch: true,
+		TmuxSession: "moomux-feat", WorktreePath: wt,
+	})
+
+	if err := a.DeleteSession("demo:feat"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := a.Store.Get("demo:feat"); ok {
+		t.Fatal("session still in store")
+	}
+}
+
+func TestCreateSessionDuplicateName(t *testing.T) {
+	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	tm.out["list-panes -t moomux-feat -F #{pane_id}"] = "%0\n"
+	noBranch(git, "feat")
+	if _, _, err := a.CreateSession("demo", "feat", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := a.CreateSession("demo", "feat", "", "", "")
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestDeleteSessionKeepsUserBranch(t *testing.T) {
 	a, git, _, _ := newTestApp(t, gitProject("/repo"))
 	wt := filepath.Join(a.WorktreeRoot, "demo", "feat")

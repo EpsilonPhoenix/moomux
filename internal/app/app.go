@@ -159,6 +159,11 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 	if agent == "" {
 		agent = proj.AgentName()
 	}
+	if _, exists := a.Store.Get(session.MakeID(project, name)); exists {
+		// Same name means the same worktree path — creating it again would
+		// hijack the existing session's checkout.
+		return session.Session{}, "", fmt.Errorf("session %q already exists in project %q", name, project)
+	}
 	var wt string
 	tmuxName := "moomux-" + name
 	branch := ""
