@@ -34,6 +34,32 @@ It's a regular tmux window, so regular tmux pane controls apply — mouse click/
 
 These are plain tmux, not a moomux feature — see `man tmux` for the full list.
 
+### Remote and mobile use
+
+For a phone-first setup—including Mosh, durable tmux sessions, mobile
+approvals, notifications, voice prompting, and diff review—see
+[Moshi with Claude Code](https://getmoshi.app/guides/claude-code).
+
+Over SSH or Mosh, moomux may show an attach command instead of opening a new
+terminal itself:
+
+```bash
+tmux attach -t moomux-<session>
+```
+
+On a narrow phone display, focus the agent pane and zoom it:
+
+1. Press `Ctrl-b`, then `←` to select the agent pane on the left.
+2. Press `Ctrl-b`, then `z` to make it fill the screen.
+3. Press `Ctrl-b`, then `z` again to restore the agent + shell split.
+
+`Ctrl-b o` cycles between panes, and `Ctrl-b d` detaches without stopping the
+agent. Run `tmux ls` to find running session names before attaching again.
+
+Tmux pane layout and zoom state belong to the shared window, not to an
+individual client. If a phone and desktop are attached to the same session,
+zooming or resizing from either device can affect what the other displays.
+
 ## Recommended tmux config
 
 moomux launches plain tmux sessions, so tmux settings come from your own config. The first time you run `moomux`, it offers to add the block below to `~/.tmux.conf` for you (only asked once — say no and it won't ask again). To add it yourself instead:
