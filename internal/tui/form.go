@@ -46,9 +46,9 @@ func clampInputWidth(desired, avail int) int {
 
 func textInputWidth(ti *textinput.Model, desired, avail int) int {
 	// textinput.Width does not include its prompt ("> " by default), so
-	// reserve those cells explicitly or the right edge of the value will be
-	// clipped by the surrounding overlay viewport.
-	return clampInputWidth(desired, avail-lipgloss.Width(ti.Prompt))
+	// reserve those cells explicitly. Its View also renders a cursor cell
+	// after short values, which must fit without clipping the dialog border.
+	return clampInputWidth(desired, avail-lipgloss.Width(ti.Prompt)-1)
 }
 
 // setInputWidth sets a text input's Width and re-runs its overflow
@@ -162,7 +162,27 @@ func (m *Model) renderNewFormAgentSelector() string {
 			b.WriteString(muteStyle.Render(a))
 		}
 	}
-	return b.String()
+	rendered := b.String()
+	available := m.overlayWidth(formHintWidth) - lipgloss.Width("agent:  ")
+	if lipgloss.Width(rendered) > available {
+		return renderCompactAgentSelector(agentChoices[m.newFormAgentIdx], true, available)
+	}
+	return rendered
+}
+
+func renderCompactAgentSelector(agent string, focused bool, available int) string {
+	selected := lipgloss.NewStyle().Bold(true)
+	if focused {
+		selected = titleStyle
+	}
+	label := "[" + agent + "]"
+	if available < lipgloss.Width(label) {
+		return selected.Render(truncateToWidth(label, available))
+	}
+	if available >= lipgloss.Width(label)+4 {
+		return muteStyle.Render("‹ ") + selected.Render(label) + muteStyle.Render(" ›")
+	}
+	return selected.Render(label)
 }
 
 func (m *Model) renderEditSession() string {
@@ -176,6 +196,12 @@ func (m *Model) renderEditSession() string {
 	b.WriteString(m.sessionForm.name)
 	b.WriteString("\n\n")
 	b.WriteString(muteStyle.Render("agent:  "))
+	b.WriteString(m.renderSessionAgentSelector())
+	return b.String()
+}
+
+func (m *Model) renderSessionAgentSelector() string {
+	var b strings.Builder
 	for i, agent := range agentChoices {
 		if i > 0 {
 			b.WriteString("  ")
@@ -186,11 +212,12 @@ func (m *Model) renderEditSession() string {
 			b.WriteString(muteStyle.Render(agent))
 		}
 	}
-	if m.sessionForm.err != "" {
-		b.WriteString("\n\n")
-		b.WriteString(dangerStyle.Render(m.sessionForm.err))
+	rendered := b.String()
+	available := m.overlayWidth(formHintWidth) - lipgloss.Width("agent:  ")
+	if lipgloss.Width(rendered) > available {
+		return renderCompactAgentSelector(agentChoices[m.sessionForm.agentIdx], true, available)
 	}
-	return b.String()
+	return rendered
 }
 
 // projFormFieldHints gives a one-line explanation for whichever field of the
@@ -231,10 +258,6 @@ func (m *Model) renderNewProject() string {
 	b.WriteString(m.renderFormLabel("worktrees", 15))
 	b.WriteString(m.renderWorktreeToggle())
 	b.WriteString("\n\n")
-	if m.projForm.err != "" {
-		b.WriteString(dangerStyle.Render(m.projForm.err))
-		b.WriteString("\n")
-	}
 	return b.String()
 }
 
@@ -264,11 +287,6 @@ func (m *Model) renderEditProject() string {
 	if !project.IsPlain() {
 		b.WriteString(m.renderFormLabel("worktrees", 15))
 		b.WriteString(m.renderWorktreeToggle())
-		b.WriteString("\n")
-	}
-	if m.projForm.err != "" {
-		b.WriteString("\n")
-		b.WriteString(dangerStyle.Render(m.projForm.err))
 		b.WriteString("\n")
 	}
 	return b.String()
@@ -304,7 +322,12 @@ func (m *Model) renderAgentSelector() string {
 			b.WriteString(muteStyle.Render(a))
 		}
 	}
-	return b.String()
+	rendered := b.String()
+	available := m.overlayWidth(formHintWidth) - m.formLabelWidth("agent", 15)
+	if lipgloss.Width(rendered) > available {
+		return renderCompactAgentSelector(agentChoices[m.projForm.agentIdx], focused, available)
+	}
+	return rendered
 }
 
 // tagFormFieldHints gives a one-line explanation for whichever field of the

@@ -335,9 +335,13 @@ func TestEditProjectCancelAndError(t *testing.T) {
 	}
 
 	m.Update(keyRune("E"))
+	m.Update(tea.WindowSizeMsg{Width: 50, Height: 12})
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.mode != ModeEditProject || !strings.Contains(m.projForm.err, "not a git repo") {
 		t.Fatalf("mode=%v err=%q", m.mode, m.projForm.err)
+	}
+	if view := m.View(); !strings.Contains(view, "not a git repo") {
+		t.Fatalf("keyboard-sized project editor hides save error:\n%s", view)
 	}
 }
 
