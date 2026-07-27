@@ -83,14 +83,22 @@ func lastLines(s string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (m *Model) formFooter(hint, controls string) string {
+func (m *Model) formFooter(hint, controls, errText string) string {
 	if m.overlayWidth(formHintWidth) < 28 {
 		// Put escape first when there is not enough width for descriptive
 		// controls so the essential way out is never the truncated portion.
 		controls = "esc  tab/↑↓  enter"
 	}
 	hint = strings.TrimRight(m.renderFormHint(hint), "\n")
-	return hint + "\n" + muteStyle.Render(controls)
+	var rows []string
+	if hint != "" {
+		rows = append(rows, hint)
+	}
+	if errText != "" {
+		rows = append(rows, dangerStyle.Render(errText))
+	}
+	rows = append(rows, muteStyle.Render(controls))
+	return strings.Join(rows, "\n")
 }
 
 func (m *Model) helpFooter() string {
@@ -193,22 +201,23 @@ func (m *Model) renderOverlay(content, footer string, focusedLine int) string {
 	m.overlayViewport.SetContent(content)
 
 	if focusedLine >= 0 && (m.overlayMode != m.mode || m.overlayFocus != focusedLine) {
-		// Keep a row of context above and, where possible, two below for a
-		// nearby field hint. SetYOffset clamps against the current content.
-		offset := m.overlayViewport.YOffset
-		if focusedLine < offset+1 {
-			offset = focusedLine - 1
-		} else if focusedLine+2 >= offset+contentHeight {
-			offset = focusedLine + 3 - contentHeight
+		// Keep the focused row visible at every height. Reserve one row above
+		// it only when the viewport is tall enough; margins must never move
+		// the focus itself outside a one- or two-row viewport.
+		contextAbove := 0
+		if contentHeight >= 3 {
+			contextAbove = 1
 		}
-		m.overlayViewport.SetYOffset(offset)
+		m.overlayViewport.SetYOffset(focusedLine - contextAbove)
 	}
 	m.overlayMode = m.mode
 	m.overlayFocus = focusedLine
 
 	body := m.overlayViewport.View()
 	if footerHeight > 0 {
-		body += strings.Repeat("\n", separatorHeight)
+		// One newline joins the viewport and footer as adjacent rows; any
+		// separator height represents additional blank rows between them.
+		body += strings.Repeat("\n", separatorHeight+1)
 		body += lipgloss.NewStyle().
 			MaxWidth(contentWidth).
 			MaxHeight(footerHeight).
@@ -303,13 +312,13 @@ func (m *Model) View() string {
 	switch m.mode {
 	case ModeNewForm:
 		content := m.compactOverlayContent(m.renderNewForm())
-		footer := m.formFooter(newFormFieldHints[m.newFormFocus], "tab/↑↓ fields  ←→ agent  enter  esc cancel")
+		footer := m.formFooter(newFormFieldHints[m.newFormFocus], "tab/↑↓ fields  ←→ agent  enter  esc cancel", "")
 		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))
 	case ModeConfirmDelete:
 		return m.renderOverlay(m.renderConfirm(), "", -1)
 	case ModeNewProject:
 		content := m.compactOverlayContent(m.renderNewProject())
-		footer := m.formFooter(projFormFieldHints[m.projForm.focus], "tab/↑↓  ←→ choose  enter save  esc cancel")
+		footer := m.formFooter(projFormFieldHints[m.projForm.focus], "tab/↑↓  ←→ choose  enter save  esc cancel", m.projForm.err)
 		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))
 	case ModeConfirmDeleteProject:
 		return m.renderOverlay(m.renderConfirmDeleteProject(), "", -1)
@@ -317,7 +326,7 @@ func (m *Model) View() string {
 		return m.renderOverlay(m.renderProjectInitChoice(), "", -1)
 	case ModeTagForm:
 		content := m.compactOverlayContent(m.renderTagForm())
-		footer := m.formFooter(tagFormFieldHints[m.tagForm.focus], "tab/↑↓ fields  enter save  esc cancel")
+		footer := m.formFooter(tagFormFieldHints[m.tagForm.focus], "tab/↑↓ fields  enter save  esc cancel", "")
 		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))
 	case ModeHelp:
 		return m.renderOverlay(m.renderHelp(), m.helpFooter(), -1)
@@ -326,11 +335,12 @@ func (m *Model) View() string {
 		footer := m.formFooter(
 			"agent used the next time this session's tmux process is created",
 			"←→ agent  enter save  esc cancel",
+			m.sessionForm.err,
 		)
 		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))
 	case ModeEditProject:
 		content := m.compactOverlayContent(m.renderEditProject())
-		footer := m.formFooter(editProjectFieldHints[m.projForm.focus], "tab/↑↓  ←→ change  enter save  esc cancel")
+		footer := m.formFooter(editProjectFieldHints[m.projForm.focus], "tab/↑↓  ←→ change  enter save  esc cancel", m.projForm.err)
 		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))
 	}
 	return base

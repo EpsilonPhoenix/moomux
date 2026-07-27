@@ -249,3 +249,25 @@ func TestTruncatedDetailURLsRemainClickable(t *testing.T) {
 	assertLink("issues/12345", ticketURL)
 	assertLink("pull/67890", prURL)
 }
+
+func TestClippedDetailURLsDoNotLeaveClickTargets(t *testing.T) {
+	m := newTestModel(&fakeBackend{sessions: []session.Session{
+		{
+			ID:      "demo:one",
+			Project: "demo",
+			Name:    "one",
+			Ticket:  "https://tickets.example/123",
+			PR:      "https://github.com/example/repo/pull/456",
+		},
+	}})
+
+	_, clippedHits := m.renderDetail(36, 5)
+	if len(clippedHits) != 0 {
+		t.Fatalf("clipped detail returned link hits: %+v", clippedHits)
+	}
+
+	_, visibleHits := m.renderDetail(36, 10)
+	if len(visibleHits) != 2 {
+		t.Fatalf("visible detail returned %d link hits, want 2: %+v", len(visibleHits), visibleHits)
+	}
+}

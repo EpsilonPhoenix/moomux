@@ -33,13 +33,19 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 		line := strings.Count(b.String(), "\n")
 		key := muteStyle.Render(fmt.Sprintf("%-10s", k+":"))
 		if url != "" {
-			hits = append(hits, linkHit{
-				sessionID: s.ID,
-				url:       url,
-				line:      line,
-				col0:      lipgloss.Width(key) + 1,
-				col1:      lipgloss.Width(key) + 1 + lipgloss.Width(v),
-			})
+			col0 := lipgloss.Width(key) + 1
+			col1 := min(width, col0+lipgloss.Width(v))
+			// MaxHeight/MaxWidth below clips the rendered detail. Do not leave
+			// invisible link targets behind in footer or border coordinates.
+			if line < height && col0 < col1 {
+				hits = append(hits, linkHit{
+					sessionID: s.ID,
+					url:       url,
+					line:      line,
+					col0:      col0,
+					col1:      col1,
+				})
+			}
 			v = detailLinkStyle.Render(v)
 		}
 		b.WriteString(fmt.Sprintf("%s %s\n", key, v))

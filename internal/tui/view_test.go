@@ -122,6 +122,49 @@ func TestNarrowProjectEditKeepsEndOfRepoInput(t *testing.T) {
 	if !strings.Contains(view, "XYZ") {
 		t.Fatalf("project editor does not show the end of the repo input:\n%s", view)
 	}
+	if !strings.Contains(view, "repo:") {
+		t.Fatalf("project editor scrolled past the focused repo row:\n%s", view)
+	}
+	if !strings.Contains(view, "╮") || !strings.Contains(view, "╯") {
+		t.Fatalf("narrow project editor clipped its right border:\n%s", view)
+	}
+}
+
+func TestNarrowProjectEditShortRepoPreservesFrame(t *testing.T) {
+	m := layoutTestModel(1)
+	m.width, m.height = 24, 12
+	project := m.cfg.Projects["demo"]
+	project.Repo = "/tmp/demo"
+	m.editProjectName = "demo"
+	m.projForm = editProjectForm("demo", project)
+	m.mode = ModeEditProject
+	m.resizeFormInputs()
+
+	view := m.View()
+
+	if !strings.Contains(view, "╮") || !strings.Contains(view, "╯") {
+		t.Fatalf("short repo input clipped the narrow dialog frame:\n%s", view)
+	}
+}
+
+func TestNarrowEditSessionShowsCompactSelectedAgent(t *testing.T) {
+	m := layoutTestModel(1)
+	m.width, m.height = 24, 12
+	m.mode = ModeEditSession
+	m.sessionForm = sessionForm{
+		project:  "demo",
+		name:     "session",
+		agentIdx: 2,
+	}
+
+	view := m.View()
+
+	if !strings.Contains(view, "[opencode]") {
+		t.Fatalf("narrow session editor does not show selected agent:\n%s", view)
+	}
+	if !strings.Contains(view, "╮") || !strings.Contains(view, "╯") {
+		t.Fatalf("narrow session editor clipped its right border:\n%s", view)
+	}
 }
 
 func TestNarrowTallLayoutShowsStackedDetail(t *testing.T) {
