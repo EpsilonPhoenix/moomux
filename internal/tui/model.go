@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/erickgnclvs/moomux/internal/browser"
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/prompt"
 	"github.com/erickgnclvs/moomux/internal/session"
@@ -141,6 +142,14 @@ type Model struct {
 	flashKind       string // "info" or "error"
 	flashTime       time.Time
 	busy            bool // true while a background op (e.g. session create) is in flight; suppresses flash expiry
+	// forceCopyLinks overrides browser.Remote()'s auto-detection, forcing
+	// ticket/PR clicks to copy instead of open. Auto-detection has no
+	// signal at all for transports like mosh that don't set SSH_TTY/
+	// SSH_CONNECTION/SSH_CLIENT, so this lets a user force the behavior
+	// from inside the running session instead of needing shell/env access
+	// on the host. Toggled with R; there's no "force open" counterpart —
+	// if auto-detection isn't already saying remote, links just open.
+	forceCopyLinks bool
 
 	width, height int
 
@@ -194,6 +203,13 @@ func (m *Model) updateLinkHits(header string, listHits, detailHits []linkHit, de
 	listY := lipgloss.Height(header) + panelBorder.GetBorderTopSize()
 	appendHits(listHits, listX, listY)
 	appendHits(detailHits, detailX, detailY)
+}
+
+// isRemote decides whether a ticket/PR icon click should copy the URL
+// (true) or open it in a browser (false), honoring the user's R toggle
+// before falling back to browser.Remote()'s SSH auto-detection.
+func (m *Model) isRemote() bool {
+	return m.forceCopyLinks || browser.Remote()
 }
 
 // linkAt returns the URL of the ticket/PR icon at absolute terminal

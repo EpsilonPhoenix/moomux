@@ -242,6 +242,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 			if url := m.linkAt(msg.X, msg.Y); url != "" {
+				if m.isRemote() {
+					// Over SSH, `open` launches a browser on the remote
+					// machine, not the phone/laptop the user is actually
+					// looking at — and moomux's mouse tracking means the
+					// terminal never gets a chance to handle the tap as a
+					// link itself. Copy the URL instead: OSC 52 isn't tied
+					// to mouse mode, so it reaches the client's clipboard
+					// regardless.
+					//
+					// This runs synchronously (not as a tea.Cmd) because a
+					// Cmd executes in its own goroutine, concurrently with
+					// bubbletea's render loop — both writing to os.Stdout at
+					// once can interleave and corrupt the escape sequence
+					// before the terminal ever sees a well-formed one.
+					if err := browser.Copy(url); err != nil {
+						m.setError(err)
+						return m, nil
+					}
+					m.setFlash("info", "copied "+url)
+					return m, nil
+				}
 				return m, func() tea.Msg {
 					if err := browser.Open(url); err != nil {
 						return ErrorMsg{Err: err}
@@ -371,6 +392,14 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Refresh):
 		m.refreshSessions()
 		return m, refreshStatusCmd(m)
+	case key.Matches(msg, m.keys.RemoteLinks):
+		m.forceCopyLinks = !m.forceCopyLinks
+		state := "auto"
+		if m.forceCopyLinks {
+			state = "forced on"
+		}
+		m.setFlash("info", "ticket/PR links copy instead of open: "+state)
+		return m, nil
 	case key.Matches(msg, m.keys.Kill):
 		if len(m.sessions) > 0 {
 			id := m.sessions[m.cursor].ID

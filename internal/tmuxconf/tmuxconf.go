@@ -27,6 +27,12 @@ set -as terminal-features 'xterm*:extkeys'
 # Enable native mouse scrolling and selection
 set -g mouse on
 
+# Without this, tmux swallows OSC 52 clipboard writes from programs in its
+# panes instead of forwarding them to your terminal, so copy-to-clipboard
+# silently does nothing when you're attached over SSH or mosh (mosh isn't
+# auto-detected — press R in moomux to force copy mode there)
+set -g set-clipboard on
+
 # Increase scrollback history for Claude's massive code generations
 set -g history-limit 50000
 

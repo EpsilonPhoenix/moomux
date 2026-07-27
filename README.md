@@ -47,6 +47,12 @@ set -as terminal-features 'xterm*:extkeys'
 # Enable native mouse scrolling and selection
 set -g mouse on
 
+# Without this, tmux swallows OSC 52 clipboard writes from programs in its
+# panes instead of forwarding them to your terminal, so copy-to-clipboard
+# silently does nothing when you're attached over SSH or mosh (mosh isn't
+# auto-detected — press R in moomux to force copy mode there)
+set -g set-clipboard on
+
 # Increase scrollback history for Claude's massive code generations
 set -g history-limit 50000
 
@@ -56,6 +62,17 @@ set -g pane-base-index 1
 ```
 
 Reload it in any running tmux session without restarting: press `Ctrl-b` then `:`, type `source-file ~/.tmux.conf`, and hit enter. Or from a shell: `tmux source-file ~/.tmux.conf`.
+
+If moomux already added its block to your `~/.tmux.conf` before `set -g set-clipboard on` existed, it won't be re-offered (moomux only checks that the block is present, not that it's current) — add that line yourself and reload as above.
+
+## Clicking ticket/PR links
+
+Each session can be tagged with a ticket and/or PR link (`t`), shown as icons in the session list and as a row in the detail panel. Clicking either:
+
+- **Locally** — opens the link in your default browser, as you'd expect.
+- **Over SSH** — copies the link to your clipboard (via the OSC 52 escape sequence above) instead of opening it, since `open`/`xdg-open` would launch a browser on the remote machine rather than the one you're actually looking at.
+
+SSH is auto-detected. Other transports (e.g. mosh) don't set anything moomux can detect, so press `R` to force copy mode on (or back off, toggling) — the current state is shown in the `?` help overlay.
 
 ## Demo
 

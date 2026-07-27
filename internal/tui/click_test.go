@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/erickgnclvs/moomux/internal/config"
@@ -269,5 +270,69 @@ func TestClippedDetailURLsDoNotLeaveClickTargets(t *testing.T) {
 	_, visibleHits := m.renderDetail(36, 10)
 	if len(visibleHits) != 2 {
 		t.Fatalf("visible detail returned %d link hits, want 2: %+v", len(visibleHits), visibleHits)
+	}
+}
+
+// TestLinkClickOverSSHCopiesInsteadOfOpening asserts that clicking a
+// ticket/PR icon while browser.Remote() is true copies the URL to the
+// clipboard (via OSC 52) instead of shelling out to `open` — since `open`
+// would launch a browser on the remote machine rather than the user's own,
+// and moomux's mouse tracking means the terminal never gets a chance to
+// handle the tap as a link itself. The copy happens synchronously inside
+// Update() rather than via a returned tea.Cmd: a Cmd runs in its own
+// goroutine concurrently with bubbletea's render loop, and both writing to
+// os.Stdout at once can interleave and corrupt the OSC 52 escape sequence
+// before the terminal ever sees a well-formed one.
+func TestLinkClickOverSSHCopiesInsteadOfOpening(t *testing.T) {
+	t.Setenv("SSH_TTY", "/dev/ttys001")
+
+	cfg := &config.Config{Projects: map[string]config.Project{"demo": {Repo: "/tmp/demo"}}}
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "demo:one", Project: "demo", Name: "one", Ticket: "https://ticket.example/1"},
+	}}
+	statusCh := make(chan watcher.Snapshot)
+	m := New(cfg, be, statusCh, func() {})
+	m.width, m.height = 80, 24
+	m.View() // populate m.linkHits
+
+	hit := m.linkHits[0]
+	updated, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: hit.x0, Y: hit.y})
+	m2 := updated.(*Model)
+
+	if cmd != nil {
+		t.Errorf("expected no async command for the copy path, got one")
+	}
+	if m2.flashKind != "info" || m2.flash != "copied "+be.sessions[0].Ticket {
+		t.Errorf("flash = (%q, %q), want (\"info\", %q)", m2.flashKind, m2.flash, "copied "+be.sessions[0].Ticket)
+	}
+}
+
+// TestRemoteLinksToggleOverridesAutoDetection covers the R toggle: since
+// transports like mosh set none of SSH_TTY/SSH_CONNECTION/SSH_CLIENT,
+// browser.Remote()'s auto-detection has no signal for them, so a user needs
+// to be able to force copy mode from inside the running session.
+func TestRemoteLinksToggleOverridesAutoDetection(t *testing.T) {
+	cfg := &config.Config{Projects: map[string]config.Project{"demo": {Repo: "/tmp/demo"}}}
+	be := &fakeBackend{}
+	statusCh := make(chan watcher.Snapshot)
+	m := New(cfg, be, statusCh, func() {})
+
+	// No SSH env set and not forced: isRemote() says false.
+	if m.isRemote() {
+		t.Errorf("with no SSH env and forceCopyLinks off: isRemote() = true, want false")
+	}
+
+	// Toggle on: forces isRemote() to true even with no SSH env.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")})
+	m = updated.(*Model)
+	if !m.forceCopyLinks || !m.isRemote() {
+		t.Errorf("after one R press: forceCopyLinks = %v, isRemote() = %v, want true/true", m.forceCopyLinks, m.isRemote())
+	}
+
+	// Toggle off again: falls back to auto-detection.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")})
+	m = updated.(*Model)
+	if m.forceCopyLinks || m.isRemote() {
+		t.Errorf("after two R presses: forceCopyLinks = %v, isRemote() = %v, want false/false", m.forceCopyLinks, m.isRemote())
 	}
 }
