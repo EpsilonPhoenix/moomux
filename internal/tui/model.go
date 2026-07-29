@@ -367,6 +367,22 @@ func editProjectForm(name string, p config.Project) projectForm {
 	return pf
 }
 
+// projectSessionCount returns how many sessions the active project has,
+// archived or not — a project can only be removed once it has none.
+func (m *Model) projectSessionCount() int {
+	if len(m.projects) == 0 {
+		return 0
+	}
+	proj := m.projects[m.activeProj]
+	n := 0
+	for _, s := range m.backend.Sessions() {
+		if s.Project == proj {
+			n++
+		}
+	}
+	return n
+}
+
 // archivedCount returns how many archived sessions the active project has.
 func (m *Model) archivedCount() int {
 	if len(m.projects) == 0 {

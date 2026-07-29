@@ -514,7 +514,7 @@ func (a *App) RemoveProject(name string) error {
 	}
 	for _, s := range a.Store.All() {
 		if s.Project == name {
-			return fmt.Errorf("project %q has active sessions — delete them first", name)
+			return fmt.Errorf("project %q still has sessions (incl. archived) — delete them first", name)
 		}
 	}
 	saved := a.Cfg.Projects[name]

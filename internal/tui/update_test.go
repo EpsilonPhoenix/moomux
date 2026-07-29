@@ -516,6 +516,20 @@ func TestConfirmDeleteProjectErrorFlashes(t *testing.T) {
 	}
 }
 
+func TestDeleteProjectWithSessionsIsBlocked(t *testing.T) {
+	for _, archived := range []bool{false, true} {
+		be := &fakeBackend{sessions: []session.Session{{ID: "demo:a", Project: "demo", Name: "a", Archived: archived}}}
+		m := newTestModel(be)
+		m.Update(keyRune("D"))
+		if m.mode != ModeList || m.flashKind != "error" || !strings.Contains(m.flash, "delete them first") {
+			t.Fatalf("archived=%v mode=%v flash=%q (%s)", archived, m.mode, m.flash, m.flashKind)
+		}
+		if len(be.removeProjectCalls) != 0 {
+			t.Fatalf("archived=%v removeProjectCalls = %v", archived, be.removeProjectCalls)
+		}
+	}
+}
+
 func TestDeleteProjectWithNoProjectsFlashesError(t *testing.T) {
 	cfg := &config.Config{Projects: map[string]config.Project{}}
 	be := &fakeBackend{}

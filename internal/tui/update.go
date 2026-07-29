@@ -497,6 +497,9 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.projects) == 0 {
 			return m.flashError(fmt.Errorf("no projects to remove"))
 		}
+		if n := m.projectSessionCount(); n > 0 {
+			return m.flashError(fmt.Errorf("%s has %d session(s) (incl. archived) — delete them first", m.projects[m.activeProj], n))
+		}
 		m.mode = ModeConfirmDeleteProject
 		return m, nil
 	case key.Matches(msg, m.keys.Open):
