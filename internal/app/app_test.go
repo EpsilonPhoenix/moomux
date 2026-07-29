@@ -828,8 +828,13 @@ func TestRemoveProject(t *testing.T) {
 		t.Fatal("unknown project must fail")
 	}
 	_ = a.Store.Put(session.Session{ID: "demo:a", Project: "demo", Name: "a"})
-	if err := a.RemoveProject("demo"); err == nil || !strings.Contains(err.Error(), "active sessions") {
+	if err := a.RemoveProject("demo"); err == nil || !strings.Contains(err.Error(), "still has sessions") {
 		t.Fatalf("err = %v", err)
+	}
+	// archived sessions block removal too
+	_ = a.Store.Put(session.Session{ID: "demo:a", Project: "demo", Name: "a", Archived: true})
+	if err := a.RemoveProject("demo"); err == nil || !strings.Contains(err.Error(), "still has sessions") {
+		t.Fatalf("archived err = %v", err)
 	}
 	_ = a.Store.Delete("demo:a")
 	if err := a.RemoveProject("demo"); err != nil {

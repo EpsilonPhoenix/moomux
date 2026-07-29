@@ -31,14 +31,18 @@ import (
 // whole word like "demo/Documents/foo" types into the focused input in one
 // step).
 var screens = map[string][]string{
-	"list":                   {},
-	"new-session":            {"n"},
-	"new-project":            {"P"},
-	"tag":                    {"t"},
-	"edit-session":           {"e"},
-	"edit-project":           {"E"},
-	"confirm-delete":         {"d"},
-	"confirm-delete-project": {"D"},
+	"list":           {},
+	"new-session":    {"n"},
+	"new-project":    {"P"},
+	"tag":            {"t"},
+	"edit-session":   {"e"},
+	"edit-project":   {"E"},
+	"confirm-delete": {"d"},
+	// "demo" has sample sessions, so D there flashes the blocked error; the
+	// confirm screen is only reachable on the sessionless "spare" project
+	// (tab switches to it).
+	"confirm-delete-project": {"tab", "D"},
+	"delete-project-blocked": {"D"},
 	"archived":               {"A"},
 	"help":                   {"?"},
 	// Submits the new-project form with a path under ~/Documents that isn't
@@ -185,6 +189,10 @@ func main() {
 		"demo": {
 			Kind: "git", Repo: "/tmp/demo", BaseBranch: "main",
 			BranchPrefix: "feature", Agent: "codex",
+		},
+		"spare": {
+			Kind: "git", Repo: "/tmp/spare", BaseBranch: "main",
+			BranchPrefix: "feature", Agent: "claude",
 		},
 	}}
 	sessions := sampleSessions()
