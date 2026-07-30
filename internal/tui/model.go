@@ -64,12 +64,17 @@ const (
 
 var agentChoices = []string{"claude", "codex", "opencode"}
 
+// askAgentIdx is a sentinel projectForm.agentIdx value, one past the real
+// agentChoices, selected as an extra "ask each time" entry in the project
+// agent selector — it maps to config.Project.PromptAgent instead of Agent.
+const askAgentIdx = -1
+
 const projFormInputCount = 4 // text inputs; focus==4 is the agent selector
 
 type projectForm struct {
 	inputs     []textinput.Model
 	focus      int
-	agentIdx   int // index into agentChoices
+	agentIdx   int // index into agentChoices, or askAgentIdx for "ask each time"
 	noWorktree bool
 	err        string
 }
@@ -132,7 +137,7 @@ type Model struct {
 	branchInput     textinput.Model
 	ticketInput     textinput.Model
 	newFormFocus    int // 0=nameInput, 1=branchInput, 2=ticketInput
-	newFormAgentIdx int // agent selector in the new-session form
+	newFormAgentIdx int // agent selector in the new-session form; -1 means "not chosen yet"
 	projForm        projectForm
 	sessionForm     sessionForm
 	editProjectName string
@@ -362,7 +367,11 @@ func editProjectForm(name string, p config.Project) projectForm {
 	pf.inputs[0].Blur()
 	pf.inputs[1].Focus()
 	pf.focus = 1
-	pf.agentIdx = agentChoiceIndex(p.AgentName())
+	if p.PromptAgent {
+		pf.agentIdx = askAgentIdx
+	} else {
+		pf.agentIdx = agentChoiceIndex(p.AgentName())
+	}
 	pf.noWorktree = p.NoWorktree
 	return pf
 }

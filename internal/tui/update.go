@@ -424,18 +424,14 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.newFormFocus = 0
 		m.resetOverlayViewport()
 		m.resizeFormInputs()
-		// pre-select the project's default agent
+		// pre-select the project's default agent, unless it requires an
+		// explicit choice on every session
 		proj := m.projects[m.activeProj]
-		defaultAgent := "claude"
-		if p, ok := m.cfg.Projects[proj]; ok {
-			defaultAgent = p.AgentName()
-		}
-		m.newFormAgentIdx = 0
-		for i, a := range agentChoices {
-			if a == defaultAgent {
-				m.newFormAgentIdx = i
-				break
-			}
+		p := m.cfg.Projects[proj]
+		if p.PromptAgent {
+			m.newFormAgentIdx = -1
+		} else {
+			m.newFormAgentIdx = agentChoiceIndex(p.AgentName())
 		}
 	case key.Matches(msg, m.keys.Delete):
 		if len(m.sessions) > 0 {
@@ -549,16 +545,28 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.newFormFocusInput()
 		return m, nil
 	case key.Matches(msg, m.keys.Left):
-		m.newFormAgentIdx = (m.newFormAgentIdx - 1 + len(agentChoices)) % len(agentChoices)
+		if m.newFormAgentIdx < 0 {
+			m.newFormAgentIdx = 0
+		} else {
+			m.newFormAgentIdx = (m.newFormAgentIdx - 1 + len(agentChoices)) % len(agentChoices)
+		}
 		return m, nil
 	case key.Matches(msg, m.keys.Right):
-		m.newFormAgentIdx = (m.newFormAgentIdx + 1) % len(agentChoices)
+		if m.newFormAgentIdx < 0 {
+			m.newFormAgentIdx = 0
+		} else {
+			m.newFormAgentIdx = (m.newFormAgentIdx + 1) % len(agentChoices)
+		}
 		return m, nil
 	case key.Matches(msg, m.keys.Enter):
 		name := m.nameInput.Value()
 		branch := m.branchInput.Value()
 		ticket := m.ticketInput.Value()
 		if name == "" && branch == "" {
+			return m, nil
+		}
+		if m.newFormAgentIdx < 0 {
+			m.setFlash("error", "this project requires choosing an agent — use ←→")
 			return m, nil
 		}
 		proj := m.projects[m.activeProj]
@@ -647,6 +655,31 @@ func cycleFormFocus(inputs []textinput.Model, focus *int, total int, forward boo
 	}
 }
 
+// cycleProjectAgentIdx moves idx (a projectForm.agentIdx, possibly
+// askAgentIdx) by delta across agentChoices plus the trailing "ask each
+// time" entry, wrapping in both directions.
+func cycleProjectAgentIdx(idx, delta int) int {
+	pos := idx
+	if pos == askAgentIdx {
+		pos = len(agentChoices)
+	}
+	n := len(agentChoices) + 1
+	pos = (pos + delta + n) % n
+	if pos == len(agentChoices) {
+		return askAgentIdx
+	}
+	return pos
+}
+
+// projectAgentFields returns the Agent and PromptAgent values a submitted
+// project form should store, given its agentIdx (possibly askAgentIdx).
+func projectAgentFields(agentIdx int) (agent string, promptAgent bool) {
+	if agentIdx == askAgentIdx {
+		return "", true
+	}
+	return agentChoices[agentIdx], false
+}
+
 func (m *Model) updateNewProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	const totalFields = projFormInputCount + 2 // +1 agent selector, +1 worktree toggle
 	switch {
@@ -662,7 +695,7 @@ func (m *Model) updateNewProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Left):
 		switch m.projForm.focus {
 		case projFormInputCount:
-			m.projForm.agentIdx = (m.projForm.agentIdx - 1 + len(agentChoices)) % len(agentChoices)
+			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, -1)
 			return m, nil
 		case projFormInputCount + 1:
 			m.projForm.noWorktree = !m.projForm.noWorktree
@@ -671,7 +704,7 @@ func (m *Model) updateNewProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Right):
 		switch m.projForm.focus {
 		case projFormInputCount:
-			m.projForm.agentIdx = (m.projForm.agentIdx + 1) % len(agentChoices)
+			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, 1)
 			return m, nil
 		case projFormInputCount + 1:
 			m.projForm.noWorktree = !m.projForm.noWorktree
@@ -685,8 +718,8 @@ func (m *Model) updateNewProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if base == "" {
 			base = "main"
 		}
-		agent := agentChoices[m.projForm.agentIdx]
-		p := config.Project{Repo: repo, BaseBranch: base, BranchPrefix: prefix, Agent: agent, NoWorktree: m.projForm.noWorktree}
+		agent, promptAgent := projectAgentFields(m.projForm.agentIdx)
+		p := config.Project{Repo: repo, BaseBranch: base, BranchPrefix: prefix, Agent: agent, PromptAgent: promptAgent, NoWorktree: m.projForm.noWorktree}
 		return m, func() tea.Msg {
 			err := m.backend.AddProject(name, p)
 			return ProjectAddedMsg{Kind: "add", Name: name, Project: p, Err: err}
@@ -772,7 +805,7 @@ func (m *Model) updateEditProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Left):
 		switch m.projForm.focus {
 		case projFormInputCount:
-			m.projForm.agentIdx = (m.projForm.agentIdx - 1 + len(agentChoices)) % len(agentChoices)
+			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, -1)
 		case projFormInputCount + 1:
 			m.projForm.noWorktree = !m.projForm.noWorktree
 		}
@@ -780,14 +813,14 @@ func (m *Model) updateEditProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Right):
 		switch m.projForm.focus {
 		case projFormInputCount:
-			m.projForm.agentIdx = (m.projForm.agentIdx + 1) % len(agentChoices)
+			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, 1)
 		case projFormInputCount + 1:
 			m.projForm.noWorktree = !m.projForm.noWorktree
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Enter):
 		project.Repo = m.projForm.inputs[1].Value()
-		project.Agent = agentChoices[m.projForm.agentIdx]
+		project.Agent, project.PromptAgent = projectAgentFields(m.projForm.agentIdx)
 		if !project.IsPlain() {
 			project.BaseBranch = m.projForm.inputs[2].Value()
 			project.BranchPrefix = m.projForm.inputs[3].Value()

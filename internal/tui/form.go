@@ -151,6 +151,9 @@ func (m *Model) renderNewForm() string {
 }
 
 func (m *Model) renderNewFormAgentSelector() string {
+	if m.newFormAgentIdx < 0 {
+		return warnStyle.Render("choose an agent (←→)")
+	}
 	var b strings.Builder
 	for i, a := range agentChoices {
 		if i > 0 {
@@ -229,7 +232,7 @@ var projFormFieldHints = []string{
 	1: "path to the project's git repo — prefilled from the current directory; edit it, or point elsewhere",
 	2: "the branch new session worktrees branch off of (usually main or master)",
 	3: "prepended to every new session's branch name, e.g. \"alice/\" → alice/feature-x — leave blank to skip",
-	4: "coding agent launched by default for new sessions in this project",
+	4: "coding agent launched by default for new sessions in this project — \"ask each time\" requires choosing one on every new session",
 	5: "off: every session runs directly in the repo folder instead of its own worktree/branch",
 }
 
@@ -238,7 +241,7 @@ var editProjectFieldHints = []string{
 	1: "repository path used by new sessions — existing worktrees stay where they are",
 	2: "base branch used when creating new session worktrees",
 	3: "prepended to branches created for new sessions — leave blank to skip",
-	4: "coding agent copied into new sessions by default",
+	4: "coding agent copied into new sessions by default — \"ask each time\" requires choosing one on every new session",
 	5: "changes worktree behavior for new sessions only",
 }
 
@@ -305,14 +308,23 @@ func (m *Model) renderWorktreeToggle() string {
 	return lipgloss.NewStyle().Bold(true).Render(label)
 }
 
+// projectAgentChoices is the project form's agent selector: the real agents,
+// plus a trailing "ask each time" entry (index askAgentIdx maps to it) that
+// defers the choice to each new-session form instead of fixing one here.
+var projectAgentChoices = append(append([]string{}, agentChoices...), "ask each time")
+
 func (m *Model) renderAgentSelector() string {
 	focused := m.projForm.focus == projFormInputCount
+	selectedIdx := m.projForm.agentIdx
+	if selectedIdx == askAgentIdx {
+		selectedIdx = len(agentChoices)
+	}
 	var b strings.Builder
-	for i, a := range agentChoices {
+	for i, a := range projectAgentChoices {
 		if i > 0 {
 			b.WriteString("  ")
 		}
-		if i == m.projForm.agentIdx {
+		if i == selectedIdx {
 			if focused {
 				b.WriteString(titleStyle.Render("[" + a + "]"))
 			} else {
@@ -325,7 +337,7 @@ func (m *Model) renderAgentSelector() string {
 	rendered := b.String()
 	available := m.overlayWidth(formHintWidth) - m.formLabelWidth("agent", 15)
 	if lipgloss.Width(rendered) > available {
-		return renderCompactAgentSelector(agentChoices[m.projForm.agentIdx], focused, available)
+		return renderCompactAgentSelector(projectAgentChoices[selectedIdx], focused, available)
 	}
 	return rendered
 }

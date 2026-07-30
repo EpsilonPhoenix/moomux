@@ -18,6 +18,10 @@ type Project struct {
 	BranchPrefix string `toml:"branch_prefix,omitempty"`
 	BaseBranch   string `toml:"base_branch,omitempty"`
 	Agent        string `toml:"agent,omitempty"` // "claude" (default), "codex", "opencode"
+	// PromptAgent, when true, skips preselecting Agent as the default in the
+	// new-session form — the user must explicitly pick an agent before the
+	// form can be submitted.
+	PromptAgent bool `toml:"prompt_agent,omitempty"`
 	// NoWorktree, when true on a "git" project, keeps every session in Repo
 	// itself instead of giving each one its own worktree/branch — the same
 	// single-folder behavior as a "plain" project, but for a real git repo.
