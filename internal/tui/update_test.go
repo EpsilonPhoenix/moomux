@@ -652,6 +652,65 @@ func TestNavigationAndProjectSwitching(t *testing.T) {
 	}
 }
 
+// Mobile/remote terminals often can't send shift+arrow or shift+tab as a single
+// keypress, so every chorded action has a plain-letter alternate.
+func TestPlainLetterAlternatesForChordedKeys(t *testing.T) {
+	cfg := &config.Config{Projects: map[string]config.Project{
+		"alpha": {Repo: "/tmp/alpha"},
+		"beta":  {Repo: "/tmp/beta"},
+	}}
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "alpha:a", Project: "alpha", Name: "a"},
+		{ID: "alpha:b", Project: "alpha", Name: "b"},
+		{ID: "beta:c", Project: "beta", Name: "c"},
+	}}
+	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
+	m.width, m.height = 80, 24
+
+	// "]" / "[" switch project like tab / shift+tab.
+	m.Update(keyRune("]"))
+	if m.projects[m.activeProj] != "beta" || len(m.sessions) != 1 {
+		t.Fatalf("after ]: proj=%q sessions=%v", m.projects[m.activeProj], m.sessions)
+	}
+	m.Update(keyRune("["))
+	if m.projects[m.activeProj] != "alpha" {
+		t.Fatalf("after [: proj=%q", m.projects[m.activeProj])
+	}
+
+	// "J" / "K" reorder the selected session like shift+↓ / shift+↑.
+	run(m, keyRune("J"))
+	m.cursor = 1
+	run(m, keyRune("K"))
+	want := []moveSessionCall{{id: "alpha:a", delta: 1}, {id: "alpha:b", delta: -1}}
+	if len(be.moveSessionCalls) != 2 || be.moveSessionCalls[0] != want[0] || be.moveSessionCalls[1] != want[1] {
+		t.Fatalf("moveSessionCalls = %+v, want %+v", be.moveSessionCalls, want)
+	}
+
+	// "L" / "H" reorder the active project like shift+→ / shift+←.
+	run(m, keyRune("L"))
+	m.activeProj = 1
+	run(m, keyRune("H"))
+	wantProj := []moveProjectCall{{name: "alpha", delta: 1}, {name: "beta", delta: -1}}
+	if len(be.moveProjectCalls) != 2 || be.moveProjectCalls[0] != wantProj[0] || be.moveProjectCalls[1] != wantProj[1] {
+		t.Fatalf("moveProjectCalls = %+v, want %+v", be.moveProjectCalls, wantProj)
+	}
+}
+
+// The form fields navigate with tab/shift+tab, so "[" and "]" must stay ordinary
+// text input there rather than switching project underneath the form.
+func TestBracketsAreTextInputInForms(t *testing.T) {
+	be := &fakeBackend{}
+	m := newTestModel(be)
+
+	m.Update(keyRune("n"))
+	typeText(m, "feat[1]")
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if len(be.createCalls) != 1 || be.createCalls[0].name != "feat[1]" {
+		t.Fatalf("createCalls = %+v", be.createCalls)
+	}
+}
+
 func TestRefreshRunsStatusCmd(t *testing.T) {
 	be := &fakeBackend{sessions: []session.Session{{ID: "demo:a", Project: "demo", Name: "a"}}}
 	m := newTestModel(be)

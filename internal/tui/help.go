@@ -53,10 +53,13 @@ func (m *Model) helpGroups() []helpGroup {
 			entries: []helpEntry{
 				{"↑ / k", "move up"},
 				{"↓ / j", "move down"},
-				{"shift+↑ / ↓", "reorder session"},
-				{"tab", "next project"},
-				{"shift+tab", "prev project"},
-				{"shift+← / →", "reorder project"},
+				// Plain-letter alternates share a row with the chord they stand in
+				// for; the chords need terminal extended-keys support, the letters
+				// don't. Keep these labels short — the overlay is height-limited.
+				{"shift+↑↓ / KJ", "reorder session"},
+				{"tab / ]", "next project"},
+				{"shift+tab / [", "prev project"},
+				{"shift+←→ / HL", "reorder project"},
 				{"r", "refresh"},
 				{"R", linkDesc},
 			},
