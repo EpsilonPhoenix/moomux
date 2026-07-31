@@ -28,6 +28,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for path, st := range msg.Snap.States {
 			m.states[path] = st
 		}
+		m.refreshSessions()
 		if msg.Snap.Err != nil {
 			// Surface once rather than re-flashing on every subsequent tick
 			// while the same failure persists.
