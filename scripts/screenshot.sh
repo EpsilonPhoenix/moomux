@@ -55,6 +55,10 @@ data = open(sys.argv[1], "rb").read()
 # captures them as literal bytes since there's no real terminal to answer.
 data = re.sub(rb"\x1b\]11;\?\x1b\\", b"", data)
 data = re.sub(rb"\x1b\[6n", b"", data)
+# strip OSC-8 hyperlink wrappers (used on the ticket/PR icons) since
+# ansi2html doesn't understand them and renders the raw escape bytes as
+# literal text (e.g. stray "]8;;" punctuation next to the icons).
+data = re.sub(rb"\x1b\]8;;[^\x1b]*\x1b\\", b"", data)
 open(sys.argv[2], "wb").write(data)
 PY
 
