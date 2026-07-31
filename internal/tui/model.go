@@ -426,12 +426,11 @@ func (m *Model) refreshSessions() {
 			out = append(out, s)
 		}
 	}
-	// Working sessions float to the top — stable sort keeps everything
-	// else in its existing (Order-based) place. Not splitting further by
-	// tmux-alive: that status changes often enough to make the list jump
-	// around distractingly.
+	// Sessions with a live tmux window float to the top regardless of
+	// status — stable sort keeps everything else in its existing
+	// (Order-based) place.
 	sort.SliceStable(out, func(i, j int) bool {
-		return m.effectiveState(out[i]) == watcher.Working && m.effectiveState(out[j]) != watcher.Working
+		return m.tmuxAlive[out[i].ID] && !m.tmuxAlive[out[j].ID]
 	})
 	m.sessions = out
 
