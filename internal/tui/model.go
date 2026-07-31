@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -412,6 +413,11 @@ func (m *Model) refreshSessions() {
 		m.sessions = nil
 		return
 	}
+	var selectedID string
+	if m.cursor >= 0 && m.cursor < len(m.sessions) {
+		selectedID = m.sessions[m.cursor].ID
+	}
+
 	proj := m.projects[m.activeProj]
 	all := m.backend.Sessions()
 	out := make([]session.Session, 0, len(all))
@@ -420,7 +426,23 @@ func (m *Model) refreshSessions() {
 			out = append(out, s)
 		}
 	}
+	// Working sessions float to the top — stable sort keeps everything
+	// else in its existing (Order-based) place. Not splitting further by
+	// tmux-alive: that status changes often enough to make the list jump
+	// around distractingly.
+	sort.SliceStable(out, func(i, j int) bool {
+		return m.effectiveState(out[i]) == watcher.Working && m.effectiveState(out[j]) != watcher.Working
+	})
 	m.sessions = out
+
+	if selectedID != "" {
+		for i, s := range m.sessions {
+			if s.ID == selectedID {
+				m.cursor = i
+				break
+			}
+		}
+	}
 	if m.cursor >= len(m.sessions) {
 		if len(m.sessions) == 0 {
 			m.cursor = 0
