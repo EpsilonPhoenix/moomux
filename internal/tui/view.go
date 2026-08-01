@@ -309,10 +309,11 @@ func (m *Model) View() string {
 	m.updateLinkHits(header, hits, detailHits, detailX, detailY)
 
 	base := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
-	// Very small terminal sizes can be shorter than the fixed header and
-	// footer combined. Never emit more rows than the terminal reported,
-	// otherwise terminal viewport panning can hide the top of the list.
-	base = lipgloss.NewStyle().MaxHeight(m.height).Render(base)
+	// Very small terminal sizes can be shorter/narrower than the fixed
+	// header and footer combined. Never emit more rows or columns than the
+	// terminal reported, otherwise terminal viewport panning can hide the
+	// top/side of the list.
+	base = lipgloss.NewStyle().MaxHeight(m.height).MaxWidth(m.width).Render(base)
 
 	switch m.mode {
 	case ModeNewForm:
