@@ -89,9 +89,19 @@ func newTestApp(t *testing.T, projects map[string]config.Project) (*App, *fakeGi
 	if err := store.Load(); err != nil {
 		t.Fatal(err)
 	}
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfg := &config.Config{Projects: projects}
+	// Persist the fixture's initial projects: App methods reload config
+	// from CfgPath before every mutation (matching the real startup path,
+	// where Cfg always originates from config.Load(CfgPath)), so an
+	// in-memory-only Cfg with nothing on disk would look like every
+	// project vanished the moment any mutating method ran.
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatal(err)
+	}
 	a := &App{
-		Cfg:          &config.Config{Projects: projects},
-		CfgPath:      filepath.Join(dir, "config.toml"),
+		Cfg:          cfg,
+		CfgPath:      cfgPath,
 		Store:        store,
 		Tmux:         &tmux.Client{Runner: tm},
 		Terminal:     term,
@@ -606,6 +616,51 @@ func TestMoveProject(t *testing.T) {
 	}
 	if err := a.MoveProject("nope", 1); err == nil {
 		t.Fatal("unknown project must fail")
+	}
+}
+
+// TestProjectMutationsSurviveConcurrentWriter mirrors the session store's
+// TestConcurrentWriterSurvivesMutation: two App instances (e.g. two moomux
+// TUIs, or a TUI + `moomux spawn`) sharing the same config.toml must not
+// let one's write clobber a project the other added in the meantime.
+func TestProjectMutationsSurviveConcurrentWriter(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	if err := config.Save(cfgPath, &config.Config{Projects: map[string]config.Project{}}); err != nil {
+		t.Fatal(err)
+	}
+
+	newApp := func() *App {
+		return &App{
+			Cfg:          &config.Config{Projects: map[string]config.Project{}},
+			CfgPath:      cfgPath,
+			Store:        &session.Store{Path: filepath.Join(dir, "sessions.json")},
+			Tmux:         &tmux.Client{Runner: &fakeTmuxRunner{out: map[string]string{}, failOn: map[string]bool{}}},
+			Terminal:     &fakeTerminal{},
+			Git:          &gitwt.Client{Runner: &fakeGitRunner{failOn: map[string]bool{}, out: map[string]string{}}},
+			WorktreeRoot: filepath.Join(dir, "worktrees"),
+		}
+	}
+	first, second := newApp(), newApp()
+
+	if err := second.AddPlainProject("beta", config.Project{Repo: filepath.Join(dir, "beta")}); err != nil {
+		t.Fatal(err)
+	}
+	// first's Cfg was built before beta was added; its own mutation must
+	// not overwrite beta with a stale in-memory snapshot.
+	if err := first.AddPlainProject("alpha", config.Project{Repo: filepath.Join(dir, "alpha")}); err != nil {
+		t.Fatal(err)
+	}
+
+	final, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := final.Projects["beta"]; !ok {
+		t.Fatal("project \"beta\" added by a concurrent App was lost")
+	}
+	if _, ok := final.Projects["alpha"]; !ok {
+		t.Fatal("project \"alpha\" missing")
 	}
 }
 

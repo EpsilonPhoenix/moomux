@@ -108,6 +108,27 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// Reload re-reads path and overwrites cfg's fields in place — same
+// *Config pointer, refreshed contents. Every App method that mutates the
+// config calls this first so its write lands on top of whatever another
+// moomux process (e.g. a second TUI, or `moomux spawn`) has saved since
+// cfg was last loaded, instead of clobbering it with a stale in-memory
+// snapshot (the same fix session.Store.reloadLocked applies to sessions).
+// The pointer must stay the same because the TUI holds this exact *Config
+// and reads its fields directly, not through App's accessors.
+func Reload(path string, cfg *Config) error {
+	fresh, err := Load(path)
+	if err != nil {
+		return err
+	}
+	cfg.Projects = fresh.Projects
+	cfg.Order = fresh.Order
+	cfg.TmuxSetupAsked = fresh.TmuxSetupAsked
+	cfg.AutoTmux = fresh.AutoTmux
+	cfg.AutoTmuxAsked = fresh.AutoTmuxAsked
+	return nil
+}
+
 func Save(path string, cfg *Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err

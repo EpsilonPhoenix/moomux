@@ -70,6 +70,29 @@ func TestWatcherTickEmitsSnapshot(t *testing.T) {
 	}
 }
 
+func TestWatcherRunDoesNotMutateReceiverInterval(t *testing.T) {
+	// Run defaulted a zero Interval by writing back to w.Interval, which is
+	// racy if the same *DirWatcher were ever shared across goroutines (and
+	// is inconsistent with SQLiteWatcher.Run, which already uses a local).
+	w := &DirWatcher{Dir: t.TempDir()}
+	ch := make(chan Snapshot, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	go w.Run(ctx, ch)
+
+	// Waiting for the first snapshot guarantees Run has already run past
+	// its interval-defaulting step (any receiver write already happened
+	// before this channel send) without racing the check against it.
+	select {
+	case <-ch:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for snapshot")
+	}
+	if w.Interval != 0 {
+		t.Fatalf("Interval = %v, want unchanged zero value", w.Interval)
+	}
+}
+
 func TestWatcherMissingDir(t *testing.T) {
 	w := &DirWatcher{Dir: "/nonexistent/moomux/test", Interval: 10 * time.Millisecond}
 	ch := make(chan Snapshot, 1)
