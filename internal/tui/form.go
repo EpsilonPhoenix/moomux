@@ -113,7 +113,11 @@ func (m *Model) renderFormLabel(label string, desired int) string {
 }
 
 func (m *Model) renderFormHint(text string) string {
-	rendered := hintStyle.Width(m.overlayWidth(formHintWidth)).Render(text)
+	// MaxHeight caps a hint long enough to wrap past formHintLines — without
+	// it, that one field's hint would grow the overlay box taller than
+	// every other field's, breaking the "fixed size hint row" the constants
+	// above promise.
+	rendered := hintStyle.Width(m.overlayWidth(formHintWidth)).MaxHeight(formHintLines).Render(text)
 	for lipgloss.Height(rendered) < formHintLines {
 		rendered += "\n"
 	}
