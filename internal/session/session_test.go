@@ -1,7 +1,9 @@
 package session
 
 import (
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -99,6 +101,40 @@ func TestConcurrentWriterSurvivesMutation(t *testing.T) {
 	}
 	if len(check.All()) != 2 {
 		t.Fatalf("expected 2 sessions, got %d: %+v", len(check.All()), check.All())
+	}
+}
+
+// TestConcurrentSavesDoNotRaceOnTempFile simulates several separate moomux
+// processes (each its own *Store, as spawn/tag/delete would be run from
+// different processes sharing one sessions.json) saving at the same time.
+// A shared fixed ".tmp" name lets one process's rename steal or delete
+// another's in-flight temp file out from under it, surfacing as a
+// "no such file" error from Put; a per-invocation temp file must not.
+func TestConcurrentSavesDoNotRaceOnTempFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sessions.json")
+
+	const writers = 8
+	const rounds = 20
+	var wg sync.WaitGroup
+	errCh := make(chan error, writers*rounds)
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			st := &Store{Path: path}
+			for r := 0; r < rounds; r++ {
+				id := fmt.Sprintf("p:w%d-r%d", w, r)
+				if err := st.Put(Session{ID: id, Project: "p", Name: id, CreatedAt: time.Now()}); err != nil {
+					errCh <- err
+				}
+			}
+		}(w)
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Errorf("concurrent Put failed: %v", err)
 	}
 }
 
