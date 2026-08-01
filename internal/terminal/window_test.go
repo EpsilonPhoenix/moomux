@@ -247,7 +247,20 @@ func TestWindowOpenerCmuxArgs(t *testing.T) {
 	assertContains(t, fe.args, "--name")
 	assertContains(t, fe.args, "feat/bar")
 	assertContains(t, fe.args, "--command")
-	assertContains(t, fe.args, "tmux attach -t =moomux-foo")
+	assertContains(t, fe.args, "tmux attach -t '=moomux-foo'")
+}
+
+func TestShellQuote(t *testing.T) {
+	cases := map[string]string{
+		"moomux-foo":  "'moomux-foo'",
+		"=moomux-foo": "'=moomux-foo'",
+		"o'brien":     `'o'\''brien'`,
+	}
+	for in, want := range cases {
+		if got := shellQuote(in); got != want {
+			t.Errorf("shellQuote(%q) = %q, want %q", in, got, want)
+		}
+	}
 }
 
 func assertContains(t *testing.T, haystack []string, needle string) {

@@ -19,7 +19,13 @@ func Open(url string) error {
 	default:
 		cmd = exec.Command("xdg-open", url)
 	}
-	return cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	// Reap the child once it exits; without this every opened link leaves
+	// a zombie for the lifetime of the long-running TUI process.
+	go func() { _ = cmd.Wait() }()
+	return nil
 }
 
 // Remote reports whether the process is likely running over an SSH

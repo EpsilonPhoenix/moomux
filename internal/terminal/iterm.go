@@ -43,7 +43,7 @@ tell application "iTerm2"
 			write text "tmux attach -t %s"
 		end tell
 	end tell
-end tell`, setName, "="+tmuxSession)
+end tell`, setName, escapeAppleScript("="+tmuxSession))
 	slog.Debug("iterm: running applescript", "tmux_session", tmuxSession, "title", title, "set_name", setName != "", "script", script)
 	out, err := c.runner.Run(script)
 	slog.Debug("iterm: applescript result", "out", out, "err", err)

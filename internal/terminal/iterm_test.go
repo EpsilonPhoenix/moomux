@@ -29,6 +29,20 @@ func TestITermOpenSessionAttachesAndSetsTitle(t *testing.T) {
 	}
 }
 
+func TestITermOpenSessionEscapesTmuxSession(t *testing.T) {
+	// tmuxSession is currently always moomux-<name>-<hash> (never
+	// attacker-controlled), but the AppleScript write-text argument gets
+	// the same escaping as the title for defense-in-depth.
+	fr := &fakeRunner{}
+	c := &itermClient{runner: fr}
+	if _, err := c.OpenSession(`moomux-foo"; do shell script "rm`, "bar"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fr.script, `tmux attach -t =moomux-foo\"; do shell script \"rm`) {
+		t.Fatalf("tmux session not escaped: %s", fr.script)
+	}
+}
+
 func TestITermOpenSessionOmitsTitleWhenEmpty(t *testing.T) {
 	fr := &fakeRunner{}
 	c := &itermClient{runner: fr}
