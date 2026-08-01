@@ -2,12 +2,20 @@
 package gitwt
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
+
+// runTimeout bounds every git subprocess execRunner spawns. Client methods
+// don't carry a caller context (they're called synchronously from app-layer
+// code with no ctx of its own), so an unresponsive git (e.g. a fetch against
+// a dead remote) is bounded by a fixed timeout instead of hanging forever.
+var runTimeout = 30 * time.Second
 
 // ErrNotGitRepo is returned when a path is not inside a git working tree.
 var ErrNotGitRepo = errors.New("not a git repository")
@@ -64,8 +72,15 @@ type Runner interface {
 type execRunner struct{}
 
 func (execRunner) Run(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	// Without WaitDelay, CombinedOutput can still block past ctx's
+	// deadline: if git forked a child that inherited the output pipe,
+	// killing git alone doesn't close it — Read() waits for every process
+	// holding the write end to exit, not just the one we canceled.
+	cmd.WaitDelay = 2 * time.Second
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(out), fmt.Errorf("git %v in %s: %w (%s)", args, dir, err, string(out))
@@ -150,11 +165,21 @@ func (c *Client) AddWorktreeExisting(repoDir, worktreePath, branch string) error
 func (c *Client) RemoveWorktree(repoDir, worktreePath string) error {
 	_, err := c.Runner.Run(repoDir, "worktree", "remove", worktreePath, "--force")
 	if _, statErr := os.Stat(worktreePath); statErr != nil {
-		// The checkout is already gone (e.g. another session removed it).
-		// Nothing left to remove — drop any stale registration and succeed
-		// instead of failing on a worktree that no longer exists.
-		_, _ = c.Runner.Run(repoDir, "worktree", "prune")
-		return nil
+		if os.IsNotExist(statErr) {
+			// The checkout is already gone (e.g. another session removed
+			// it). Nothing left to remove — drop any stale registration and
+			// succeed instead of failing on a worktree that no longer
+			// exists.
+			_, _ = c.Runner.Run(repoDir, "worktree", "prune")
+			return nil
+		}
+		// Some other stat failure (e.g. permission denied) — we don't
+		// actually know whether the worktree is gone, so don't assume
+		// success. Surface whichever error is more informative.
+		if err != nil {
+			return err
+		}
+		return statErr
 	}
 	if err != nil {
 		// git refused to remove it and the directory is still there — e.g.

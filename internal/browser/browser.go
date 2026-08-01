@@ -2,6 +2,8 @@
 package browser
 
 import (
+	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -9,15 +11,26 @@ import (
 	"github.com/aymanbagabas/go-osc52/v2"
 )
 
-func Open(url string) error {
+// Open launches rawURL in the user's default browser. rawURL is rejected
+// unless it parses as an absolute http(s) URL: it may come from link text
+// rendered by an agent session, and passing an arbitrary string straight to
+// exec.Command would let a crafted value (e.g. one starting with "-") be
+// read as a flag by "open"/"xdg-open"/rundll32, or open non-http schemes
+// the platform opener treats specially (e.g. "file://").
+func Open(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("refusing to open non-http(s) URL: %q", rawURL)
+	}
+
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", url)
+		cmd = exec.Command("open", rawURL)
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL)
 	default:
-		cmd = exec.Command("xdg-open", url)
+		cmd = exec.Command("xdg-open", rawURL)
 	}
 	if err := cmd.Start(); err != nil {
 		return err

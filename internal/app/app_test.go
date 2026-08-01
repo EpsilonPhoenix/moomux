@@ -132,7 +132,7 @@ func TestSendPromptTypesIntoSession(t *testing.T) {
 	if err := a.SendPrompt("moomux-foo", "fix the bug"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"send-keys", "-t", "moomux-foo", "fix the bug", "Enter"}
+	want := []string{"send-keys", "-t", "=moomux-foo:", "fix the bug", "Enter"}
 	if len(tm.calls) != 1 || !reflect.DeepEqual(tm.calls[0], want) {
 		t.Fatalf("calls = %v", tm.calls)
 	}

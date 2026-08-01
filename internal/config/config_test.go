@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -134,6 +136,38 @@ func TestSaveFailureKeepsExistingConfig(t *testing.T) {
 	}
 	if got.Projects["a"].Repo != "/tmp/a" {
 		t.Fatalf("previous config lost: %+v", got.Projects)
+	}
+}
+
+// TestConcurrentSavesDoNotRaceOnTempFile mirrors the session store's test:
+// multiple moomux processes can Save the same config.toml around the same
+// time. A shared fixed ".tmp" name lets one process's rename steal or
+// delete another's in-flight temp file; a per-invocation temp file must not.
+func TestConcurrentSavesDoNotRaceOnTempFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	const writers = 8
+	const rounds = 20
+	var wg sync.WaitGroup
+	errCh := make(chan error, writers*rounds)
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for r := 0; r < rounds; r++ {
+				name := fmt.Sprintf("p-w%d-r%d", w, r)
+				cfg := &Config{Projects: map[string]Project{name: {Repo: "/tmp/" + name}}}
+				if err := Save(path, cfg); err != nil {
+					errCh <- err
+				}
+			}
+		}(w)
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Errorf("concurrent Save failed: %v", err)
 	}
 }
 

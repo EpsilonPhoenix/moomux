@@ -14,24 +14,34 @@ if [ -n "$(git tag --points-at HEAD)" ]; then
   exit 0
 fi
 
-last_tag=$(git tag -l 'v*' | sort -V | tail -n1)
+# Only exact vX.Y.Z tags reachable from HEAD count as a release baseline —
+# a stray "v*" tag with a different shape (v1, v1.2.3-rc1) or one that lives
+# on an unrelated branch must not be picked as the last release.
+last_tag=$(git tag -l --merged HEAD 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
 
 if [ -z "$last_tag" ]; then
-  commits=$(git log --pretty=%s)
+  range=""
   version="0.0.0"
 else
-  commits=$(git log "${last_tag}..HEAD" --pretty=%s)
+  range="${last_tag}..HEAD"
   version="${last_tag#v}"
 fi
 
-if [ -z "$commits" ]; then
+subjects=$(git log $range --pretty=%s)
+
+if [ -z "$subjects" ]; then
   exit 0
 fi
 
+# "type!:" is a subject-level marker; "BREAKING CHANGE:" is a footer that
+# only ever appears in the commit body, so it needs the full message, not
+# just the subject line.
+bodies=$(git log $range --pretty=%B)
+
 bump=patch
-if echo "$commits" | grep -qE '^[a-zA-Z]+(\([^)]+\))?!:|^BREAKING CHANGE:'; then
+if echo "$subjects" | grep -qE '^[a-zA-Z]+(\([^)]+\))?!:' || echo "$bodies" | grep -qE '^BREAKING CHANGE:'; then
   bump=major
-elif echo "$commits" | grep -qE '^feat(\([^)]+\))?:'; then
+elif echo "$subjects" | grep -qE '^feat(\([^)]+\))?:'; then
   bump=minor
 fi
 

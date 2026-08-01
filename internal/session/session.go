@@ -84,7 +84,8 @@ func (s *Store) reloadLocked() error {
 }
 
 func (s *Store) save() error {
-	if err := os.MkdirAll(filepath.Dir(s.Path), 0o755); err != nil {
+	dir := filepath.Dir(s.Path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	f := fileShape{Version: 1, Sessions: s.sessions}
@@ -92,11 +93,26 @@ func (s *Store) save() error {
 	if err != nil {
 		return err
 	}
-	tmp := s.Path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	// A fixed ".tmp" name races when multiple moomux processes share this
+	// store: one process's write/rename can clobber or steal another's
+	// in-flight temp file. A per-invocation temp file avoids that.
+	tmp, err := os.CreateTemp(dir, filepath.Base(s.Path)+".*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.Path)
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, s.Path)
 }
 
 func (s *Store) Put(sess Session) error {
@@ -189,9 +205,17 @@ func (s *Store) Reorder(sessions []Session) error {
 	if err := s.reloadLocked(); err != nil {
 		return err
 	}
+	// sessions may be a snapshot the caller fetched before this reload;
+	// writing it back wholesale would clobber any other field a concurrent
+	// process changed since (e.g. a tag set from another moomux process).
+	// Apply only the Order change, to the freshly reloaded session.
 	for i, sess := range sessions {
-		sess.Order = int64(i + 1)
-		s.sessions[sess.ID] = sess
+		current, ok := s.sessions[sess.ID]
+		if !ok {
+			continue
+		}
+		current.Order = int64(i + 1)
+		s.sessions[sess.ID] = current
 	}
 	return s.save()
 }

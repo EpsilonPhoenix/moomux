@@ -3,8 +3,11 @@ package gitwt
 import (
 	"errors"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 type fakeRunner struct {
@@ -66,6 +69,34 @@ func TestRemoveWorktree(t *testing.T) {
 	}
 }
 
+// TestRemoveWorktreeStatPermissionErrorSurfaces simulates os.Stat failing
+// for a reason other than "gone" (e.g. permission denied on a parent dir).
+// RemoveWorktree must not treat that as "already removed" and report
+// success — it doesn't actually know whether the worktree is there.
+func TestRemoveWorktreeStatPermissionErrorSurfaces(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permission bits")
+	}
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "locked")
+	if err := os.Mkdir(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(locked, "worktree")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+
+	c := &Client{Runner: &erringRunner{}}
+	if err := c.RemoveWorktree("/repo", target); err == nil {
+		t.Fatal("expected an error, not silent success, for an unresolvable stat")
+	}
+}
+
 // erringRunner fails every git call, simulating e.g. "worktree remove"
 // refusing to touch a main working tree.
 type erringRunner struct{ calls int }
@@ -83,6 +114,35 @@ func TestRemoveWorktreeGitFailureKeepsDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatalf("directory was deleted despite git failure: %v", err)
+	}
+}
+
+// TestExecRunnerRespectsRunTimeout replaces "git" on PATH with a fake that
+// sleeps far longer than runTimeout. Without exec.CommandContext bounding
+// the subprocess, execRunner.Run would block for the full sleep instead of
+// giving up once the timeout elapses (e.g. a fetch against a dead remote
+// hanging the whole app).
+func TestExecRunnerRespectsRunTimeout(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+	fakeDir := t.TempDir()
+	fake := filepath.Join(fakeDir, "git")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nsleep 5\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	old := runTimeout
+	runTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { runTimeout = old })
+
+	start := time.Now()
+	if _, err := (execRunner{}).Run(t.TempDir(), "status"); err == nil {
+		t.Fatal("expected error once runTimeout elapsed")
+	}
+	if elapsed := time.Since(start); elapsed > 4*time.Second {
+		t.Fatalf("Run took %v, want to return shortly after runTimeout", elapsed)
 	}
 }
 

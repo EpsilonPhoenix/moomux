@@ -173,16 +173,14 @@ func sampleSessions() []session.Session {
 	}
 }
 
-func main() {
-	screen := flag.String("screen", "list", fmt.Sprintf("screen to render: %s", screenNames()))
-	width := flag.Int("width", 100, "terminal width")
-	height := flag.Int("height", 32, "terminal height")
-	flag.Parse()
-
-	keys, ok := screens[*screen]
+// renderScreen drives a freshly created Model through the key sequence
+// registered for screenName against canned sample data, returning its final
+// rendered view. It's the piece scripts/screenshot.sh's pty/HTML/Chromium
+// pipeline wraps, and the piece that's practical to cover with a Go test.
+func renderScreen(screenName string, width, height int) (string, error) {
+	keys, ok := screens[screenName]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "uishot: unknown screen %q (want one of: %s)\n", *screen, screenNames())
-		os.Exit(1)
+		return "", fmt.Errorf("unknown screen %q (want one of: %s)", screenName, screenNames())
 	}
 
 	cfg := &config.Config{Projects: map[string]config.Project{
@@ -196,7 +194,7 @@ func main() {
 		},
 	}}
 	sessions := sampleSessions()
-	if *screen == "no-projects" {
+	if screenName == "no-projects" {
 		cfg = &config.Config{Projects: map[string]config.Project{}}
 		sessions = nil
 	}
@@ -206,12 +204,27 @@ func main() {
 
 	home, _ := os.UserHomeDir()
 
-	m.Update(tea.WindowSizeMsg{Width: *width, Height: *height})
+	m.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	for _, k := range keys {
 		drive(m, keyMsgFor(strings.ReplaceAll(k, "$HOME", home)))
 	}
 
-	fmt.Print(m.View())
+	return m.View(), nil
+}
+
+func main() {
+	screen := flag.String("screen", "list", fmt.Sprintf("screen to render: %s", screenNames()))
+	width := flag.Int("width", 100, "terminal width")
+	height := flag.Int("height", 32, "terminal height")
+	flag.Parse()
+
+	out, err := renderScreen(*screen, *width, *height)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "uishot: %s\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Print(out)
 }
 
 func screenNames() string {

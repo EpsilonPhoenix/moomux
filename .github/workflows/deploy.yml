@@ -21,6 +21,14 @@ permissions:
   contents: write
   actions: write
 
+# Serialize: two "Test" runs completing close together (e.g. two merges in
+# quick succession) must tag/release one at a time, not race and compute the
+# same "next version" twice. Never cancel a run in progress — it may already
+# have pushed a tag or dispatched Release.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
 jobs:
   tag:
     if: github.event.workflow_run.conclusion == 'success'

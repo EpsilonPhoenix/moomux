@@ -24,7 +24,9 @@ func (r *remoteOpener) OpenSession(tmuxSession, title string) (string, error) {
 	if run == nil {
 		run = runCombined
 	}
-	if err := run(r.binary, r.args(title, tmuxSession)...); err != nil {
+	// "=" pins tmux's -t to an exact session-name match; a bare name falls
+	// back to prefix matching and can attach to the wrong session.
+	if err := run(r.binary, r.args(title, "="+tmuxSession)...); err != nil {
 		slog.Debug("remote terminal open failed, falling back", "binary", r.binary, "err", err)
 		return r.fallback.OpenSession(tmuxSession, title)
 	}

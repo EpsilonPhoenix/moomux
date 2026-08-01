@@ -2,10 +2,17 @@
 package tmux
 
 import (
+	"context"
 	"errors"
 	"os/exec"
 	"strings"
+	"time"
 )
+
+// runTimeout bounds every tmux subprocess execRunner spawns. Client methods
+// don't carry a caller context, so an unresponsive tmux server is bounded
+// by a fixed timeout instead of hanging the whole app forever.
+var runTimeout = 10 * time.Second
 
 type Runner interface {
 	Run(args ...string) (string, error)
@@ -14,7 +21,15 @@ type Runner interface {
 type execRunner struct{}
 
 func (execRunner) Run(args ...string) (string, error) {
-	out, err := exec.Command("tmux", args...).CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "tmux", args...)
+	// Without WaitDelay, CombinedOutput can still block past ctx's
+	// deadline: if tmux forked a child that inherited the output pipe,
+	// killing tmux alone doesn't close it — Read() waits for every process
+	// holding the write end to exit, not just the one we canceled.
+	cmd.WaitDelay = 2 * time.Second
+	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
@@ -131,7 +146,7 @@ func (c *Client) NewSession(name, cwd, cmd, windowName string) error {
 // SendKeys types text into session's active pane followed by Enter. NewSession
 // leaves the left (agent) pane active, so this reaches the agent's input.
 func (c *Client) SendKeys(session, text string) error {
-	_, err := c.Runner.Run("send-keys", "-t", session, text, "Enter")
+	_, err := c.Runner.Run("send-keys", "-t", exactWindow(session), text, "Enter")
 	return err
 }
 

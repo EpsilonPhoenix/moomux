@@ -1,7 +1,9 @@
 package session
 
 import (
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -99,6 +101,40 @@ func TestConcurrentWriterSurvivesMutation(t *testing.T) {
 	}
 	if len(check.All()) != 2 {
 		t.Fatalf("expected 2 sessions, got %d: %+v", len(check.All()), check.All())
+	}
+}
+
+// TestConcurrentSavesDoNotRaceOnTempFile simulates several separate moomux
+// processes (each its own *Store, as spawn/tag/delete would be run from
+// different processes sharing one sessions.json) saving at the same time.
+// A shared fixed ".tmp" name lets one process's rename steal or delete
+// another's in-flight temp file out from under it, surfacing as a
+// "no such file" error from Put; a per-invocation temp file must not.
+func TestConcurrentSavesDoNotRaceOnTempFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sessions.json")
+
+	const writers = 8
+	const rounds = 20
+	var wg sync.WaitGroup
+	errCh := make(chan error, writers*rounds)
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			st := &Store{Path: path}
+			for r := 0; r < rounds; r++ {
+				id := fmt.Sprintf("p:w%d-r%d", w, r)
+				if err := st.Put(Session{ID: id, Project: "p", Name: id, CreatedAt: time.Now()}); err != nil {
+					errCh <- err
+				}
+			}
+		}(w)
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Errorf("concurrent Put failed: %v", err)
 	}
 }
 
@@ -205,6 +241,45 @@ func TestUnorderedSessionSortsBeforeReorderedPeers(t *testing.T) {
 	got := s.ByProject("p")
 	if got[0].ID != "c" {
 		t.Fatalf("expected unordered c first, got %s", got[0].ID)
+	}
+}
+
+// TestReorderPreservesConcurrentFieldChange simulates a caller that
+// fetched its session slice (e.g. via ByProject) before a second moomux
+// process tagged one of those sessions with a PR link. Reorder must not
+// clobber that PR field with the caller's stale snapshot — it should only
+// touch Order.
+func TestReorderPreservesConcurrentFieldChange(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sessions.json")
+	s := &Store{Path: path}
+	_ = s.Load()
+	t0 := time.Now()
+	_ = s.Put(Session{ID: "a", Project: "p", CreatedAt: t0.Add(-time.Hour)})
+	_ = s.Put(Session{ID: "b", Project: "p", CreatedAt: t0})
+
+	stale := s.ByProject("p")
+
+	other := &Store{Path: path}
+	_ = other.Load()
+	sessA, _ := other.Get("a")
+	sessA.PR = "https://github.com/example/repo/pull/1"
+	if err := other.Put(sessA); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Reorder(stale); err != nil {
+		t.Fatal(err)
+	}
+
+	check := &Store{Path: path}
+	_ = check.Load()
+	got, _ := check.Get("a")
+	if got.PR != "https://github.com/example/repo/pull/1" {
+		t.Fatalf("Reorder clobbered concurrently-set PR, got %q", got.PR)
+	}
+	if got.Order == 0 {
+		t.Fatalf("expected Order to be set by Reorder")
 	}
 }
 
