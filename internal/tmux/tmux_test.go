@@ -125,3 +125,23 @@ func TestKillSession(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+func TestSendKeys(t *testing.T) {
+	fr := &fakeRunner{}
+	c := &Client{Runner: fr}
+	if err := c.SendKeys("moomux-foo", "do the thing"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"send-keys", "-t", "moomux-foo", "do the thing", "Enter"}
+	if got := fr.calls[0]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestSendKeysError(t *testing.T) {
+	fr := &fakeRunner{failOn: map[string]bool{"send-keys -t moomux-foo hi Enter": true}}
+	c := &Client{Runner: fr}
+	if err := c.SendKeys("moomux-foo", "hi"); err == nil {
+		t.Fatal("expected error")
+	}
+}
