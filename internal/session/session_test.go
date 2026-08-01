@@ -244,6 +244,45 @@ func TestUnorderedSessionSortsBeforeReorderedPeers(t *testing.T) {
 	}
 }
 
+// TestReorderPreservesConcurrentFieldChange simulates a caller that
+// fetched its session slice (e.g. via ByProject) before a second moomux
+// process tagged one of those sessions with a PR link. Reorder must not
+// clobber that PR field with the caller's stale snapshot — it should only
+// touch Order.
+func TestReorderPreservesConcurrentFieldChange(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sessions.json")
+	s := &Store{Path: path}
+	_ = s.Load()
+	t0 := time.Now()
+	_ = s.Put(Session{ID: "a", Project: "p", CreatedAt: t0.Add(-time.Hour)})
+	_ = s.Put(Session{ID: "b", Project: "p", CreatedAt: t0})
+
+	stale := s.ByProject("p")
+
+	other := &Store{Path: path}
+	_ = other.Load()
+	sessA, _ := other.Get("a")
+	sessA.PR = "https://github.com/example/repo/pull/1"
+	if err := other.Put(sessA); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Reorder(stale); err != nil {
+		t.Fatal(err)
+	}
+
+	check := &Store{Path: path}
+	_ = check.Load()
+	got, _ := check.Get("a")
+	if got.PR != "https://github.com/example/repo/pull/1" {
+		t.Fatalf("Reorder clobbered concurrently-set PR, got %q", got.PR)
+	}
+	if got.Order == 0 {
+		t.Fatalf("expected Order to be set by Reorder")
+	}
+}
+
 func TestMakeID(t *testing.T) {
 	if got := MakeID("eg_system", "hash-password"); got != "eg_system:hash-password" {
 		t.Fatalf("got %q", got)

@@ -205,9 +205,17 @@ func (s *Store) Reorder(sessions []Session) error {
 	if err := s.reloadLocked(); err != nil {
 		return err
 	}
+	// sessions may be a snapshot the caller fetched before this reload;
+	// writing it back wholesale would clobber any other field a concurrent
+	// process changed since (e.g. a tag set from another moomux process).
+	// Apply only the Order change, to the freshly reloaded session.
 	for i, sess := range sessions {
-		sess.Order = int64(i + 1)
-		s.sessions[sess.ID] = sess
+		current, ok := s.sessions[sess.ID]
+		if !ok {
+			continue
+		}
+		current.Order = int64(i + 1)
+		s.sessions[sess.ID] = current
 	}
 	return s.save()
 }
