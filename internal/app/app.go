@@ -533,7 +533,10 @@ func (a *App) UpdateProject(name string, updated config.Project) error {
 	if !ok {
 		return fmt.Errorf("unknown project %q", name)
 	}
-	if err := validateAgent(updated.Agent); err != nil {
+	// updated.Agent == "" is a legitimate "use the default" value at rest
+	// (see AgentName), same as in validateProject — validate the resolved
+	// name rather than the raw field.
+	if err := validateAgent(updated.AgentName()); err != nil {
 		return err
 	}
 	if updated.Repo == "" {

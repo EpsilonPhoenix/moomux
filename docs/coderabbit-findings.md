@@ -40,8 +40,8 @@ All 18 fixed, each in its own commit with a regression test.
 - [x] `internal/tui/view.go:390-404` — tab overflow in wide-mode header
 - [x] `internal/app/app.go:67-77` — doc comment inaccurate about port allocation start
 - [x] `internal/app/app.go:271-275` — empty hint returned on error instead of existing hint
-- [ ] `internal/app/app.go:527-529` — agent-name resolution inconsistency with validateProject
-- [ ] `internal/app/app_test.go:1029-1059` — test fixtures need exact tmux pane match
+- [x] `internal/app/app.go:527-529` — agent-name resolution inconsistency with validateProject
+- [x] `internal/app/app_test.go:1029-1059` — test fixtures need exact tmux pane match — already using `=moomux-feat` exact-match syntax; no change needed
 - [ ] `main.go:107-137` — `config.Save` errors silently discarded in setup flow
 - [ ] `main.go:143-169` — same silent-discard issue in `promptAutoTmux`
 

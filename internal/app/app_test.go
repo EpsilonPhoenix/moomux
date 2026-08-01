@@ -855,6 +855,23 @@ func TestUpdateProjectValidationAndRollback(t *testing.T) {
 	}
 }
 
+// TestUpdateProjectAcceptsDefaultAgent guards against validating the raw
+// Agent field instead of its resolved name: Agent == "" means "use the
+// default" (see config.Project.AgentName), the same legitimate value
+// validateProject already accepts, and must not be rejected as unknown.
+func TestUpdateProjectAcceptsDefaultAgent(t *testing.T) {
+	repo := t.TempDir()
+	mustGit(t, repo, "init", "-b", "main")
+	original := config.Project{Kind: "git", Repo: repo, BaseBranch: "main", Agent: "claude"}
+	a, _, _, _ := newTestApp(t, map[string]config.Project{"demo": original})
+
+	defaulted := original
+	defaulted.Agent = ""
+	if err := a.UpdateProject("demo", defaulted); err != nil {
+		t.Fatalf("default agent must be accepted: %v", err)
+	}
+}
+
 func TestSetSessionAgentDoesNotTouchTmux(t *testing.T) {
 	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
 	original := session.Session{
