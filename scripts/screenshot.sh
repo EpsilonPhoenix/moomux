@@ -42,8 +42,22 @@ go build -o "$bin" "$repo_root/cmd/uishot"
 
 raw="$workdir/raw.ansi"
 TERM=xterm-256color COLORTERM=truecolor python3 - "$bin" "-screen=$screen" "-width=$cols" "-height=$rows" >"$raw" <<'PY'
-import pty, sys
-sys.exit(pty.spawn(sys.argv[1:]) or 0)
+# Not pty.spawn: it also copies from stdin, and when stdin isn't a tty
+# (CI, headless agents) it never returns after the child exits — the
+# capture completes but the script hangs forever.
+import os, pty, subprocess, sys
+master, slave = pty.openpty()
+p = subprocess.Popen(sys.argv[1:], stdin=slave, stdout=slave, stderr=slave)
+os.close(slave)
+while True:
+    try:
+        data = os.read(master, 65536)
+    except OSError:
+        break
+    if not data:
+        break
+    sys.stdout.buffer.write(data)
+sys.exit(p.wait())
 PY
 
 clean="$workdir/clean.ansi"

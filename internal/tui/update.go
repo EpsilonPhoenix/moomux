@@ -165,6 +165,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if errors.Is(msg.Err, gitwt.ErrNotGitRepo) {
 				m.pending = pendingProject{name: msg.Name, p: msg.Project}
 				m.mode = ModeProjectInitChoice
+				m.resetOverlayViewport()
 				return m, nil
 			}
 			m.projForm.err = msg.Err.Error()
@@ -437,6 +438,10 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Delete):
 		if len(m.sessions) > 0 {
 			m.mode = ModeConfirmDelete
+			// Without this the dialog inherits the previous overlay's scroll
+			// offset and can open with the "what you're deleting" text
+			// scrolled off-screen, leaving only "y to confirm" visible.
+			m.resetOverlayViewport()
 		}
 	case key.Matches(msg, m.keys.Archive):
 		if len(m.sessions) > 0 {
@@ -498,6 +503,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.flashError(fmt.Errorf("%s has %d session(s) (incl. archived) — delete them first", m.projects[m.activeProj], n))
 		}
 		m.mode = ModeConfirmDeleteProject
+		m.resetOverlayViewport()
 		return m, nil
 	case key.Matches(msg, m.keys.Open):
 		if len(m.sessions) > 0 {
