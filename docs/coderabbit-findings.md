@@ -38,7 +38,7 @@ All 18 fixed, each in its own commit with a regression test.
 - [x] `internal/tui/update.go:32-55` — flash-message helper reuse
 - [x] `internal/tui/view.go:311-315` — missing `MaxWidth` alongside existing `MaxHeight`
 - [x] `internal/tui/view.go:390-404` — tab overflow in wide-mode header
-- [ ] `internal/app/app.go:67-77` — doc comment inaccurate about port allocation start
+- [x] `internal/app/app.go:67-77` — doc comment inaccurate about port allocation start
 - [ ] `internal/app/app.go:271-275` — empty hint returned on error instead of existing hint
 - [ ] `internal/app/app.go:527-529` — agent-name resolution inconsistency with validateProject
 - [ ] `internal/app/app_test.go:1029-1059` — test fixtures need exact tmux pane match

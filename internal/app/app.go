@@ -65,7 +65,9 @@ func WorktreeRootDefault() string {
 }
 
 // nextOpenCodePort returns the next available port for an OpenCode session.
-// Starts at 4096 and increments past any port already in use by existing OpenCode sessions.
+// Starts at 4096 and increments past the highest AgentPort recorded across
+// all sessions; AgentPort is only ever non-zero on OpenCode sessions, so
+// this is effectively scoped to those without needing an explicit filter.
 func (a *App) nextOpenCodePort() int {
 	port := 4096
 	for _, s := range a.Store.All() {
