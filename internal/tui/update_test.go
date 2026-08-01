@@ -881,6 +881,34 @@ func TestStatusMessages(t *testing.T) {
 	}
 }
 
+func TestStatusTickPrunesRemovedSessionStates(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "demo:a", Project: "demo", Name: "a", WorktreePath: "/wt/a"},
+		{ID: "demo:removed", Project: "demo", Name: "removed", WorktreePath: "/wt/removed"},
+	}}
+	m := newTestModel(be)
+
+	m.Update(StatusTickMsg{Snap: watcher.Snapshot{
+		States: map[string]watcher.State{"/wt/a": watcher.Working, "/wt/removed": watcher.Working},
+	}})
+	if _, ok := m.states["/wt/removed"]; !ok {
+		t.Fatal("setup: expected stale path present before session removal")
+	}
+
+	// Session for /wt/removed no longer exists in the backend (deleted).
+	be.sessions = []session.Session{{ID: "demo:a", Project: "demo", Name: "a", WorktreePath: "/wt/a"}}
+	m.Update(StatusTickMsg{Snap: watcher.Snapshot{
+		States: map[string]watcher.State{"/wt/a": watcher.Waiting},
+	}})
+
+	if _, ok := m.states["/wt/removed"]; ok {
+		t.Fatalf("states = %v, want /wt/removed pruned after its session was removed", m.states)
+	}
+	if m.states["/wt/a"] != watcher.Waiting {
+		t.Fatalf("states[/wt/a] = %v, want still tracked", m.states["/wt/a"])
+	}
+}
+
 func TestListenStatus(t *testing.T) {
 	ch := make(chan watcher.Snapshot, 1)
 	ch <- watcher.Snapshot{}
