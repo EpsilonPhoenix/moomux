@@ -171,11 +171,14 @@ func DefaultPath() string {
 	return filepath.Join(home, ".config", "moomux", "config.toml")
 }
 
-// ExpandHome expands a leading "~" to the user's home directory. Load
-// already applies this to every stored Repo; callers validating freshly
-// typed input before it's ever saved (e.g. app.validateProject) need it too.
+// ExpandHome expands a leading "~" to the user's home directory. Only a bare
+// "~" or "~/..." is home-relative; "~foo" (another user's home in shell
+// syntax) is left untouched rather than wrongly resolved against the
+// current user's home. Load already applies this to every stored Repo;
+// callers validating freshly typed input before it's ever saved (e.g.
+// app.validateProject) need it too.
 func ExpandHome(p string) string {
-	if !strings.HasPrefix(p, "~") {
+	if p != "~" && !strings.HasPrefix(p, "~/") {
 		return p
 	}
 	home, err := os.UserHomeDir()
