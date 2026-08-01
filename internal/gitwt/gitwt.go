@@ -2,12 +2,20 @@
 package gitwt
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
+
+// runTimeout bounds every git subprocess execRunner spawns. Client methods
+// don't carry a caller context (they're called synchronously from app-layer
+// code with no ctx of its own), so an unresponsive git (e.g. a fetch against
+// a dead remote) is bounded by a fixed timeout instead of hanging forever.
+var runTimeout = 30 * time.Second
 
 // ErrNotGitRepo is returned when a path is not inside a git working tree.
 var ErrNotGitRepo = errors.New("not a git repository")
@@ -64,7 +72,9 @@ type Runner interface {
 type execRunner struct{}
 
 func (execRunner) Run(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
