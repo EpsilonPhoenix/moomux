@@ -11,7 +11,7 @@ func TestFallbackReturnsAttachHint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(hint, "tmux attach -t =moomux-foo") {
+	if !strings.Contains(hint, `tmux attach -t '=moomux-foo'`) {
 		t.Fatalf("expected attach command in hint, got: %s", hint)
 	}
 }
