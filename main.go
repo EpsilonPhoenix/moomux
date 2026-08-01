@@ -34,7 +34,22 @@ var (
 	date    = "unknown"
 )
 
+func printUsage() {
+	fmt.Println(`moomux manages Claude Code / codex / opencode sessions across git worktrees.
+
+Usage:
+  moomux            Launch the interactive TUI.
+  moomux spawn ...   Create a session non-interactively and hand it a prompt.
+                     Run 'moomux spawn -h' for its flags.
+  moomux --version  Print the version.
+  moomux --help     Show this message.`)
+}
+
 func main() {
+	if len(os.Args) == 2 && (os.Args[1] == "--help" || os.Args[1] == "-h" || os.Args[1] == "help") {
+		printUsage()
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
 		fmt.Printf("moomux %s (%s) built %s\n", version, commit, date)
 		return
