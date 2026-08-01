@@ -54,6 +54,18 @@ func (s *Store) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions = map[string]Session{}
+	return s.reloadLocked()
+}
+
+// reloadLocked re-reads the store file into memory. Every mutating method
+// calls this first so its write lands on top of whatever other moomux
+// processes (e.g. a `moomux spawn` sharing this same sessions.json) have
+// saved since this Store last loaded, instead of overwriting their changes
+// with a stale in-memory snapshot. Caller must hold mu.
+func (s *Store) reloadLocked() error {
+	if s.sessions == nil {
+		s.sessions = map[string]Session{}
+	}
 	data, err := os.ReadFile(s.Path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -90,8 +102,8 @@ func (s *Store) save() error {
 func (s *Store) Put(sess Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.sessions == nil {
-		s.sessions = map[string]Session{}
+	if err := s.reloadLocked(); err != nil {
+		return err
 	}
 	s.sessions[sess.ID] = sess
 	return s.save()
@@ -100,6 +112,9 @@ func (s *Store) Put(sess Session) error {
 func (s *Store) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.reloadLocked(); err != nil {
+		return err
+	}
 	delete(s.sessions, id)
 	return s.save()
 }
@@ -110,6 +125,9 @@ func (s *Store) Delete(id string) error {
 func (s *Store) SetArchived(id string, archived bool) (Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.reloadLocked(); err != nil {
+		return Session{}, err
+	}
 	sess, ok := s.sessions[id]
 	if !ok {
 		return Session{}, fmt.Errorf("unknown session %q", id)
@@ -168,6 +186,9 @@ func (s *Store) ByProject(project string) []Session {
 func (s *Store) Reorder(sessions []Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.reloadLocked(); err != nil {
+		return err
+	}
 	for i, sess := range sessions {
 		sess.Order = int64(i + 1)
 		s.sessions[sess.ID] = sess
