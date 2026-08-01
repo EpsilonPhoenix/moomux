@@ -259,3 +259,12 @@ func assertContains(t *testing.T, haystack []string, needle string) {
 	}
 	t.Fatalf("args %v missing %q", haystack, needle)
 }
+
+func TestEnvWithoutTmux(t *testing.T) {
+	in := []string{"PATH=/bin", "TMUX=/tmp/tmux-501/default,123,0", "TMUX_PANE=%5", "HOME=/u"}
+	got := envWithoutTmux(in)
+	want := []string{"PATH=/bin", "HOME=/u"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("got %v", got)
+	}
+}
