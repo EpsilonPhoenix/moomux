@@ -1,9 +1,11 @@
 # CodeRabbit full-repo review findings
 
 Generated from `coderabbit review --agent --base-commit 810bee4` (full repo vs. root commit) on 2026-08-01.
-54 findings total: 1 critical, 34 major, 19 minor. Findings inside `docs/superpowers/plans/*.md` and
-`docs/superpowers/specs/*.md` review example code in future-design docs, not live code — tracked at the
-bottom for reference only, not queued for fixes.
+54 findings total: 1 critical, 34 major, 19 minor. Of those, 31 are in real code and itemized below
+(18 major, 13 minor); the remaining 23 — including the 1 critical — are inside
+`docs/superpowers/plans/*.md` and `docs/superpowers/specs/*.md`, reviewing example code in
+future-design docs, not live code. They're tracked at the bottom for reference only, not queued for
+fixes or broken out by severity there.
 
 ## Majors — real code (fixing one per commit)
 
