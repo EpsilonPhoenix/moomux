@@ -96,6 +96,37 @@ func TestSaveRoundtrip(t *testing.T) {
 	}
 }
 
+func TestSaveFailureKeepsExistingConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.toml")
+	cfg := &Config{Projects: map[string]Project{
+		"a": {Repo: "/tmp/a", BaseBranch: "main"},
+	}}
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	// A write that can't complete (read-only dir) must leave the previous
+	// config intact rather than truncating it.
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	cfg.Projects["b"] = Project{Repo: "/tmp/b"}
+	if err := Save(path, cfg); err == nil {
+		t.Fatal("expected save to fail in read-only dir")
+	}
+
+	_ = os.Chmod(dir, 0o755)
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("previous config was corrupted: %v", err)
+	}
+	if got.Projects["a"].Repo != "/tmp/a" {
+		t.Fatalf("previous config lost: %+v", got.Projects)
+	}
+}
+
 func TestProjectAgentNameDefaultsToClaude(t *testing.T) {
 	p := Project{}
 	if got := p.AgentName(); got != "claude" {
