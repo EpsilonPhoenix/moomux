@@ -23,7 +23,13 @@ type execRunner struct{}
 func (execRunner) Run(args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "tmux", args...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, "tmux", args...)
+	// Without WaitDelay, CombinedOutput can still block past ctx's
+	// deadline: if tmux forked a child that inherited the output pipe,
+	// killing tmux alone doesn't close it — Read() waits for every process
+	// holding the write end to exit, not just the one we canceled.
+	cmd.WaitDelay = 2 * time.Second
+	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 

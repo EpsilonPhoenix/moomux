@@ -54,7 +54,7 @@ func TestExecRunnerRespectsRunTimeout(t *testing.T) {
 	if _, err := (execRunner{}).Run("list-sessions"); err == nil {
 		t.Fatal("expected error once runTimeout elapsed")
 	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
+	if elapsed := time.Since(start); elapsed > 4*time.Second {
 		t.Fatalf("Run took %v, want to return shortly after runTimeout", elapsed)
 	}
 }

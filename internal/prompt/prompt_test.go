@@ -208,7 +208,7 @@ func TestFirstOpenCodeRespectsQueryTimeout(t *testing.T) {
 	if got != "" {
 		t.Fatalf("got %q, want empty", got)
 	}
-	if elapsed > 2*time.Second {
+	if elapsed > 4*time.Second {
 		t.Fatalf("FirstOpenCode took %v, want to return shortly after queryTimeout", elapsed)
 	}
 }

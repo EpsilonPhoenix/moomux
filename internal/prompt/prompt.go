@@ -73,7 +73,12 @@ ORDER BY m.time_created ASC, p.time_created ASC
 LIMIT 1`
 	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "sqlite3", dbPath, query).Output()
+	cmd := exec.CommandContext(ctx, "sqlite3", dbPath, query)
+	// Without WaitDelay, Output can still block past ctx's deadline: if
+	// sqlite3 forked a child that inherited the output pipe, killing
+	// sqlite3 alone doesn't close it.
+	cmd.WaitDelay = 2 * time.Second
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
@@ -94,7 +99,9 @@ func FirstCodex(home, worktreePath string) string {
 		}
 		for _, p := range paths {
 			ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
-			out, err := exec.CommandContext(ctx, "sqlite3", p, query).Output()
+			cmd := exec.CommandContext(ctx, "sqlite3", p, query)
+			cmd.WaitDelay = 2 * time.Second
+			out, err := cmd.Output()
 			cancel()
 			if err != nil {
 				continue

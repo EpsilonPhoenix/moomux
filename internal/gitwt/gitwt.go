@@ -76,6 +76,11 @@ func (execRunner) Run(dir string, args ...string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	// Without WaitDelay, CombinedOutput can still block past ctx's
+	// deadline: if git forked a child that inherited the output pipe,
+	// killing git alone doesn't close it — Read() waits for every process
+	// holding the write end to exit, not just the one we canceled.
+	cmd.WaitDelay = 2 * time.Second
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(out), fmt.Errorf("git %v in %s: %w (%s)", args, dir, err, string(out))

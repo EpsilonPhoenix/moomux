@@ -91,7 +91,12 @@ func (w *SQLiteWatcher) tick(ctx context.Context, out chan<- Snapshot, activeAge
 // It returns an error if the subprocess fails, so callers can distinguish a
 // transient query failure from a genuinely empty result set.
 func querySQLite(ctx context.Context, dbPath, query string) (map[string]int64, error) {
-	out, err := exec.CommandContext(ctx, "sqlite3", "-separator", "\t", dbPath, query).Output()
+	cmd := exec.CommandContext(ctx, "sqlite3", "-separator", "\t", dbPath, query)
+	// Without WaitDelay, Output can still block past ctx's deadline: if
+	// sqlite3 forked a child that inherited the output pipe, killing
+	// sqlite3 alone doesn't close it.
+	cmd.WaitDelay = 2 * time.Second
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}

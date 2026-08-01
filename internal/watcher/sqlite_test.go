@@ -33,7 +33,7 @@ func TestQuerySQLiteRespectsContextCancellation(t *testing.T) {
 	if _, err := querySQLite(ctx, "irrelevant.db", "SELECT 1"); err == nil {
 		t.Fatal("expected error once context expired")
 	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
+	if elapsed := time.Since(start); elapsed > 4*time.Second {
 		t.Fatalf("querySQLite took %v, want to return shortly after the context timeout", elapsed)
 	}
 }
