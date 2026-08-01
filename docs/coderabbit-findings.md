@@ -31,8 +31,8 @@ All 18 fixed, each in its own commit with a regression test.
 ## Minors — real code
 
 - [x] `README.md:15` — docs claim `claude` is always required; should reflect per-agent executable
-- [ ] `internal/terminal/window.go:126-131` — opener hint plumbing
-- [ ] `internal/terminal/terminal_test.go:122-175` — tests need updating alongside window.go hint change
+- [x] `internal/terminal/window.go:126-131` — opener hint plumbing
+- [x] `internal/terminal/terminal_test.go:122-175` — tests need updating alongside window.go hint change
 - [ ] `internal/browser/browser.go:44-47` — OSC 52 clipboard write bypasses Bubble Tea's synchronized-output path
 - [ ] `internal/config/config.go:161-170` — `ExpandHome` over-matches `~`-prefixed strings that aren't home-relative
 - [ ] `internal/tui/update.go:32-55` — flash-message helper reuse
