@@ -35,7 +35,7 @@ All 18 fixed, each in its own commit with a regression test.
 - [x] `internal/terminal/terminal_test.go:122-175` — tests need updating alongside window.go hint change
 - [x] `internal/browser/browser.go:44-47` — OSC 52 clipboard write bypasses Bubble Tea's synchronized-output path — evaluated, accepted as-is: closing the remaining race requires `tea.Program.ReleaseTerminal`/`RestoreTerminal`, which exits raw mode and redraws (visible flicker on every link copy). The write is already synchronous in `Update()` rather than a `tea.Cmd` (see `internal/tui/update.go:264-268`), and OSC 52 payloads here are well under typical tty write-atomicity limits, so real corruption is unlikely. Not worth the flicker for a low-probability, low-severity residual risk.
 - [x] `internal/config/config.go:161-170` — `ExpandHome` over-matches `~`-prefixed strings that aren't home-relative
-- [ ] `internal/tui/update.go:32-55` — flash-message helper reuse
+- [x] `internal/tui/update.go:32-55` — flash-message helper reuse
 - [ ] `internal/tui/view.go:311-315` — missing `MaxWidth` alongside existing `MaxHeight`
 - [ ] `internal/tui/view.go:390-404` — tab overflow in wide-mode header
 - [ ] `internal/app/app.go:67-77` — doc comment inaccurate about port allocation start

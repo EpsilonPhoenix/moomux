@@ -34,8 +34,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// while the same failure persists.
 			warning := "status scan warning: " + msg.Snap.Err.Error()
 			if m.flash != warning {
-				m.flash = warning
-				m.flashTime = time.Now()
+				m.setFlash("error", warning)
 			}
 		}
 		return m, tea.Batch(listenStatus(m.statusCh), refreshStatusCmd(m))
@@ -50,8 +49,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case StatusChannelClosedMsg:
-		m.flash = "status watcher stopped"
-		m.flashTime = time.Now()
+		m.setFlash("error", "status watcher stopped")
 		return m, nil
 
 	case TmuxKilledMsg:

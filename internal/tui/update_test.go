@@ -850,6 +850,9 @@ func TestStatusMessages(t *testing.T) {
 	if m.states["/wt/a"] != watcher.Working || !strings.Contains(m.flash, "scan hiccup") {
 		t.Fatalf("states=%v flash=%q", m.states, m.flash)
 	}
+	if m.flashKind != "error" {
+		t.Fatalf("flashKind = %q, want %q", m.flashKind, "error")
+	}
 
 	m.Update(StatusRefreshedMsg{
 		TmuxAlive: map[string]bool{"demo:a": true},
@@ -867,6 +870,9 @@ func TestStatusMessages(t *testing.T) {
 	m.Update(StatusChannelClosedMsg{})
 	if !strings.Contains(m.flash, "status watcher stopped") {
 		t.Fatalf("flash = %q", m.flash)
+	}
+	if m.flashKind != "error" {
+		t.Fatalf("flashKind = %q, want %q", m.flashKind, "error")
 	}
 
 	// the session list renders with a live status and prompt
