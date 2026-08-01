@@ -290,11 +290,14 @@ func (m *Model) View() string {
 			detailW = 20
 		}
 
+		// bodyHeight already excludes the panel's two border rows (the -2
+		// where it's computed above); subtracting again here left two blank
+		// filler rows per panel and clipped link hits near the bottom.
 		var listContent string
-		listContent, hits = m.renderList(listW-2, bodyHeight-2)
+		listContent, hits = m.renderList(listW-2, bodyHeight)
 		left := panelBorder.Width(listW).Height(bodyHeight).Render(listContent)
 		var detailContent string
-		detailContent, detailHits = m.renderDetail(detailW-2, bodyHeight-2)
+		detailContent, detailHits = m.renderDetail(detailW-2, bodyHeight)
 		right := panelBorder.Width(detailW).Height(bodyHeight).Render(detailContent)
 		detailX = lipgloss.Width(left) + panelBorder.GetBorderLeftSize() + panelBorder.GetPaddingLeft()
 		detailY = lipgloss.Height(header) + panelBorder.GetBorderTopSize()

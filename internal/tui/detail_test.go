@@ -39,3 +39,32 @@ func TestDetailTruncatesLongTicketURLButKeepsItClickable(t *testing.T) {
 		t.Errorf("expected a link hit for the full ticket URL %q, got hits: %+v", longURL, hits)
 	}
 }
+
+func TestDetailLinkHitsSurviveWrappedRows(t *testing.T) {
+	// A long value that wraps in the rendered panel must not shift the
+	// hitboxes of the rows below it.
+	m := layoutTestModel(1)
+	m.sessions[0].WorktreePath = "/tmp/wt"
+	m.sessions[0].Agent = "an-agent-name-far-longer-than-any-narrow-detail-pane-can-hold-on-one-line"
+	m.sessions[0].Ticket = "https://t/1"
+
+	width := 30
+	rendered, hits := m.renderDetail(width, 24)
+	if len(hits) != 1 {
+		t.Fatalf("hits = %+v", hits)
+	}
+	lines := strings.Split(rendered, "\n")
+	ticketLine := -1
+	for i, l := range lines {
+		if strings.Contains(l, "ticket") {
+			ticketLine = i
+			break
+		}
+	}
+	if ticketLine == -1 {
+		t.Fatalf("no ticket row rendered:\n%s", rendered)
+	}
+	if hits[0].line != ticketLine {
+		t.Fatalf("hit line = %d, rendered ticket row = %d\n%s", hits[0].line, ticketLine, rendered)
+	}
+}
