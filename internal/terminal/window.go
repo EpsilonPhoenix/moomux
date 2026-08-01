@@ -12,7 +12,9 @@ type windowOpener struct {
 }
 
 func (w *windowOpener) OpenSession(tmuxSession, title string) (string, error) {
-	args := w.args(title, tmuxSession)
+	// "=" pins tmux's -t to an exact session-name match; a bare name falls
+	// back to prefix matching and can attach to the wrong session.
+	args := w.args(title, "="+tmuxSession)
 	if w.exec != nil {
 		return "", w.exec(w.binary, args...)
 	}

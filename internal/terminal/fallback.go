@@ -9,5 +9,5 @@ import "fmt"
 type fallbackOpener struct{}
 
 func (f *fallbackOpener) OpenSession(tmuxSession, title string) (string, error) {
-	return fmt.Sprintf("no terminal detected, attach yourself: tmux attach -t %s", tmuxSession), nil
+	return fmt.Sprintf("no terminal detected, attach yourself: tmux attach -t =%s", tmuxSession), nil
 }

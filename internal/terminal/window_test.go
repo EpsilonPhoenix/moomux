@@ -30,7 +30,7 @@ func TestWindowOpenerKittyArgs(t *testing.T) {
 	assertContains(t, fe.args, "tmux")
 	assertContains(t, fe.args, "attach")
 	assertContains(t, fe.args, "-t")
-	assertContains(t, fe.args, "moomux-foo")
+	assertContains(t, fe.args, "=moomux-foo")
 }
 
 func TestWindowOpenerWindowsTerminalArgs(t *testing.T) {
@@ -48,7 +48,7 @@ func TestWindowOpenerWindowsTerminalArgs(t *testing.T) {
 	assertContains(t, fe.args, "tmux")
 	assertContains(t, fe.args, "attach")
 	assertContains(t, fe.args, "-t")
-	assertContains(t, fe.args, "moomux-foo")
+	assertContains(t, fe.args, "=moomux-foo")
 }
 
 func TestWindowOpenerGhosttyArgs(t *testing.T) {
@@ -65,7 +65,7 @@ func TestWindowOpenerGhosttyArgs(t *testing.T) {
 	assertContains(t, fe.args, "tmux")
 	assertContains(t, fe.args, "attach")
 	assertContains(t, fe.args, "-t")
-	assertContains(t, fe.args, "moomux-foo")
+	assertContains(t, fe.args, "=moomux-foo")
 }
 
 func TestWezTermArgsSpawnTab(t *testing.T) {
@@ -155,7 +155,7 @@ func TestRemoteOpenerFallsBackOnError(t *testing.T) {
 	if fallback.binary != "kitty" {
 		t.Fatalf("expected fallback to kitty, got %q", fallback.binary)
 	}
-	assertContains(t, fallback.args, "moomux-foo")
+	assertContains(t, fallback.args, "=moomux-foo")
 }
 
 func TestWindowOpenerAlacrittyArgs(t *testing.T) {
@@ -184,7 +184,7 @@ func TestWindowOpenerGnomeTerminalArgs(t *testing.T) {
 	assertContains(t, fe.args, "tmux")
 	assertContains(t, fe.args, "attach")
 	assertContains(t, fe.args, "-t")
-	assertContains(t, fe.args, "moomux-foo")
+	assertContains(t, fe.args, "=moomux-foo")
 }
 
 func TestWindowOpenerKonsoleArgs(t *testing.T) {
@@ -201,7 +201,7 @@ func TestWindowOpenerKonsoleArgs(t *testing.T) {
 	assertContains(t, fe.args, "feat/bar")
 	assertContains(t, fe.args, "-e")
 	assertContains(t, fe.args, "tmux")
-	assertContains(t, fe.args, "moomux-foo")
+	assertContains(t, fe.args, "=moomux-foo")
 }
 
 func TestWindowOpenerXtermArgs(t *testing.T) {
@@ -217,7 +217,7 @@ func TestWindowOpenerXtermArgs(t *testing.T) {
 	assertContains(t, fe.args, "feat/bar")
 	assertContains(t, fe.args, "-e")
 	assertContains(t, fe.args, "tmux")
-	assertContains(t, fe.args, "moomux-foo")
+	assertContains(t, fe.args, "=moomux-foo")
 }
 
 func TestWindowOpenerTilixArgs(t *testing.T) {
@@ -231,7 +231,7 @@ func TestWindowOpenerTilixArgs(t *testing.T) {
 	}
 	assertContains(t, fe.args, "-e")
 	assertContains(t, fe.args, "tmux")
-	assertContains(t, fe.args, "moomux-foo")
+	assertContains(t, fe.args, "=moomux-foo")
 }
 
 func TestWindowOpenerCmuxArgs(t *testing.T) {
@@ -247,7 +247,7 @@ func TestWindowOpenerCmuxArgs(t *testing.T) {
 	assertContains(t, fe.args, "--name")
 	assertContains(t, fe.args, "feat/bar")
 	assertContains(t, fe.args, "--command")
-	assertContains(t, fe.args, "tmux attach -t moomux-foo")
+	assertContains(t, fe.args, "tmux attach -t =moomux-foo")
 }
 
 func assertContains(t *testing.T, haystack []string, needle string) {

@@ -18,7 +18,7 @@ func TestITermOpenSessionAttachesAndSetsTitle(t *testing.T) {
 	if _, err := c.OpenSession("moomux-foo", "feat/bar"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(fr.script, "tmux attach -t moomux-foo") {
+	if !strings.Contains(fr.script, "tmux attach -t =moomux-foo") {
 		t.Fatalf("missing attach: %s", fr.script)
 	}
 	if !strings.Contains(fr.script, "iTerm2") {
