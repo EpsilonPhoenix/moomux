@@ -199,16 +199,6 @@ func TestNextOpenCodePort(t *testing.T) {
 	}
 }
 
-func TestExpandHome(t *testing.T) {
-	home, _ := os.UserHomeDir()
-	if got := expandHome("~/repo"); got != filepath.Join(home, "repo") {
-		t.Fatalf("got %q", got)
-	}
-	if got := expandHome("/abs/path"); got != "/abs/path" {
-		t.Fatalf("got %q", got)
-	}
-}
-
 func TestTmuxSessionNameUniqueAcrossProjects(t *testing.T) {
 	a := TmuxSessionName("proja:feat", "feat")
 	b := TmuxSessionName("projb:feat", "feat")
@@ -393,6 +383,26 @@ func TestCreateSessionPlainProject(t *testing.T) {
 	}
 	if len(git.calls) != 0 {
 		t.Fatalf("plain project must not touch git; calls = %v", git.calls)
+	}
+}
+
+func TestCreateSessionRejectsBogusAgent(t *testing.T) {
+	a, _, _, _ := newTestApp(t, gitProject("/repo"))
+	if _, _, err := a.CreateSession("demo", "feat", "clude", "", ""); err == nil {
+		t.Fatal("bogus agent must be rejected, not silently coerced to claude")
+	}
+}
+
+func TestCreateSessionRejectsProjectDefaultBogusAgent(t *testing.T) {
+	// A hand-edited config.toml with a typo'd project-level agent must fail
+	// session creation instead of silently launching claude while storing
+	// the bogus name (agentCmd's switch defaults unrecognized values to "claude").
+	projects := map[string]config.Project{
+		"demo": {Kind: "git", Repo: "/repo", BaseBranch: "main", Agent: "clude"},
+	}
+	a, _, _, _ := newTestApp(t, projects)
+	if _, _, err := a.CreateSession("demo", "feat", "", "", ""); err == nil {
+		t.Fatal("bogus project-level agent must be rejected")
 	}
 }
 
@@ -653,6 +663,19 @@ func TestAddProject(t *testing.T) {
 	}
 	if _, err := os.Stat(a.CfgPath); err != nil {
 		t.Fatalf("config not saved: %v", err)
+	}
+}
+
+func TestAddProjectRejectsBogusAgent(t *testing.T) {
+	repo := t.TempDir()
+	mustGit(t, repo, "init", "-b", "main")
+	a, _, _, _ := newTestApp(t, map[string]config.Project{})
+
+	if err := a.AddProject("demo", config.Project{Repo: repo, Agent: "clude"}); err == nil {
+		t.Fatal("bogus agent must be rejected")
+	}
+	if _, ok := a.Cfg.Projects["demo"]; ok {
+		t.Fatal("rejected project must not be saved")
 	}
 }
 

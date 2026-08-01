@@ -171,6 +171,9 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 	if agent == "" {
 		agent = proj.AgentName()
 	}
+	if err := validateAgent(agent); err != nil {
+		return session.Session{}, "", err
+	}
 	if _, exists := a.Store.Get(session.MakeID(project, name)); exists {
 		// Same name means the same worktree path — creating it again would
 		// hijack the existing session's checkout.
@@ -443,10 +446,16 @@ func (a *App) validateProject(name string, p *config.Project) error {
 	if p.Repo == "" {
 		return fmt.Errorf("repo path required")
 	}
+	// p.Agent == "" is a legitimate "use the default" value at rest (see
+	// AgentName), so validate the resolved name rather than the raw field —
+	// only a genuinely bogus value (e.g. a config typo) should be rejected.
+	if err := validateAgent(p.AgentName()); err != nil {
+		return err
+	}
 	if p.BaseBranch == "" {
 		p.BaseBranch = "main"
 	}
-	p.Repo = expandHome(p.Repo)
+	p.Repo = config.ExpandHome(p.Repo)
 	return nil
 }
 
@@ -512,7 +521,7 @@ func (a *App) UpdateProject(name string, updated config.Project) error {
 	if updated.Repo == "" {
 		return fmt.Errorf("repo path required")
 	}
-	updated.Repo = expandHome(updated.Repo)
+	updated.Repo = config.ExpandHome(updated.Repo)
 	updated.Kind = previous.Kind
 
 	if updated.NoWorktree != previous.NoWorktree {
@@ -574,16 +583,6 @@ func pathWithin(root, path string) bool {
 	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-func expandHome(p string) string {
-	if !strings.HasPrefix(p, "~") {
-		return p
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return p
-	}
-	return filepath.Join(home, strings.TrimPrefix(p, "~"))
-}
 
 func (a *App) DeleteSession(id string) error {
 	s, ok := a.Store.Get(id)

@@ -102,7 +102,7 @@ func Load(path string) (*Config, error) {
 		cfg.Projects = map[string]Project{}
 	}
 	for k, p := range cfg.Projects {
-		p.Repo = expandHome(p.Repo)
+		p.Repo = ExpandHome(p.Repo)
 		cfg.Projects[k] = p
 	}
 	return cfg, nil
@@ -134,7 +134,10 @@ func DefaultPath() string {
 	return filepath.Join(home, ".config", "moomux", "config.toml")
 }
 
-func expandHome(p string) string {
+// ExpandHome expands a leading "~" to the user's home directory. Load
+// already applies this to every stored Repo; callers validating freshly
+// typed input before it's ever saved (e.g. app.validateProject) need it too.
+func ExpandHome(p string) string {
 	if !strings.HasPrefix(p, "~") {
 		return p
 	}

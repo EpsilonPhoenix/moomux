@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+func TestExpandHome(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	if got := ExpandHome("~/repo"); got != filepath.Join(home, "repo") {
+		t.Fatalf("got %q", got)
+	}
+	if got := ExpandHome("/abs/path"); got != "/abs/path" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func writeFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
