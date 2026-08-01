@@ -2,6 +2,7 @@ package prompt
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -170,6 +171,45 @@ func TestFirstOpenCodeMissingDBLeavesNoStrayFile(t *testing.T) {
 	}
 	if _, err := os.Stat(dbPath); err == nil {
 		t.Fatal("sqlite3 left an empty db file behind for a missing path")
+	}
+}
+
+// TestFirstOpenCodeRespectsQueryTimeout replaces "sqlite3" on PATH with a
+// fake that sleeps far longer than queryTimeout. Without
+// exec.CommandContext bounding the subprocess, FirstOpenCode would block
+// for the full sleep instead of giving up once the timeout elapses.
+func TestFirstOpenCodeRespectsQueryTimeout(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+	home := t.TempDir()
+	dbPath := filepath.Join(home, ".local", "share", "opencode", "opencode.db")
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dbPath, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeDir := t.TempDir()
+	fake := filepath.Join(fakeDir, "sqlite3")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nsleep 5\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	old := queryTimeout
+	queryTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { queryTimeout = old })
+
+	start := time.Now()
+	got := FirstOpenCode(home, "/wt/x")
+	elapsed := time.Since(start)
+	if got != "" {
+		t.Fatalf("got %q, want empty", got)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("FirstOpenCode took %v, want to return shortly after queryTimeout", elapsed)
 	}
 }
 

@@ -4,6 +4,7 @@ package prompt
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -11,7 +12,14 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 )
+
+// queryTimeout bounds every sqlite3 subprocess this package spawns. These
+// run off the TUI's periodic status-refresh goroutine (not a
+// caller-supplied context), so a locked/corrupt DB blocks that one query,
+// not the whole refresh, indefinitely.
+var queryTimeout = 3 * time.Second
 
 // EncodeCwd mirrors Claude Code's project-dir encoding: '/', '.', and '_'
 // all become '-'. Existing hyphens are preserved.
@@ -63,7 +71,9 @@ WHERE s.directory = '` + strings.ReplaceAll(worktreePath, "'", "''") + `'
   AND json_extract(p.data, '$.type') = 'text'
 ORDER BY m.time_created ASC, p.time_created ASC
 LIMIT 1`
-	out, err := exec.Command("sqlite3", dbPath, query).Output()
+	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "sqlite3", dbPath, query).Output()
 	if err != nil {
 		return ""
 	}
@@ -83,7 +93,9 @@ func FirstCodex(home, worktreePath string) string {
 			continue
 		}
 		for _, p := range paths {
-			out, err := exec.Command("sqlite3", p, query).Output()
+			ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+			out, err := exec.CommandContext(ctx, "sqlite3", p, query).Output()
+			cancel()
 			if err != nil {
 				continue
 			}
