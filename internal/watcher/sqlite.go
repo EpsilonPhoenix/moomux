@@ -11,9 +11,11 @@ import (
 	"time"
 )
 
-// SQLiteWatcher polls an SQLite database for agent activity.
-// Query must return two columns: (path TEXT, updated_ms INTEGER) where
-// updated_ms is a Unix timestamp in milliseconds.
+// SQLiteWatcher polls an SQLite database for agent activity — this is what
+// backs OpenCode status (~/.local/share/opencode/opencode.db via the
+// sqlite3 CLI); an earlier OpenCodeWatcher was superseded by this generic
+// implementation. Query must return two columns: (path TEXT, updated_ms
+// INTEGER) where updated_ms is a Unix timestamp in milliseconds.
 type SQLiteWatcher struct {
 	DB        string        // exact path or glob (e.g. ~/.codex/state_*.sqlite)
 	Query     string        // SELECT path_col, updated_ms_col FROM ... GROUP BY path_col

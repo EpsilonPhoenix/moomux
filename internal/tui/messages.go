@@ -22,12 +22,9 @@ type StatusRefreshedMsg struct {
 // closed. It is terminal: no attempt is made to restart the watcher.
 type StatusChannelClosedMsg struct{}
 
-type SessionsRefreshedMsg struct{ Sessions []session.Session }
-
 type ErrorMsg struct{ Err error }
 
 type InfoMsg struct {
-	Text string
 	When time.Time
 }
 
