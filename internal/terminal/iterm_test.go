@@ -18,8 +18,11 @@ func TestITermOpenSessionAttachesAndSetsTitle(t *testing.T) {
 	if _, err := c.OpenSession("moomux-foo", "feat/bar"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(fr.script, "tmux attach -t =moomux-foo") {
-		t.Fatalf("missing attach: %s", fr.script)
+	// The target must be single-quoted: it is typed into an interactive
+	// shell, and zsh's EQUALS expansion turns a bare leading "=" into a
+	// command-path lookup ("zsh: moomux-foo not found").
+	if !strings.Contains(fr.script, `tmux attach -t '=moomux-foo'`) {
+		t.Fatalf("missing quoted attach: %s", fr.script)
 	}
 	if !strings.Contains(fr.script, "iTerm2") {
 		t.Fatalf("missing iTerm2 target: %s", fr.script)
@@ -38,7 +41,7 @@ func TestITermOpenSessionEscapesTmuxSession(t *testing.T) {
 	if _, err := c.OpenSession(`moomux-foo"; do shell script "rm`, "bar"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(fr.script, `tmux attach -t =moomux-foo\"; do shell script \"rm`) {
+	if !strings.Contains(fr.script, `tmux attach -t '=moomux-foo\"; do shell script \"rm'`) {
 		t.Fatalf("tmux session not escaped: %s", fr.script)
 	}
 }
