@@ -118,7 +118,9 @@ func (m *Model) focusedOverlayLine(content string) int {
 		switch m.newFormFocus {
 		case 1:
 			return lineContaining(content, m.branchInput.View())
-		case 2:
+		case newFormAgentFocus:
+			return lineContaining(content, m.renderNewFormAgentSelector())
+		case 3:
 			return lineContaining(content, m.ticketInput.View())
 		default:
 			return lineContaining(content, m.nameInput.View())
@@ -312,7 +314,7 @@ func (m *Model) View() string {
 	switch m.mode {
 	case ModeNewForm:
 		content := m.compactOverlayContent(m.renderNewForm())
-		footer := m.formFooter(newFormFieldHints[m.newFormFocus], "tab/↑↓ fields  ←→ agent  enter  esc cancel", "")
+		footer := m.formFooter(newFormFieldHints[m.newFormFocus], "tab/↑↓ fields  ←→ agent  enter  esc cancel", m.newFormErr)
 		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))
 	case ModeConfirmDelete:
 		return m.renderOverlay(m.renderConfirm(), "", -1)

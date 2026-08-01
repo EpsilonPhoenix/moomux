@@ -37,14 +37,23 @@ func TestNewSessionFormFlow(t *testing.T) {
 	}
 
 	typeText(m, "myfeat")
-	press(m, tea.KeyRight) // claude -> codex
+	press(m, tea.KeyLeft) // cursor movement in the name input, NOT the agent selector
+	typeText(m, "X")      // lands before the final rune, proving the cursor moved
+	if got := m.nameInput.Value(); got != "myfeaXt" {
+		t.Fatalf("left arrow did not move the text cursor: name = %q", got)
+	}
+	m.nameInput.SetValue("myfeat")
+	m.nameInput.CursorEnd()
+	press(m, tea.KeyTab) // -> branch
+	press(m, tea.KeyTab) // -> agent selector
+	press(m, tea.KeyRight)
 	if agentChoices[m.newFormAgentIdx] != "codex" {
 		t.Fatalf("agent = %q", agentChoices[m.newFormAgentIdx])
 	}
 	press(m, tea.KeyLeft) // back to claude
-	press(m, tea.KeyTab)  // -> branch
 	press(m, tea.KeyTab)  // -> ticket
 	typeText(m, "https://t/1")
+	press(m, tea.KeyShiftTab)
 	press(m, tea.KeyShiftTab) // -> branch again
 	if m.newFormFocus != 1 {
 		t.Fatalf("focus = %d", m.newFormFocus)
@@ -71,9 +80,31 @@ func TestNewSessionFormEmptySubmitIsNoop(t *testing.T) {
 	if len(be.createCalls) != 0 || m.mode != ModeNewForm {
 		t.Fatalf("calls=%v mode=%v", be.createCalls, m.mode)
 	}
+	// The rejection must be visible in the form itself, not a discarded flash.
+	if v := m.View(); !strings.Contains(v, "session name or an existing branch") {
+		t.Fatalf("empty-submit error not rendered:\n%s", v)
+	}
 	press(m, tea.KeyEsc)
 	if m.mode != ModeList {
 		t.Fatalf("mode = %v", m.mode)
+	}
+}
+
+func TestNewSessionFormAgentRequiredErrorRendered(t *testing.T) {
+	be := &fakeBackend{}
+	m := newTestModel(be)
+	m.cfg.Projects["demo"] = config.Project{Repo: "/repo", PromptAgent: true}
+	m.Update(keyRune("n"))
+	if m.newFormAgentIdx != -1 {
+		t.Fatalf("agentIdx = %d, want -1 for prompt_agent project", m.newFormAgentIdx)
+	}
+	typeText(m, "myfeat")
+	press(m, tea.KeyEnter)
+	if len(be.createCalls) != 0 {
+		t.Fatalf("createCalls = %v", be.createCalls)
+	}
+	if v := m.View(); !strings.Contains(v, "requires choosing an agent") {
+		t.Fatalf("agent-required error not rendered:\n%s", v)
 	}
 }
 

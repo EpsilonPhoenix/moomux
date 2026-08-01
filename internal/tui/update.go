@@ -417,6 +417,8 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.flashError(fmt.Errorf("no projects configured — press P to add one"))
 		}
 		m.mode = ModeNewForm
+		m.newFormErr = ""
+		m.newFormFocus = 0
 		m.nameInput.SetValue("")
 		m.nameInput.Focus()
 		m.branchInput.SetValue("")
@@ -545,37 +547,38 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.ShiftTab), key.Matches(msg, m.keys.FormDown), key.Matches(msg, m.keys.FormUp):
 		m.newFormBlurAll()
 		if key.Matches(msg, m.keys.ShiftTab) || key.Matches(msg, m.keys.FormUp) {
-			m.newFormFocus = (m.newFormFocus - 1 + 3) % 3
+			m.newFormFocus = (m.newFormFocus - 1 + newFormFieldCount) % newFormFieldCount
 		} else {
-			m.newFormFocus = (m.newFormFocus + 1) % 3
+			m.newFormFocus = (m.newFormFocus + 1) % newFormFieldCount
 		}
 		m.newFormFocusInput()
 		return m, nil
-	case key.Matches(msg, m.keys.Left):
-		if m.newFormAgentIdx < 0 {
-			m.newFormAgentIdx = 0
-		} else {
-			m.newFormAgentIdx = (m.newFormAgentIdx - 1 + len(agentChoices)) % len(agentChoices)
+	case key.Matches(msg, m.keys.Left), key.Matches(msg, m.keys.Right):
+		// Only steer the agent selector when it's the focused field;
+		// otherwise the arrows belong to the text input's cursor.
+		if m.newFormFocus == newFormAgentFocus {
+			if m.newFormAgentIdx < 0 {
+				m.newFormAgentIdx = 0
+			} else if key.Matches(msg, m.keys.Left) {
+				m.newFormAgentIdx = (m.newFormAgentIdx - 1 + len(agentChoices)) % len(agentChoices)
+			} else {
+				m.newFormAgentIdx = (m.newFormAgentIdx + 1) % len(agentChoices)
+			}
+			return m, nil
 		}
-		return m, nil
-	case key.Matches(msg, m.keys.Right):
-		if m.newFormAgentIdx < 0 {
-			m.newFormAgentIdx = 0
-		} else {
-			m.newFormAgentIdx = (m.newFormAgentIdx + 1) % len(agentChoices)
-		}
-		return m, nil
 	case key.Matches(msg, m.keys.Enter):
 		name := m.nameInput.Value()
 		branch := m.branchInput.Value()
 		ticket := m.ticketInput.Value()
 		if name == "" && branch == "" {
+			m.newFormErr = "enter a session name or an existing branch"
 			return m, nil
 		}
 		if m.newFormAgentIdx < 0 {
-			m.setFlash("error", "this project requires choosing an agent — use ←→")
+			m.newFormErr = "this project requires choosing an agent — tab to the agent row, then ←→"
 			return m, nil
 		}
+		m.newFormErr = ""
 		proj := m.projects[m.activeProj]
 		agent := agentChoices[m.newFormAgentIdx]
 		m.mode = ModeList
@@ -597,7 +600,9 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.newFormFocus {
 	case 1:
 		m.branchInput, cmd = m.branchInput.Update(msg)
-	case 2:
+	case newFormAgentFocus:
+		// selector row: no text input to type into
+	case 3:
 		m.ticketInput, cmd = m.ticketInput.Update(msg)
 	default:
 		m.nameInput, cmd = m.nameInput.Update(msg)
@@ -615,7 +620,9 @@ func (m *Model) newFormFocusInput() {
 	switch m.newFormFocus {
 	case 1:
 		m.branchInput.Focus()
-	case 2:
+	case newFormAgentFocus:
+		// selector row: nothing to focus
+	case 3:
 		m.ticketInput.Focus()
 	default:
 		m.nameInput.Focus()
