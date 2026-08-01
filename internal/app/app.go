@@ -484,6 +484,17 @@ func (a *App) UpdateProject(name string, updated config.Project) error {
 	updated.Repo = expandHome(updated.Repo)
 	updated.Kind = previous.Kind
 
+	if updated.NoWorktree != previous.NoWorktree {
+		// Existing sessions were created under the old mode; their
+		// WorktreePath either is or isn't the repo itself, and deleting
+		// them under the flipped mode would target the wrong path.
+		for _, s := range a.Store.All() {
+			if s.Project == name {
+				return fmt.Errorf("cannot change worktree mode while project %q has sessions — delete them first", name)
+			}
+		}
+	}
+
 	if previous.IsPlain() {
 		if err := os.MkdirAll(updated.Repo, 0o755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", updated.Repo, err)
@@ -526,6 +537,12 @@ func (a *App) RemoveProject(name string) error {
 	return nil
 }
 
+// pathWithin reports whether path is strictly inside root.
+func pathWithin(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 func expandHome(p string) string {
 	if !strings.HasPrefix(p, "~") {
 		return p
@@ -556,7 +573,11 @@ func (a *App) DeleteSession(id string) error {
 				_ = a.Git.DeleteBranch(proj.Repo, s.Branch)
 			}
 		}
-	} else {
+	} else if pathWithin(a.WorktreeRoot, s.WorktreePath) {
+		// Project gone from config (e.g. hand-edited TOML). Only clean up
+		// paths moomux itself created — for plain/no-worktree sessions
+		// WorktreePath is the user's real project folder, and deleting it
+		// here would wipe their repo.
 		_ = os.RemoveAll(s.WorktreePath)
 	}
 	return a.Store.Delete(id)

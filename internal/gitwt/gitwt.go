@@ -155,14 +155,19 @@ func (c *Client) RemoveWorktree(repoDir, worktreePath string) error {
 		_, _ = c.Runner.Run(repoDir, "worktree", "prune")
 		return nil
 	}
-	// git reported the worktree gone (or failed) but left the directory on
-	// disk — seen in practice even on a clean --force removal. Finish the
-	// job ourselves rather than leaving an orphaned checkout behind.
-	if rmErr := os.RemoveAll(worktreePath); rmErr != nil {
-		if err == nil {
-			err = rmErr
-		}
+	if err != nil {
+		// git refused to remove it and the directory is still there — e.g.
+		// it's the repo's main working tree (a no-worktree session's
+		// WorktreePath IS the repo) or a checkout belonging to another
+		// repo. Deleting it ourselves here is how a stale entry wipes a
+		// real repository; surface the error instead.
 		return err
+	}
+	// git reported success but left the directory on disk — seen in
+	// practice even on a clean --force removal. Finish the job ourselves
+	// rather than leaving an orphaned checkout behind.
+	if rmErr := os.RemoveAll(worktreePath); rmErr != nil {
+		return rmErr
 	}
 	_, _ = c.Runner.Run(repoDir, "worktree", "prune")
 	return nil

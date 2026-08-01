@@ -670,6 +670,21 @@ func TestUpdatePlainProjectPreservesKindAndClearsGitSettings(t *testing.T) {
 	}
 }
 
+func TestUpdateProjectNoWorktreeFlipBlockedWithSessions(t *testing.T) {
+	a, _, _, _ := newTestApp(t, gitProject("/repo"))
+	_ = a.Store.Put(session.Session{ID: "demo:feat", Project: "demo", Name: "feat", WorktreePath: "/wt/feat"})
+
+	p := a.Cfg.Projects["demo"]
+	p.Agent = "claude"
+	p.NoWorktree = true
+	if err := a.UpdateProject("demo", p); err == nil {
+		t.Fatal("flipping worktree mode with live sessions must fail")
+	}
+	if a.Cfg.Projects["demo"].NoWorktree {
+		t.Fatal("config must be unchanged after rejected update")
+	}
+}
+
 func TestUpdateProjectValidationAndRollback(t *testing.T) {
 	repo := t.TempDir()
 	mustGit(t, repo, "init", "-b", "main")
@@ -928,10 +943,11 @@ func TestDeleteSessionKeepsUserBranch(t *testing.T) {
 }
 
 func TestDeleteSessionOrphanedProject(t *testing.T) {
-	// Session whose project was removed from config: only its worktree dir
-	// is cleaned up, no git calls.
+	// Session whose project was removed from config: its worktree dir is
+	// cleaned up (no git calls) — but only when moomux created it, i.e. it
+	// lives under WorktreeRoot.
 	a, git, _, _ := newTestApp(t, map[string]config.Project{})
-	wt := filepath.Join(t.TempDir(), "orphan")
+	wt := filepath.Join(a.WorktreeRoot, "gone", "x")
 	if err := os.MkdirAll(wt, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -948,6 +964,28 @@ func TestDeleteSessionOrphanedProject(t *testing.T) {
 	}
 	if err := a.DeleteSession("gone:nope"); err == nil {
 		t.Fatal("unknown id must fail")
+	}
+}
+
+func TestDeleteSessionOrphanedProjectKeepsRealFolder(t *testing.T) {
+	// For a plain/no-worktree session, WorktreePath is the user's actual
+	// project folder. If the project vanishes from config, deleting the
+	// session must NOT delete that folder.
+	a, _, _, _ := newTestApp(t, map[string]config.Project{})
+	repo := filepath.Join(t.TempDir(), "real-project")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = a.Store.Put(session.Session{ID: "gone:x", Project: "gone", Name: "x", TmuxSession: "moomux-x", WorktreePath: repo})
+
+	if err := a.DeleteSession("gone:x"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(repo); err != nil {
+		t.Fatalf("user's project folder was deleted: %v", err)
+	}
+	if _, ok := a.Store.Get("gone:x"); ok {
+		t.Fatal("store entry should still be deleted")
 	}
 }
 
