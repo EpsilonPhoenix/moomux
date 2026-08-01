@@ -123,10 +123,18 @@ func (m *Model) renderFormHint(text string) string {
 // newFormFieldHints gives a one-line explanation for whichever field of the
 // new-session form is currently focused, so the jargon (worktree, base
 // branch) doesn't have to be memorized up front.
+// newFormFieldCount is the focus cycle length: name, branch, agent
+// selector, ticket — matching the rendered order.
+const newFormFieldCount = 4
+
+// newFormAgentFocus is the newFormFocus value for the agent selector row.
+const newFormAgentFocus = 2
+
 var newFormFieldHints = []string{
 	0: "shown in the session list and used for the worktree folder name — leave blank to derive one from the branch",
 	1: "an existing branch to resume, or a new one to branch off the project's base branch",
-	2: "optional — shown as a clickable ticket icon next to the session",
+	2: "which agent CLI runs in the session's pane — ←→ to choose",
+	3: "optional — shown as a clickable ticket icon next to the session",
 }
 
 func (m *Model) renderNewForm() string {
