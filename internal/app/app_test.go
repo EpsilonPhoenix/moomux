@@ -333,6 +333,38 @@ func TestCreateSessionExistingBranchRemovesStaleCleanWorktree(t *testing.T) {
 	}
 }
 
+func TestCreateSessionExistingBranchLiveStaleWorktreeBlocks(t *testing.T) {
+	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	staleWT := filepath.Join(a.WorktreeRoot, "demo", "old-login-page")
+	git.out["worktree list --porcelain"] = "worktree " + staleWT + "\nbranch refs/heads/feature/login-page\n"
+
+	staleTmux := TmuxSessionName("demo:old-login-page", "old-login-page")
+	if err := a.Store.Put(session.Session{
+		ID:           "demo:old-login-page",
+		Project:      "demo",
+		Name:         "old-login-page",
+		Branch:       "feature/login-page",
+		WorktreePath: staleWT,
+		TmuxSession:  staleTmux,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// has-session succeeds by default (no failOn entry), simulating a still-live pane.
+
+	_, _, err := a.CreateSession("demo", "", "", "feature/login-page", "")
+	if err == nil {
+		t.Fatal("expected error for stale worktree still in use by a live tmux session")
+	}
+	for _, c := range git.calls {
+		if strings.HasPrefix(strings.Join(c, " "), "@/repo worktree remove") {
+			t.Fatalf("should not remove worktree in use by a live tmux session; calls = %v", git.calls)
+		}
+	}
+	if !tm.called("has-session -t =" + staleTmux) {
+		t.Fatalf("expected HasSession check for stale tmux session; calls = %v", tm.calls)
+	}
+}
+
 func TestCreateSessionExistingBranchDirtyStaleWorktreeBlocks(t *testing.T) {
 	a, git, _, _ := newTestApp(t, gitProject("/repo"))
 	staleWT := filepath.Join(a.WorktreeRoot, "demo", "old-login-page")

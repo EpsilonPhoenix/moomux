@@ -157,6 +157,27 @@ func (a *App) uniqueNameFromBranch(project, branch string) string {
 	}
 }
 
+// tmuxSessionUsingWorktree returns the tmux session name of any tracked
+// session whose worktree is path and whose tmux session is still alive, so
+// callers can avoid force-removing a worktree out from under a live pane
+// (see internal/tmux/tmux.go's PaneCwd doc comment for what that breaks).
+// Empty result means no live session is using path.
+func (a *App) tmuxSessionUsingWorktree(path string) (string, error) {
+	for _, s := range a.Store.All() {
+		if s.WorktreePath != path {
+			continue
+		}
+		has, err := a.Tmux.HasSession(s.TmuxSession)
+		if err != nil {
+			return "", err
+		}
+		if has {
+			return s.TmuxSession, nil
+		}
+	}
+	return "", nil
+}
+
 // CreateSession's hint, when non-empty, is a user-facing instruction
 // (e.g. "run: tmux attach -t ...") to show alongside success — it is
 // not an error.
@@ -219,6 +240,11 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 				}
 				if !clean {
 					return session.Session{}, "", fmt.Errorf("branch %q is already checked out at %s with uncommitted changes", branch, staleWT)
+				}
+				if busy, terr := a.tmuxSessionUsingWorktree(staleWT); terr != nil {
+					return session.Session{}, "", fmt.Errorf("check tmux sessions for %s: %w", staleWT, terr)
+				} else if busy != "" {
+					return session.Session{}, "", fmt.Errorf("branch %q is already checked out at %s, in use by tmux session %q", branch, staleWT, busy)
 				}
 				if err := a.Git.RemoveWorktree(proj.Repo, staleWT); err != nil {
 					return session.Session{}, "", fmt.Errorf("remove stale worktree %s: %w", staleWT, err)
