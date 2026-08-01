@@ -2,6 +2,8 @@
 package app
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -45,6 +47,16 @@ func validateAgent(agent string) error {
 	default:
 		return fmt.Errorf("unknown agent %q", agent)
 	}
+}
+
+// TmuxSessionName returns the tmux session name for a moomux session. The
+// short ID hash keeps names unique across projects — "moomux-<name>" alone
+// collides when two projects each have a session with the same name, and a
+// name-only scheme is also ambiguous ("a" + "b-c" vs "a-b" + "c"). Nothing
+// ever parses this back; only uniqueness and greppability matter.
+func TmuxSessionName(id, name string) string {
+	sum := sha256.Sum256([]byte(id))
+	return "moomux-" + name + "-" + hex.EncodeToString(sum[:2])
 }
 
 func WorktreeRootDefault() string {
@@ -165,7 +177,7 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 		return session.Session{}, "", fmt.Errorf("session %q already exists in project %q", name, project)
 	}
 	var wt string
-	tmuxName := "moomux-" + name
+	tmuxName := TmuxSessionName(session.MakeID(project, name), name)
 	branch := ""
 
 	if proj.UsesWorktree() {
@@ -343,6 +355,16 @@ func (a *App) OpenSession(id string) (string, error) {
 		}
 	}
 	if !has {
+		if want := TmuxSessionName(s.ID, s.Name); s.TmuxSession != want {
+			// Lazy migration to the collision-free naming scheme: rename
+			// only while the tmux session is dead and being recreated
+			// anyway, so a live session never loses its identifier.
+			slog.Info("migrating tmux session name", "from", s.TmuxSession, "to", want)
+			s.TmuxSession = want
+			if err := a.Store.Put(s); err != nil {
+				return "", fmt.Errorf("store tmux name: %w", err)
+			}
+		}
 		slog.Info("tmux session absent, recreating", "tmux_session", s.TmuxSession, "cwd", s.WorktreePath)
 		cmd := agentCmd(s.AgentName())
 		if s.AgentName() == "opencode" {
