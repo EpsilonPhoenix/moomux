@@ -1,9 +1,13 @@
 package tmux
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeRunner struct {
@@ -25,6 +29,35 @@ type exitErr struct{ code int }
 
 func (e exitErr) Error() string { return "exit" }
 func (e exitErr) ExitCode() int { return e.code }
+
+// TestExecRunnerRespectsRunTimeout replaces "tmux" on PATH with a fake that
+// sleeps far longer than runTimeout. Without exec.CommandContext bounding
+// the subprocess, execRunner.Run would block for the full sleep instead of
+// giving up once the timeout elapses (e.g. an unresponsive tmux server
+// hanging the whole app).
+func TestExecRunnerRespectsRunTimeout(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+	fakeDir := t.TempDir()
+	fake := filepath.Join(fakeDir, "tmux")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nsleep 5\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	old := runTimeout
+	runTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { runTimeout = old })
+
+	start := time.Now()
+	if _, err := (execRunner{}).Run("list-sessions"); err == nil {
+		t.Fatal("expected error once runTimeout elapsed")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("Run took %v, want to return shortly after runTimeout", elapsed)
+	}
+}
 
 func TestNewSession(t *testing.T) {
 	fr := &fakeRunner{out: map[string]string{"list-panes -t =moomux-foo: -F #{pane_id}": "%3\n"}}

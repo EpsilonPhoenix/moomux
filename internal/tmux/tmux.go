@@ -2,10 +2,17 @@
 package tmux
 
 import (
+	"context"
 	"errors"
 	"os/exec"
 	"strings"
+	"time"
 )
+
+// runTimeout bounds every tmux subprocess execRunner spawns. Client methods
+// don't carry a caller context, so an unresponsive tmux server is bounded
+// by a fixed timeout instead of hanging the whole app forever.
+var runTimeout = 10 * time.Second
 
 type Runner interface {
 	Run(args ...string) (string, error)
@@ -14,7 +21,9 @@ type Runner interface {
 type execRunner struct{}
 
 func (execRunner) Run(args ...string) (string, error) {
-	out, err := exec.Command("tmux", args...).CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "tmux", args...).CombinedOutput()
 	return string(out), err
 }
 
