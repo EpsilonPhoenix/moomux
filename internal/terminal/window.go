@@ -1,6 +1,10 @@
 package terminal
 
-import "os/exec"
+import (
+	"os"
+	"os/exec"
+	"strings"
+)
 
 // argBuilder builds the full argument list given a title and tmux session name.
 type argBuilder func(title, tmuxSession string) []string
@@ -18,7 +22,27 @@ func (w *windowOpener) OpenSession(tmuxSession, title string) (string, error) {
 	if w.exec != nil {
 		return "", w.exec(w.binary, args...)
 	}
-	return "", exec.Command(w.binary, args...).Start()
+	cmd := exec.Command(w.binary, args...)
+	// When moomux itself runs inside tmux (auto_tmux), the spawned
+	// terminal inherits $TMUX and its `tmux attach` refuses with
+	// "sessions should be nested with care". Socket-based openers (kitty
+	// @, wezterm cli, iTerm AppleScript) run their command in the
+	// server's environment and are unaffected — which is why the failure
+	// looks intermittent across terminals.
+	cmd.Env = envWithoutTmux(os.Environ())
+	return "", cmd.Start()
+}
+
+// envWithoutTmux returns env minus the TMUX/TMUX_PANE variables.
+func envWithoutTmux(env []string) []string {
+	out := env[:0:0]
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 func kittyArgs(title, tmuxSession string) []string {
