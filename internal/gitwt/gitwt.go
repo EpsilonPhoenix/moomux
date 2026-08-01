@@ -160,11 +160,21 @@ func (c *Client) AddWorktreeExisting(repoDir, worktreePath, branch string) error
 func (c *Client) RemoveWorktree(repoDir, worktreePath string) error {
 	_, err := c.Runner.Run(repoDir, "worktree", "remove", worktreePath, "--force")
 	if _, statErr := os.Stat(worktreePath); statErr != nil {
-		// The checkout is already gone (e.g. another session removed it).
-		// Nothing left to remove — drop any stale registration and succeed
-		// instead of failing on a worktree that no longer exists.
-		_, _ = c.Runner.Run(repoDir, "worktree", "prune")
-		return nil
+		if os.IsNotExist(statErr) {
+			// The checkout is already gone (e.g. another session removed
+			// it). Nothing left to remove — drop any stale registration and
+			// succeed instead of failing on a worktree that no longer
+			// exists.
+			_, _ = c.Runner.Run(repoDir, "worktree", "prune")
+			return nil
+		}
+		// Some other stat failure (e.g. permission denied) — we don't
+		// actually know whether the worktree is gone, so don't assume
+		// success. Surface whichever error is more informative.
+		if err != nil {
+			return err
+		}
+		return statErr
 	}
 	if err != nil {
 		// git refused to remove it and the directory is still there — e.g.

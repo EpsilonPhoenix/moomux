@@ -69,6 +69,34 @@ func TestRemoveWorktree(t *testing.T) {
 	}
 }
 
+// TestRemoveWorktreeStatPermissionErrorSurfaces simulates os.Stat failing
+// for a reason other than "gone" (e.g. permission denied on a parent dir).
+// RemoveWorktree must not treat that as "already removed" and report
+// success — it doesn't actually know whether the worktree is there.
+func TestRemoveWorktreeStatPermissionErrorSurfaces(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permission bits")
+	}
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "locked")
+	if err := os.Mkdir(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(locked, "worktree")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+
+	c := &Client{Runner: &erringRunner{}}
+	if err := c.RemoveWorktree("/repo", target); err == nil {
+		t.Fatal("expected an error, not silent success, for an unresolvable stat")
+	}
+}
+
 // erringRunner fails every git call, simulating e.g. "worktree remove"
 // refusing to touch a main working tree.
 type erringRunner struct{ calls int }
