@@ -457,6 +457,29 @@ func TestCreateSessionErrors(t *testing.T) {
 	if !strings.Contains(hint, "tmux attach -t "+termfailTn) {
 		t.Fatalf("hint = %q", hint)
 	}
+
+	// store.Put fails too: the tmux session is already running (and, per
+	// above, the terminal-open failure already produced a manual-attach
+	// hint) — that hint must survive in the returned error instead of being
+	// lost, since ErrorMsg only ever surfaces err.Error() to the user.
+	noBranch(git, "storefail")
+	storefailTn := TmuxSessionName("demo:storefail", "storefail")
+	tm.out["list-panes -t ="+storefailTn+": -F #{pane_id}"] = "%0\n"
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.Store.Path = filepath.Join(blocker, "sessions.json")
+	_, hint, err = a.CreateSession("demo", "storefail", "", "", "")
+	if err == nil || !strings.Contains(err.Error(), "store:") {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(err.Error(), "tmux attach -t "+storefailTn) {
+		t.Fatalf("store-put error dropped the manual-attach hint: %v", err)
+	}
+	if !strings.Contains(hint, "tmux attach -t "+storefailTn) {
+		t.Fatalf("hint = %q", hint)
+	}
 }
 
 func TestOpenSessionAlive(t *testing.T) {

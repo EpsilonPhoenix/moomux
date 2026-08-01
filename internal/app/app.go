@@ -272,7 +272,14 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 	}
 	if err := a.Store.Put(s); err != nil {
 		slog.Error("store put failed", "id", s.ID, "err", err)
-		return s, "", fmt.Errorf("store: %w", err)
+		err = fmt.Errorf("store: %w", err)
+		if hint != "" {
+			// The tmux session is already running at this point (see
+			// above); don't let the caller lose the manual-attach hint
+			// just because persisting the session record also failed.
+			err = fmt.Errorf("%w; %s", err, hint)
+		}
+		return s, hint, err
 	}
 	return s, hint, nil
 }
