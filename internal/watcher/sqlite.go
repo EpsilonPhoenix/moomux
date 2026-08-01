@@ -67,11 +67,15 @@ func (w *SQLiteWatcher) tick(ctx context.Context, out chan<- Snapshot, activeAge
 			continue
 		}
 		for path, updatedMs := range rows {
-			age := now.Sub(time.UnixMilli(updatedMs))
-			if age <= activeAge {
-				snap.States[path] = Working
-			} else {
-				snap.States[path] = Waiting
+			st := Waiting
+			if now.Sub(time.UnixMilli(updatedMs)) <= activeAge {
+				st = Working
+			}
+			// Max-merge like DirWatcher: the glob can match several DBs
+			// (CLI + IDE plugin) holding the same cwd, and iteration order
+			// must not let a staler DB downgrade a Working path.
+			if prev, ok := snap.States[path]; !ok || st > prev {
+				snap.States[path] = st
 			}
 		}
 	}

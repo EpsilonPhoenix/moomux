@@ -22,7 +22,13 @@ func parseFile(path string) (rawSession, error) {
 	if err != nil {
 		return rs, err
 	}
-	_ = json.Unmarshal(data, &rs)
+	if err := json.Unmarshal(data, &rs); err != nil {
+		// Surface it: Snapshot.Err's contract promises "unparsable file"
+		// reaches the caller instead of the session silently reading as
+		// idle. Half-written files (the agent mid-save) clear on the next
+		// tick.
+		return rs, err
+	}
 	if rs.CWD != "" {
 		rs.CWD = filepath.Clean(rs.CWD)
 	}
@@ -45,5 +51,7 @@ func classify(rs rawSession) State {
 	case rs.Status == "idle", rs.Status == "waiting", rs.State == "idle":
 		return Waiting
 	}
-	return Waiting
+	// A status we don't recognize is not evidence the session is idle —
+	// Unknown lets the merge in tick() keep any better signal for the path.
+	return Unknown
 }
