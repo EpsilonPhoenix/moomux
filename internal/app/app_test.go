@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -113,6 +114,27 @@ func TestAgentCmd(t *testing.T) {
 		if got := agentCmd(agent); got != want {
 			t.Errorf("agentCmd(%q) = %q, want %q", agent, got, want)
 		}
+	}
+}
+
+func TestSendPromptTypesIntoSession(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
+	if err := a.SendPrompt("moomux-foo", "fix the bug"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"send-keys", "-t", "moomux-foo", "fix the bug", "Enter"}
+	if len(tm.calls) != 1 || !reflect.DeepEqual(tm.calls[0], want) {
+		t.Fatalf("calls = %v", tm.calls)
+	}
+}
+
+func TestSendPromptEmptyIsNoop(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
+	if err := a.SendPrompt("moomux-foo", ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(tm.calls) != 0 {
+		t.Fatalf("expected no tmux calls, got %v", tm.calls)
 	}
 }
 

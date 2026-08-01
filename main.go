@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
@@ -40,6 +42,13 @@ func main() {
 	if err := checkDeps(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
+	}
+	if len(os.Args) >= 2 && os.Args[1] == "spawn" {
+		if err := runSpawn(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "moomux:", err)
+			os.Exit(1)
+		}
+		return
 	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "moomux:", err)
@@ -159,17 +168,94 @@ func relaunchInTmux() error {
 	return syscall.Exec(tmuxBin, []string{"tmux", "new-session", "-A", "-s", "moomux", self}, os.Environ())
 }
 
-func run() error {
+// newApp loads config/session state and wires up an App, with logging
+// pointed at moomux.log. Shared by the TUI (run) and the non-interactive
+// spawn subcommand — neither the tmux-setup/auto-tmux first-run prompts nor
+// relaunchInTmux belong in the non-interactive path, so those stay in run().
+func newApp() (*app.App, error) {
 	cfgPath := config.DefaultPath()
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
-		return fmt.Errorf("load config %s: %w", cfgPath, err)
+		return nil, fmt.Errorf("load config %s: %w", cfgPath, err)
 	}
 
 	store := &session.Store{Path: session.DefaultPath()}
 	if err := store.Load(); err != nil {
-		return fmt.Errorf("load sessions: %w", err)
+		return nil, fmt.Errorf("load sessions: %w", err)
 	}
+
+	home, _ := os.UserHomeDir()
+	logDir := filepath.Join(home, ".local", "share", "moomux")
+	_ = os.MkdirAll(logDir, 0o755)
+	logPath := filepath.Join(logDir, "moomux.log")
+	if lf, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+		slog.SetDefault(slog.New(slog.NewTextHandler(lf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	} else {
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	}
+
+	return &app.App{
+		Cfg:          cfg,
+		CfgPath:      cfgPath,
+		Store:        store,
+		Tmux:         tmux.New(),
+		Terminal:     terminal.Detect(),
+		Git:          gitwt.New(),
+		WorktreeRoot: app.WorktreeRootDefault(),
+	}, nil
+}
+
+// runSpawn implements `moomux spawn`: create a session (worktree + tmux +
+// agent, same as the TUI's "new session" action) and, if -prompt is given,
+// type it into the agent's pane as its first task. Fire-and-forget — it
+// prints the new tmux session name and exits without waiting on the agent.
+func runSpawn(args []string) error {
+	fs := flag.NewFlagSet("spawn", flag.ExitOnError)
+	project := fs.String("project", "", "project name (required)")
+	name := fs.String("name", "", "session name (derived from -branch if omitted)")
+	agent := fs.String("agent", "", "agent override (claude, codex, opencode)")
+	branch := fs.String("branch", "", "existing branch to check out, instead of creating a new one")
+	ticket := fs.String("ticket", "", "ticket URL to attach to the session")
+	prompt := fs.String("prompt", "", "initial prompt to type into the new session's agent pane")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *project == "" {
+		return fmt.Errorf("spawn: -project is required")
+	}
+
+	a, err := newApp()
+	if err != nil {
+		return err
+	}
+
+	s, hint, err := a.CreateSession(*project, *name, *agent, *branch, *ticket)
+	if err != nil {
+		return fmt.Errorf("create session: %w", err)
+	}
+	if hint != "" {
+		fmt.Println(hint)
+	}
+	fmt.Println(s.TmuxSession)
+
+	if *prompt != "" {
+		// ponytail: fixed delay, not a readiness poll — good enough for a
+		// fire-and-forget v1. Upgrade to polling pane content for a ready
+		// marker if agent startup time ever outgrows this.
+		time.Sleep(2 * time.Second)
+		if err := a.SendPrompt(s.TmuxSession, *prompt); err != nil {
+			return fmt.Errorf("send prompt: %w", err)
+		}
+	}
+	return nil
+}
+
+func run() error {
+	a, err := newApp()
+	if err != nil {
+		return err
+	}
+	cfg, cfgPath := a.Cfg, a.CfgPath
 
 	if !cfg.TmuxSetupAsked {
 		promptTmuxSetup(cfg, cfgPath)
@@ -184,26 +270,6 @@ func run() error {
 	}
 
 	home, _ := os.UserHomeDir()
-	logDir := filepath.Join(home, ".local", "share", "moomux")
-	_ = os.MkdirAll(logDir, 0o755)
-	logPath := filepath.Join(logDir, "moomux.log")
-	if lf, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
-		slog.SetDefault(slog.New(slog.NewTextHandler(lf, &slog.HandlerOptions{Level: slog.LevelDebug})))
-		defer lf.Close()
-	} else {
-		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
-	}
-
-	a := &app.App{
-		Cfg:          cfg,
-		CfgPath:      cfgPath,
-		Store:        store,
-		Tmux:         tmux.New(),
-		Terminal:     terminal.Detect(),
-		Git:          gitwt.New(),
-		WorktreeRoot: app.WorktreeRootDefault(),
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	statusCh := make(chan watcher.Snapshot, 4)
 	multi := buildWatcher(home)

@@ -114,6 +114,13 @@ func (c *Client) NewSession(name, cwd, cmd, windowName string) error {
 	return nil
 }
 
+// SendKeys types text into session's active pane followed by Enter. NewSession
+// leaves the left (agent) pane active, so this reaches the agent's input.
+func (c *Client) SendKeys(session, text string) error {
+	_, err := c.Runner.Run("send-keys", "-t", session, text, "Enter")
+	return err
+}
+
 // ConfigureTitleTracking ensures the tmux session keeps its window name stable
 // and continuously emits it as the terminal title. Safe to call on existing
 // sessions — idempotent tmux set-option calls never break anything.

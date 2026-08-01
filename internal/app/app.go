@@ -269,6 +269,15 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 	return s, hint, nil
 }
 
+// SendPrompt types text into a session's agent pane, for handing a freshly
+// spawned session its initial task. No-op if prompt is empty.
+func (a *App) SendPrompt(tmuxSession, prompt string) error {
+	if prompt == "" {
+		return nil
+	}
+	return a.Tmux.SendKeys(tmuxSession, prompt)
+}
+
 // MoveSession shifts the session with the given id by delta positions (-1
 // up, +1 down) within its project's session list, and persists the new
 // order. It's a no-op if the move would go out of bounds.
