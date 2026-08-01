@@ -30,7 +30,10 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 	}
 	var hits []linkHit
 	row := func(k, v, url string) {
-		line := strings.Count(b.String(), "\n")
+		// Measure the rendered height, not logical newlines: the final
+		// Width(width) render *wraps* long rows rather than clipping, and a
+		// wrapped row above would shift every later hitbox down.
+		line := lipgloss.Height(lipgloss.NewStyle().Width(width).Render(b.String())) - 1
 		key := muteStyle.Render(fmt.Sprintf("%-10s", k+":"))
 		if url != "" {
 			col0 := lipgloss.Width(key) + 1
@@ -61,7 +64,7 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 	row("agent", s.AgentName(), "")
 	row("name", truncate(s.Name, valueWidth), "")
 	row("worktree", truncateLeft(s.WorktreePath, valueWidth), "")
-	row("tmux", s.TmuxSession, "")
+	row("tmux", truncate(s.TmuxSession, valueWidth), "")
 	row("created", humanizeAge(time.Since(s.CreatedAt)), "")
 	if s.Ticket != "" {
 		row("ticket", truncateLeft(s.Ticket, valueWidth), s.Ticket)
