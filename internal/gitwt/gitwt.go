@@ -92,12 +92,13 @@ func (c *Client) AddWorktree(repoDir, worktreePath, branch, baseBranch string) e
 		start = "origin/" + baseBranch
 	}
 	if c.BranchExists(repoDir, branch) {
-		// Leftover from an orphaned worktree (branch survives, checkout doesn't).
-		// If it's actually checked out elsewhere, this delete fails with a clear
-		// "cannot delete branch checked out at ..." error instead of the more
-		// confusing "-b" already-exists error below.
-		if _, err := c.Runner.Run(repoDir, "branch", "-D", branch); err != nil {
-			return err
+		// Usually a leftover from an orphaned worktree (branch survives,
+		// checkout doesn't) — but it could equally be the user's own branch
+		// with unpushed commits, so only delete what git considers merged
+		// (-d, not -D). Anything unmerged or checked out elsewhere fails
+		// here with a clear message instead of losing commits.
+		if _, err := c.Runner.Run(repoDir, "branch", "-d", branch); err != nil {
+			return fmt.Errorf("branch %q already exists and isn't fully merged — create the session from the existing branch instead, or delete the branch manually: %w", branch, err)
 		}
 	}
 	_, err := c.Runner.Run(repoDir, "worktree", "add", worktreePath, "-b", branch, start)

@@ -46,8 +46,9 @@ func TestBranchExists(t *testing.T) {
 
 func TestAddWorktreeDeletesLeftoverBranch(t *testing.T) {
 	// Branch exists (leftover from an orphaned worktree) and there's no
-	// remote: it must be force-deleted before worktree add, and the start
-	// point must be the local base branch.
+	// remote: it must be safe-deleted (-d, never -D — it could be the
+	// user's own branch with unpushed commits) before worktree add, and
+	// the start point must be the local base branch.
 	fr := &failRunner{failOn: map[string]bool{"remote get-url origin": true}}
 	c := &Client{Runner: fr}
 	if err := c.AddWorktree("/repo", "/wt/foo", "foo", "main"); err != nil {
@@ -58,19 +59,30 @@ func TestAddWorktreeDeletesLeftoverBranch(t *testing.T) {
 		joined[i] = strings.Join(call, " ")
 	}
 	all := strings.Join(joined, "\n")
-	if !strings.Contains(all, "@/repo branch -D foo") {
+	if !strings.Contains(all, "@/repo branch -d foo") {
 		t.Fatalf("leftover branch not deleted:\n%s", all)
+	}
+	if strings.Contains(all, "branch -D") {
+		t.Fatalf("force-deleted a pre-existing branch:\n%s", all)
 	}
 	if !strings.Contains(all, "@/repo worktree add /wt/foo -b foo main") {
 		t.Fatalf("worktree add should start from local main:\n%s", all)
 	}
 }
 
-func TestAddWorktreeBranchDeleteFails(t *testing.T) {
-	fr := &failRunner{failOn: map[string]bool{"branch -D foo": true}}
+func TestAddWorktreeUnmergedBranchBlocks(t *testing.T) {
+	// An unmerged (or checked-out) same-named branch refuses -d; creation
+	// must fail with a pointer to the fix, without running worktree add.
+	fr := &failRunner{failOn: map[string]bool{"branch -d foo": true}}
 	c := &Client{Runner: fr}
-	if err := c.AddWorktree("/repo", "/wt/foo", "foo", "main"); err == nil {
-		t.Fatal("expected error when leftover branch can't be deleted")
+	err := c.AddWorktree("/repo", "/wt/foo", "foo", "main")
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("err = %v", err)
+	}
+	for _, call := range fr.calls {
+		if strings.Contains(strings.Join(call, " "), "worktree add") {
+			t.Fatalf("worktree add must not run after refused delete: %v", fr.calls)
+		}
 	}
 }
 
