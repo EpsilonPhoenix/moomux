@@ -28,14 +28,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for path, st := range msg.Snap.States {
 			m.states[path] = st
 		}
+		// MultiWatcher fans out one Snapshot per sub-watcher, each covering
+		// only its own agent's paths, so we can't replace m.states wholesale
+		// here without wiping every other watcher's entries. Instead prune
+		// against the full live session set so paths from deleted sessions
+		// don't linger forever.
+		live := make(map[string]bool, len(m.backend.Sessions()))
+		for _, s := range m.backend.Sessions() {
+			live[s.WorktreePath] = true
+		}
+		for path := range m.states {
+			if !live[path] {
+				delete(m.states, path)
+			}
+		}
 		m.refreshSessions()
 		if msg.Snap.Err != nil {
 			// Surface once rather than re-flashing on every subsequent tick
 			// while the same failure persists.
 			warning := "status scan warning: " + msg.Snap.Err.Error()
 			if m.flash != warning {
-				m.flash = warning
-				m.flashTime = time.Now()
+				m.setFlash("error", warning)
 			}
 		}
 		return m, tea.Batch(listenStatus(m.statusCh), refreshStatusCmd(m))
@@ -50,8 +63,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case StatusChannelClosedMsg:
-		m.flash = "status watcher stopped"
-		m.flashTime = time.Now()
+		m.setFlash("error", "status watcher stopped")
 		return m, nil
 
 	case TmuxKilledMsg:

@@ -12,7 +12,7 @@
                 ||     ||
 ```
 
-A TUI for managing [Claude Code](https://claude.com/claude-code) agent sessions across git worktrees. Creates a worktree + branch, starts a tmux session, launches `claude`, and opens a terminal tab — all in one keypress. Single Go binary, no daemon.
+A TUI for managing [Claude Code](https://claude.com/claude-code) agent sessions across git worktrees. Creates a worktree + branch, starts a tmux session, launches the session's agent (`claude`, `codex`, or `opencode`), and opens a terminal tab — all in one keypress. Single Go binary, no daemon.
 
 ## Session layout
 

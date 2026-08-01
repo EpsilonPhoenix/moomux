@@ -13,14 +13,23 @@ type windowOpener struct {
 	binary string
 	args   argBuilder
 	exec   func(binary string, args ...string) error
+	// manualAttach is set for openers whose args builder (e.g.
+	// terminalAppArgs) can't pass a startup command, so the new window
+	// won't auto-attach — OpenSession returns a hint telling the user to
+	// attach manually instead of silently leaving them at a bare shell.
+	manualAttach bool
 }
 
 func (w *windowOpener) OpenSession(tmuxSession, title string) (string, error) {
 	// "=" pins tmux's -t to an exact session-name match; a bare name falls
 	// back to prefix matching and can attach to the wrong session.
 	args := w.args(title, "="+tmuxSession)
+	hint := ""
+	if w.manualAttach {
+		hint = "opened Terminal.app — attach manually: tmux attach -t " + tmuxSession
+	}
 	if w.exec != nil {
-		return "", w.exec(w.binary, args...)
+		return hint, w.exec(w.binary, args...)
 	}
 	cmd := exec.Command(w.binary, args...)
 	// When moomux itself runs inside tmux (auto_tmux), the spawned
@@ -30,13 +39,20 @@ func (w *windowOpener) OpenSession(tmuxSession, title string) (string, error) {
 	// server's environment and are unaffected — which is why the failure
 	// looks intermittent across terminals.
 	cmd.Env = envWithoutTmux(os.Environ())
+	// The spawned terminal binary otherwise inherits moomux's own cwd, which
+	// can be a worktree that's later removed — see execRunner.Run's comment
+	// in internal/tmux/tmux.go for why a directory that can vanish should
+	// never be handed to a long-lived child as its launch directory.
+	if home, err := os.UserHomeDir(); err == nil {
+		cmd.Dir = home
+	}
 	if err := cmd.Start(); err != nil {
 		return "", err
 	}
 	// Reap the child once it exits; without this every opened window/tab
 	// leaves a zombie for the lifetime of the long-running TUI process.
 	go func() { _ = cmd.Wait() }()
-	return "", nil
+	return hint, nil
 }
 
 // envWithoutTmux returns env minus the TMUX/TMUX_PANE variables.

@@ -65,7 +65,9 @@ func WorktreeRootDefault() string {
 }
 
 // nextOpenCodePort returns the next available port for an OpenCode session.
-// Starts at 4096 and increments past any port already in use by existing OpenCode sessions.
+// Starts at 4096 and increments past the highest AgentPort recorded across
+// all sessions; AgentPort is only ever non-zero on OpenCode sessions, so
+// this is effectively scoped to those without needing an explicit filter.
 func (a *App) nextOpenCodePort() int {
 	port := 4096
 	for _, s := range a.Store.All() {
@@ -155,6 +157,27 @@ func (a *App) uniqueNameFromBranch(project, branch string) string {
 	}
 }
 
+// tmuxSessionUsingWorktree returns the tmux session name of any tracked
+// session whose worktree is path and whose tmux session is still alive, so
+// callers can avoid force-removing a worktree out from under a live pane
+// (see internal/tmux/tmux.go's PaneCwd doc comment for what that breaks).
+// Empty result means no live session is using path.
+func (a *App) tmuxSessionUsingWorktree(path string) (string, error) {
+	for _, s := range a.Store.All() {
+		if s.WorktreePath != path {
+			continue
+		}
+		has, err := a.Tmux.HasSession(s.TmuxSession)
+		if err != nil {
+			return "", err
+		}
+		if has {
+			return s.TmuxSession, nil
+		}
+	}
+	return "", nil
+}
+
 // CreateSession's hint, when non-empty, is a user-facing instruction
 // (e.g. "run: tmux attach -t ...") to show alongside success — it is
 // not an error.
@@ -218,6 +241,11 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 				if !clean {
 					return session.Session{}, "", fmt.Errorf("branch %q is already checked out at %s with uncommitted changes", branch, staleWT)
 				}
+				if busy, terr := a.tmuxSessionUsingWorktree(staleWT); terr != nil {
+					return session.Session{}, "", fmt.Errorf("check tmux sessions for %s: %w", staleWT, terr)
+				} else if busy != "" {
+					return session.Session{}, "", fmt.Errorf("branch %q is already checked out at %s, in use by tmux session %q", branch, staleWT, busy)
+				}
 				if err := a.Git.RemoveWorktree(proj.Repo, staleWT); err != nil {
 					return session.Session{}, "", fmt.Errorf("remove stale worktree %s: %w", staleWT, err)
 				}
@@ -270,7 +298,14 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 	}
 	if err := a.Store.Put(s); err != nil {
 		slog.Error("store put failed", "id", s.ID, "err", err)
-		return s, "", fmt.Errorf("store: %w", err)
+		err = fmt.Errorf("store: %w", err)
+		if hint != "" {
+			// The tmux session is already running at this point (see
+			// above); don't let the caller lose the manual-attach hint
+			// just because persisting the session record also failed.
+			err = fmt.Errorf("%w; %s", err, hint)
+		}
+		return s, hint, err
 	}
 	return s, hint, nil
 }
@@ -524,7 +559,10 @@ func (a *App) UpdateProject(name string, updated config.Project) error {
 	if !ok {
 		return fmt.Errorf("unknown project %q", name)
 	}
-	if err := validateAgent(updated.Agent); err != nil {
+	// updated.Agent == "" is a legitimate "use the default" value at rest
+	// (see AgentName), same as in validateProject — validate the resolved
+	// name rather than the raw field.
+	if err := validateAgent(updated.AgentName()); err != nil {
 		return err
 	}
 	if updated.Repo == "" {

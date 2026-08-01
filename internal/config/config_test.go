@@ -16,6 +16,14 @@ func TestExpandHome(t *testing.T) {
 	if got := ExpandHome("/abs/path"); got != "/abs/path" {
 		t.Fatalf("got %q", got)
 	}
+	if got := ExpandHome("~"); got != home {
+		t.Fatalf("got %q", got)
+	}
+	// "~foo" names another user's home in shell syntax; it must not be
+	// resolved against the current user's home.
+	if got := ExpandHome("~foo/repo"); got != "~foo/repo" {
+		t.Fatalf("got %q", got)
+	}
 }
 
 func writeFile(t *testing.T, path, body string) {

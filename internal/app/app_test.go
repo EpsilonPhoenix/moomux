@@ -333,6 +333,38 @@ func TestCreateSessionExistingBranchRemovesStaleCleanWorktree(t *testing.T) {
 	}
 }
 
+func TestCreateSessionExistingBranchLiveStaleWorktreeBlocks(t *testing.T) {
+	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	staleWT := filepath.Join(a.WorktreeRoot, "demo", "old-login-page")
+	git.out["worktree list --porcelain"] = "worktree " + staleWT + "\nbranch refs/heads/feature/login-page\n"
+
+	staleTmux := TmuxSessionName("demo:old-login-page", "old-login-page")
+	if err := a.Store.Put(session.Session{
+		ID:           "demo:old-login-page",
+		Project:      "demo",
+		Name:         "old-login-page",
+		Branch:       "feature/login-page",
+		WorktreePath: staleWT,
+		TmuxSession:  staleTmux,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// has-session succeeds by default (no failOn entry), simulating a still-live pane.
+
+	_, _, err := a.CreateSession("demo", "", "", "feature/login-page", "")
+	if err == nil {
+		t.Fatal("expected error for stale worktree still in use by a live tmux session")
+	}
+	for _, c := range git.calls {
+		if strings.HasPrefix(strings.Join(c, " "), "@/repo worktree remove") {
+			t.Fatalf("should not remove worktree in use by a live tmux session; calls = %v", git.calls)
+		}
+	}
+	if !tm.called("has-session -t =" + staleTmux) {
+		t.Fatalf("expected HasSession check for stale tmux session; calls = %v", tm.calls)
+	}
+}
+
 func TestCreateSessionExistingBranchDirtyStaleWorktreeBlocks(t *testing.T) {
 	a, git, _, _ := newTestApp(t, gitProject("/repo"))
 	staleWT := filepath.Join(a.WorktreeRoot, "demo", "old-login-page")
@@ -455,6 +487,29 @@ func TestCreateSessionErrors(t *testing.T) {
 		t.Fatalf("session = %+v", s)
 	}
 	if !strings.Contains(hint, "tmux attach -t "+termfailTn) {
+		t.Fatalf("hint = %q", hint)
+	}
+
+	// store.Put fails too: the tmux session is already running (and, per
+	// above, the terminal-open failure already produced a manual-attach
+	// hint) — that hint must survive in the returned error instead of being
+	// lost, since ErrorMsg only ever surfaces err.Error() to the user.
+	noBranch(git, "storefail")
+	storefailTn := TmuxSessionName("demo:storefail", "storefail")
+	tm.out["list-panes -t ="+storefailTn+": -F #{pane_id}"] = "%0\n"
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.Store.Path = filepath.Join(blocker, "sessions.json")
+	_, hint, err = a.CreateSession("demo", "storefail", "", "", "")
+	if err == nil || !strings.Contains(err.Error(), "store:") {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(err.Error(), "tmux attach -t "+storefailTn) {
+		t.Fatalf("store-put error dropped the manual-attach hint: %v", err)
+	}
+	if !strings.Contains(hint, "tmux attach -t "+storefailTn) {
 		t.Fatalf("hint = %q", hint)
 	}
 }
@@ -829,6 +884,23 @@ func TestUpdateProjectValidationAndRollback(t *testing.T) {
 	}
 	if got := a.Cfg.Projects["demo"]; got != original {
 		t.Fatalf("project after rollback = %+v, want %+v", got, original)
+	}
+}
+
+// TestUpdateProjectAcceptsDefaultAgent guards against validating the raw
+// Agent field instead of its resolved name: Agent == "" means "use the
+// default" (see config.Project.AgentName), the same legitimate value
+// validateProject already accepts, and must not be rejected as unknown.
+func TestUpdateProjectAcceptsDefaultAgent(t *testing.T) {
+	repo := t.TempDir()
+	mustGit(t, repo, "init", "-b", "main")
+	original := config.Project{Kind: "git", Repo: repo, BaseBranch: "main", Agent: "claude"}
+	a, _, _, _ := newTestApp(t, map[string]config.Project{"demo": original})
+
+	defaulted := original
+	defaulted.Agent = ""
+	if err := a.UpdateProject("demo", defaulted); err != nil {
+		t.Fatalf("default agent must be accepted: %v", err)
 	}
 }
 

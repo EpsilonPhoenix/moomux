@@ -850,6 +850,9 @@ func TestStatusMessages(t *testing.T) {
 	if m.states["/wt/a"] != watcher.Working || !strings.Contains(m.flash, "scan hiccup") {
 		t.Fatalf("states=%v flash=%q", m.states, m.flash)
 	}
+	if m.flashKind != "error" {
+		t.Fatalf("flashKind = %q, want %q", m.flashKind, "error")
+	}
 
 	m.Update(StatusRefreshedMsg{
 		TmuxAlive: map[string]bool{"demo:a": true},
@@ -868,10 +871,41 @@ func TestStatusMessages(t *testing.T) {
 	if !strings.Contains(m.flash, "status watcher stopped") {
 		t.Fatalf("flash = %q", m.flash)
 	}
+	if m.flashKind != "error" {
+		t.Fatalf("flashKind = %q, want %q", m.flashKind, "error")
+	}
 
 	// the session list renders with a live status and prompt
 	if v := m.View(); !strings.Contains(v, "a") {
 		t.Fatalf("view:\n%s", v)
+	}
+}
+
+func TestStatusTickPrunesRemovedSessionStates(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "demo:a", Project: "demo", Name: "a", WorktreePath: "/wt/a"},
+		{ID: "demo:removed", Project: "demo", Name: "removed", WorktreePath: "/wt/removed"},
+	}}
+	m := newTestModel(be)
+
+	m.Update(StatusTickMsg{Snap: watcher.Snapshot{
+		States: map[string]watcher.State{"/wt/a": watcher.Working, "/wt/removed": watcher.Working},
+	}})
+	if _, ok := m.states["/wt/removed"]; !ok {
+		t.Fatal("setup: expected stale path present before session removal")
+	}
+
+	// Session for /wt/removed no longer exists in the backend (deleted).
+	be.sessions = []session.Session{{ID: "demo:a", Project: "demo", Name: "a", WorktreePath: "/wt/a"}}
+	m.Update(StatusTickMsg{Snap: watcher.Snapshot{
+		States: map[string]watcher.State{"/wt/a": watcher.Waiting},
+	}})
+
+	if _, ok := m.states["/wt/removed"]; ok {
+		t.Fatalf("states = %v, want /wt/removed pruned after its session was removed", m.states)
+	}
+	if m.states["/wt/a"] != watcher.Waiting {
+		t.Fatalf("states[/wt/a] = %v, want still tracked", m.states["/wt/a"])
 	}
 }
 

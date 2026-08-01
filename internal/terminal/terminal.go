@@ -57,7 +57,7 @@ func Detect() TerminalOpener {
 		}
 		return newWindow
 	case os.Getenv("TERM_PROGRAM") == "Apple_Terminal":
-		return &windowOpener{binary: "open", args: terminalAppArgs}
+		return &windowOpener{binary: "open", args: terminalAppArgs, manualAttach: true}
 	case os.Getenv("TILIX_ID") != "":
 		return &windowOpener{binary: "tilix", args: tilixArgs}
 	case os.Getenv("KONSOLE_VERSION") != "":
