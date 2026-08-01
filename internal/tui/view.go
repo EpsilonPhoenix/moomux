@@ -399,12 +399,12 @@ func (m *Model) renderHeader() string {
 			}
 		}
 		right = strings.Join(tabs, " ")
-		if remaining < lipgloss.Width(right) {
-			remaining = lipgloss.Width(right)
-		}
 	}
 
-	rightCol := lipgloss.NewStyle().Width(remaining).Align(lipgloss.Right).Render(right)
+	// Tabs that don't fit are clipped rather than allowed to widen the row
+	// past the terminal's actual columns — expanding remaining to fit them
+	// pushed the header past m.width instead.
+	rightCol := lipgloss.NewStyle().Width(remaining).MaxWidth(remaining).Align(lipgloss.Right).Render(right)
 	row := lipgloss.JoinHorizontal(lipgloss.Center, left, rightCol)
 	return lipgloss.NewStyle().Padding(0, 1).Render(row)
 }

@@ -92,6 +92,23 @@ func TestNarrowHeaderTruncatesLongCurrentProject(t *testing.T) {
 	}
 }
 
+func TestWideHeaderClipsOverflowingTabs(t *testing.T) {
+	m := layoutTestModel(1)
+	m.width = narrowWidthBreak
+	m.projects = []string{
+		"a-very-long-project-name-one",
+		"a-very-long-project-name-two",
+		"a-very-long-project-name-three",
+	}
+	m.activeProj = 0
+
+	header := m.renderHeader()
+
+	if got := lipgloss.Width(header); got > m.width {
+		t.Fatalf("header width = %d, terminal width = %d:\n%s", got, m.width, header)
+	}
+}
+
 func TestNarrowDetailKeepsEndOfWorktreePath(t *testing.T) {
 	m := layoutTestModel(1)
 	m.sessions[0].WorktreePath = "/Users/example/Development/moomux/feature-right-end"
