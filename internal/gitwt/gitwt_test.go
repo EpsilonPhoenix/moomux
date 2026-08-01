@@ -1,6 +1,8 @@
 package gitwt
 
 import (
+	"errors"
+	"os"
 	"reflect"
 	"testing"
 )
@@ -61,6 +63,26 @@ func TestRemoveWorktree(t *testing.T) {
 	want := []string{"@/repo", "worktree", "remove", "/wt/foo", "--force"}
 	if !reflect.DeepEqual(fr.calls[0], want) {
 		t.Fatalf("calls = %v", fr.calls)
+	}
+}
+
+// erringRunner fails every git call, simulating e.g. "worktree remove"
+// refusing to touch a main working tree.
+type erringRunner struct{ calls int }
+
+func (f *erringRunner) Run(dir string, args ...string) (string, error) {
+	f.calls++
+	return "", errors.New("git refused")
+}
+
+func TestRemoveWorktreeGitFailureKeepsDirectory(t *testing.T) {
+	dir := t.TempDir() // stands in for a real repo the user still needs
+	c := &Client{Runner: &erringRunner{}}
+	if err := c.RemoveWorktree("/repo", dir); err == nil {
+		t.Fatal("expected the git error to surface")
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("directory was deleted despite git failure: %v", err)
 	}
 }
 
