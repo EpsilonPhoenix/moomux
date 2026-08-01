@@ -171,3 +171,44 @@ func TestSQLiteWatcherGlob(t *testing.T) {
 	}
 	_ = os.RemoveAll(dir)
 }
+
+func TestSQLiteWatcherStaleDBDoesNotDowngrade(t *testing.T) {
+	if !hasSQLite3() {
+		t.Skip("sqlite3 CLI not available")
+	}
+	// Two DBs matched by the same glob (CLI + IDE plugin layouts) holding the
+	// same cwd: the stale one must not downgrade the fresh one's Working.
+	dir := t.TempDir()
+	now := time.Now().UnixMilli()
+	for name, updated := range map[string]int64{
+		"a_fresh.db": now - 1000,
+		"b_stale.db": now - 60*60*1000,
+	} {
+		stmts := fmt.Sprintf(
+			"CREATE TABLE threads (cwd TEXT, updated_at_ms INTEGER);INSERT INTO threads VALUES ('/tmp/proj', %d);",
+			updated)
+		if out, err := exec.Command("sqlite3", filepath.Join(dir, name), stmts).CombinedOutput(); err != nil {
+			t.Fatalf("create db %s: %v: %s", name, err, out)
+		}
+	}
+
+	w := &SQLiteWatcher{
+		DB:        filepath.Join(dir, "*.db"),
+		Query:     "SELECT cwd, MAX(updated_at_ms) FROM threads GROUP BY cwd",
+		ActiveAge: 10 * time.Second,
+		Interval:  10 * time.Millisecond,
+	}
+	ch := make(chan Snapshot, 2)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	go w.Run(ctx, ch)
+
+	select {
+	case snap := <-ch:
+		if snap.States["/tmp/proj"] != Working {
+			t.Fatalf("stale DB downgraded state: %v", snap.States["/tmp/proj"])
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out")
+	}
+}

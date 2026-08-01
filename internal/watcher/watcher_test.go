@@ -97,3 +97,42 @@ func TestStateString(t *testing.T) {
 		t.Fatal()
 	}
 }
+
+func TestClassifyUnrecognizedIsUnknown(t *testing.T) {
+	// A status we don't recognize is not evidence of idleness; Unknown loses
+	// the max-merge against any real signal instead of masquerading as Waiting.
+	if got := classify(rawSession{Status: "garbled"}); got != Unknown {
+		t.Fatalf("got %v", got)
+	}
+	if got := classify(rawSession{}); got != Unknown {
+		t.Fatalf("empty session: got %v", got)
+	}
+}
+
+func TestWatcherSurfacesParseErrors(t *testing.T) {
+	dir := t.TempDir()
+	writeJSON(t, filepath.Join(dir, "ok.json"), map[string]any{
+		"cwd": "/tmp/wt-a", "status": "busy",
+	})
+	if err := os.WriteFile(filepath.Join(dir, "bad.json"), []byte("{half-writ"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w := &DirWatcher{Dir: dir, Interval: 10 * time.Millisecond}
+	ch := make(chan Snapshot, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	go w.Run(ctx, ch)
+
+	select {
+	case snap := <-ch:
+		if snap.Err == nil {
+			t.Fatal("unparsable file did not surface in Snapshot.Err")
+		}
+		if snap.States["/tmp/wt-a"] != Working {
+			t.Fatalf("valid file not classified: %v", snap.States)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out")
+	}
+}
