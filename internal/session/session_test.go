@@ -62,6 +62,46 @@ func TestStoreDelete(t *testing.T) {
 	}
 }
 
+// TestConcurrentWriterSurvivesMutation simulates a second moomux process
+// (e.g. `moomux spawn`) adding a session to the same store file while a
+// first process's Store still holds an older in-memory snapshot. Without
+// reloading before mutating, the first process's later write would
+// serialize its stale snapshot back out and silently drop the second
+// process's session.
+func TestConcurrentWriterSurvivesMutation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sessions.json")
+
+	first := &Store{Path: path}
+	_ = first.Load()
+	if err := first.Put(Session{ID: "p:a", Project: "p", Name: "a", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	second := &Store{Path: path}
+	_ = second.Load()
+	if err := second.Put(Session{ID: "p:b", Project: "p", Name: "b", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	// first still only knows about "a" in memory; this mutation must not
+	// clobber "b", which second wrote to disk after first last loaded.
+	if _, err := first.SetArchived("p:a", true); err != nil {
+		t.Fatal(err)
+	}
+
+	check := &Store{Path: path}
+	if err := check.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := check.Get("p:b"); !ok {
+		t.Fatalf("session %q written by a concurrent Store was lost", "p:b")
+	}
+	if len(check.All()) != 2 {
+		t.Fatalf("expected 2 sessions, got %d: %+v", len(check.All()), check.All())
+	}
+}
+
 func TestSetArchivedTogglesAndPersists(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sessions.json")
