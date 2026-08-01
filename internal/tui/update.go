@@ -115,8 +115,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case SessionAgentUpdatedMsg:
 		m.busy = false
 		if msg.Err != nil {
+			if m.mode != ModeEditSession {
+				// The user closed the form while the update was in flight;
+				// don't snap it back open.
+				m.setError(msg.Err)
+				return m, nil
+			}
 			m.sessionForm.err = msg.Err.Error()
-			m.mode = ModeEditSession
 			return m, nil
 		}
 		m.refreshSessions()
@@ -210,8 +215,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ProjectUpdatedMsg:
 		m.busy = false
 		if msg.Err != nil {
+			if m.mode != ModeEditProject {
+				m.setError(msg.Err)
+				return m, nil
+			}
 			m.projForm.err = msg.Err.Error()
-			m.mode = ModeEditProject
 			return m, nil
 		}
 		m.activateProject(msg.Name)
@@ -276,6 +284,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			// Quit from anywhere — the per-mode handlers ignore unmatched
+			// keys, so without this ctrl+c is swallowed inside every form
+			// and dialog. ("q" stays mode-specific: it's typeable text in
+			// the form inputs.)
+			m.cancelPoll()
+			return m, tea.Quit
+		}
 		if m.mode != ModeList && m.mode != ModeHelp && isOverlayScrollKey(msg) {
 			var cmd tea.Cmd
 			m.overlayViewport, cmd = m.overlayViewport.Update(msg)
@@ -749,6 +765,12 @@ func (m *Model) updateNewProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) updateEditSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.busy {
+		// A background op is in flight (possibly a session create started
+		// before this overlay opened); still let the user close the form
+		// instead of being stuck in an unresponsive modal.
+		if key.Matches(msg, m.keys.Cancel) {
+			m.mode = ModeList
+		}
 		return m, nil
 	}
 	switch {
@@ -803,6 +825,9 @@ func (m *Model) cycleEditProjectFocus(forward bool) {
 
 func (m *Model) updateEditProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.busy {
+		if key.Matches(msg, m.keys.Cancel) {
+			m.mode = ModeList
+		}
 		return m, nil
 	}
 	project := m.cfg.Projects[m.editProjectName]

@@ -785,6 +785,35 @@ func TestQuitReturnsQuitCmd(t *testing.T) {
 	}
 }
 
+func TestCtrlCQuitsFromEveryOverlay(t *testing.T) {
+	for _, mode := range []Mode{
+		ModeNewForm, ModeConfirmDelete, ModeNewProject, ModeConfirmDeleteProject,
+		ModeProjectInitChoice, ModeTagForm, ModeEditSession, ModeEditProject,
+	} {
+		m := newTestModel(&fakeBackend{})
+		m.mode = mode
+		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+		if cmd == nil {
+			t.Fatalf("mode %v: ctrl+c swallowed", mode)
+		}
+		if _, ok := cmd().(tea.QuitMsg); !ok {
+			t.Fatalf("mode %v: expected tea.QuitMsg", mode)
+		}
+	}
+}
+
+func TestBusyOverlayStillCancels(t *testing.T) {
+	for _, mode := range []Mode{ModeEditSession, ModeEditProject} {
+		m := newTestModel(&fakeBackend{})
+		m.mode = mode
+		m.busy = true
+		m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		if m.mode != ModeList {
+			t.Fatalf("mode %v: esc did not close busy overlay", mode)
+		}
+	}
+}
+
 func TestWindowSizeMsg(t *testing.T) {
 	be := &fakeBackend{}
 	m := newTestModel(be)
