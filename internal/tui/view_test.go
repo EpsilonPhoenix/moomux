@@ -374,6 +374,30 @@ func TestManualFormScrollPersistsUntilFocusChanges(t *testing.T) {
 	}
 }
 
+func TestConfirmDeleteOpensUnscrolled(t *testing.T) {
+	// Scroll inside the help overlay, close it, then open the delete
+	// confirmation: it must start at the top, showing what's being
+	// deleted — not inherit the help overlay's scroll offset.
+	m := layoutTestModel(1)
+	m.width, m.height = 50, 12
+	m.mode = ModeHelp
+
+	m.View()
+	m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	if m.overlayViewport.YOffset == 0 {
+		t.Fatal("help viewport did not scroll; scenario not set up")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+
+	if m.mode != ModeConfirmDelete {
+		t.Fatalf("mode = %v, want ModeConfirmDelete", m.mode)
+	}
+	if got := m.overlayViewport.YOffset; got != 0 {
+		t.Fatalf("confirm dialog opened pre-scrolled: YOffset = %d", got)
+	}
+}
+
 func TestHelpOverlayScrollsWhileControlsRemainVisible(t *testing.T) {
 	m := layoutTestModel(1)
 	m.width, m.height = 50, 12
