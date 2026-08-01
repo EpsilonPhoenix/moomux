@@ -32,11 +32,11 @@ func TestConfigureTitleTracking(t *testing.T) {
 	c := &Client{Runner: fr}
 	c.ConfigureTitleTracking("moomux-a", "a")
 	want := [][]string{
-		{"rename-window", "-t", "moomux-a", "a"},
-		{"set-window-option", "-t", "moomux-a", "automatic-rename", "off"},
-		{"set-option", "-t", "moomux-a", "set-titles", "on"},
-		{"set-option", "-t", "moomux-a", "set-titles-string", "#{window_name}"},
-		{"set-option", "-t", "moomux-a", "mouse", "on"},
+		{"rename-window", "-t", "=moomux-a:", "a"},
+		{"set-window-option", "-t", "=moomux-a:", "automatic-rename", "off"},
+		{"set-option", "-t", "=moomux-a:", "set-titles", "on"},
+		{"set-option", "-t", "=moomux-a:", "set-titles-string", "#{window_name}"},
+		{"set-option", "-t", "=moomux-a:", "mouse", "on"},
 	}
 	if !reflect.DeepEqual(fr.calls, want) {
 		t.Fatalf("calls = %v", fr.calls)
@@ -52,7 +52,7 @@ func TestNewSessionErrors(t *testing.T) {
 	}
 
 	// list-panes fails
-	fr = &fakeRunner{failOn: map[string]bool{"list-panes -t s -F #{pane_id}": true}}
+	fr = &fakeRunner{failOn: map[string]bool{"list-panes -t =s: -F #{pane_id}": true}}
 	c = &Client{Runner: fr}
 	if err := c.NewSession("s", "/wt", "cmd", "w"); err == nil {
 		t.Fatal("expected error from list-panes")
@@ -60,8 +60,8 @@ func TestNewSessionErrors(t *testing.T) {
 
 	// split-window fails
 	fr = &fakeRunner{
-		out:    map[string]string{"list-panes -t s -F #{pane_id}": "%0\n"},
-		failOn: map[string]bool{"split-window -h -t s -c /wt -l 33%": true},
+		out:    map[string]string{"list-panes -t =s: -F #{pane_id}": "%0\n"},
+		failOn: map[string]bool{"split-window -h -t =s: -c /wt -l 33%": true},
 	}
 	c = &Client{Runner: fr}
 	if err := c.NewSession("s", "/wt", "cmd", "w"); err == nil {
@@ -70,7 +70,7 @@ func TestNewSessionErrors(t *testing.T) {
 
 	// select-pane fails
 	fr = &fakeRunner{
-		out:    map[string]string{"list-panes -t s -F #{pane_id}": "%0\n"},
+		out:    map[string]string{"list-panes -t =s: -F #{pane_id}": "%0\n"},
 		failOn: map[string]bool{"select-pane -t %0": true},
 	}
 	c = &Client{Runner: fr}
@@ -80,7 +80,7 @@ func TestNewSessionErrors(t *testing.T) {
 
 	// send-keys fails
 	fr = &fakeRunner{
-		out:    map[string]string{"list-panes -t s -F #{pane_id}": "%0\n"},
+		out:    map[string]string{"list-panes -t =s: -F #{pane_id}": "%0\n"},
 		failOn: map[string]bool{"send-keys -t %0 cmd Enter": true},
 	}
 	c = &Client{Runner: fr}
@@ -103,7 +103,7 @@ func TestHasSessionNonExitError(t *testing.T) {
 }
 
 func TestPaneCwdError(t *testing.T) {
-	fr := &fakeRunner{failOn: map[string]bool{"list-panes -t s -F #{pane_current_path}": true}}
+	fr := &fakeRunner{failOn: map[string]bool{"list-panes -t =s: -F #{pane_current_path}": true}}
 	c := &Client{Runner: fr}
 	if _, err := c.PaneCwd("s"); err == nil {
 		t.Fatal("expected error")

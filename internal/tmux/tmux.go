@@ -26,9 +26,23 @@ type Client struct {
 
 func New() *Client { return &Client{Runner: ExecRunner()} }
 
+// Exact returns a tmux target that matches the session name exactly. A bare
+// name in -t falls back to *prefix* matching when no exact match exists, so
+// e.g. `kill-session -t moomux-feat` kills moomux-feat-2 once moomux-feat is
+// gone. The "=" sigil disables that. Only valid for commands taking a
+// session target (has-session, kill-session, attach-session) — commands
+// taking a window/pane target reject a bare "=name"; use exactWindow there.
+func Exact(name string) string { return "=" + name }
+
+// exactWindow returns an exact-match target for commands that take a
+// window/pane target (set-option, split-window, list-panes, ...): the
+// trailing ":" marks the "=name" part as a session, selecting its current
+// window.
+func exactWindow(name string) string { return "=" + name + ":" }
+
 // HasSession reports whether tmux session `name` exists.
 func (c *Client) HasSession(name string) (bool, error) {
-	_, err := c.Runner.Run("has-session", "-t", name)
+	_, err := c.Runner.Run("has-session", "-t", Exact(name))
 	if err == nil {
 		return true, nil
 	}
@@ -74,20 +88,20 @@ func (c *Client) NewSession(name, cwd, cmd, windowName string) error {
 	if windowName != "" {
 		// Keep the window name stable; without this tmux replaces it with the
 		// running process name (e.g. "bash") as soon as the shell starts.
-		_, _ = c.Runner.Run("set-window-option", "-t", name, "automatic-rename", "off")
+		_, _ = c.Runner.Run("set-window-option", "-t", exactWindow(name), "automatic-rename", "off")
 		// Make tmux continuously push the window name as the terminal title so
 		// the shell's own PROMPT_COMMAND/precmd title updates don't win the race.
-		_, _ = c.Runner.Run("set-option", "-t", name, "set-titles", "on")
-		_, _ = c.Runner.Run("set-option", "-t", name, "set-titles-string", "#{window_name}")
+		_, _ = c.Runner.Run("set-option", "-t", exactWindow(name), "set-titles", "on")
+		_, _ = c.Runner.Run("set-option", "-t", exactWindow(name), "set-titles-string", "#{window_name}")
 	}
 	// Enable mouse support so users can click/scroll/resize panes without
 	// memorizing tmux prefix keybindings.
-	_, _ = c.Runner.Run("set-option", "-t", name, "mouse", "on")
+	_, _ = c.Runner.Run("set-option", "-t", exactWindow(name), "mouse", "on")
 	// Capture the original (left) pane's stable pane_id before splitting.
 	// We can't assume its index is 0: a user's tmux.conf may set
 	// pane-base-index to 1 (as this README itself recommends), which would
 	// make a hardcoded ".0" target fail with "can't find pane".
-	leftPane, err := c.Runner.Run("list-panes", "-t", name, "-F", "#{pane_id}")
+	leftPane, err := c.Runner.Run("list-panes", "-t", exactWindow(name), "-F", "#{pane_id}")
 	if err != nil {
 		return err
 	}
@@ -98,7 +112,7 @@ func (c *Client) NewSession(name, cwd, cmd, windowName string) error {
 	// attached client's last-known size, which doesn't exist yet for a
 	// brand-new detached session (new-session -d) and fails with "size
 	// missing"; -l sizes off the window's own current dimensions instead.
-	if _, err := c.Runner.Run("split-window", "-h", "-t", name, "-c", cwd, "-l", "33%"); err != nil {
+	if _, err := c.Runner.Run("split-window", "-h", "-t", exactWindow(name), "-c", cwd, "-l", "33%"); err != nil {
 		return err
 	}
 	// split-window moves focus to the new (right) pane; return focus to the
@@ -125,11 +139,11 @@ func (c *Client) SendKeys(session, text string) error {
 // and continuously emits it as the terminal title. Safe to call on existing
 // sessions — idempotent tmux set-option calls never break anything.
 func (c *Client) ConfigureTitleTracking(session, windowName string) {
-	_, _ = c.Runner.Run("rename-window", "-t", session, windowName)
-	_, _ = c.Runner.Run("set-window-option", "-t", session, "automatic-rename", "off")
-	_, _ = c.Runner.Run("set-option", "-t", session, "set-titles", "on")
-	_, _ = c.Runner.Run("set-option", "-t", session, "set-titles-string", "#{window_name}")
-	_, _ = c.Runner.Run("set-option", "-t", session, "mouse", "on")
+	_, _ = c.Runner.Run("rename-window", "-t", exactWindow(session), windowName)
+	_, _ = c.Runner.Run("set-window-option", "-t", exactWindow(session), "automatic-rename", "off")
+	_, _ = c.Runner.Run("set-option", "-t", exactWindow(session), "set-titles", "on")
+	_, _ = c.Runner.Run("set-option", "-t", exactWindow(session), "set-titles-string", "#{window_name}")
+	_, _ = c.Runner.Run("set-option", "-t", exactWindow(session), "mouse", "on")
 }
 
 // PaneCwd returns the current working directory of session `name`'s first
@@ -137,7 +151,7 @@ func (c *Client) ConfigureTitleTracking(session, windowName string) {
 // -c directory doesn't exist (e.g. a worktree not yet created), so this is
 // used to detect sessions that ended up in the wrong place.
 func (c *Client) PaneCwd(name string) (string, error) {
-	out, err := c.Runner.Run("list-panes", "-t", name, "-F", "#{pane_current_path}")
+	out, err := c.Runner.Run("list-panes", "-t", exactWindow(name), "-F", "#{pane_current_path}")
 	if err != nil {
 		return "", err
 	}
@@ -146,6 +160,6 @@ func (c *Client) PaneCwd(name string) (string, error) {
 }
 
 func (c *Client) KillSession(name string) error {
-	_, err := c.Runner.Run("kill-session", "-t", name)
+	_, err := c.Runner.Run("kill-session", "-t", Exact(name))
 	return err
 }
