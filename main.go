@@ -92,6 +92,15 @@ func checkDeps() error {
 	)
 }
 
+// saveConfig persists cfg, logging (rather than silently swallowing) any
+// failure — cfg.TmuxSetupAsked/AutoTmuxAsked being lost here would reopen
+// the first-run prompts on every subsequent launch.
+func saveConfig(cfgPath string, cfg *config.Config) {
+	if err := config.Save(cfgPath, cfg); err != nil {
+		slog.Error("config save failed", "path", cfgPath, "err", err)
+	}
+}
+
 // promptTmuxSetup offers, on first run only, to append moomux's recommended
 // settings (mouse support, passthrough, scrollback, 1-indexed panes — see
 // README.md) to ~/.tmux.conf. It always marks cfg.TmuxSetupAsked so this
@@ -104,11 +113,11 @@ func promptTmuxSetup(stdin *bufio.Reader, cfg *config.Config, cfgPath string) {
 	cfg.TmuxSetupAsked = true
 
 	if tmuxconf.AlreadyApplied(path) {
-		_ = config.Save(cfgPath, cfg)
+		saveConfig(cfgPath, cfg)
 		return
 	}
 	if !isatty.IsTerminal(os.Stdin.Fd()) {
-		_ = config.Save(cfgPath, cfg)
+		saveConfig(cfgPath, cfg)
 		return
 	}
 
@@ -133,7 +142,7 @@ func promptTmuxSetup(stdin *bufio.Reader, cfg *config.Config, cfgPath string) {
 	}
 	fmt.Println()
 
-	_ = config.Save(cfgPath, cfg)
+	saveConfig(cfgPath, cfg)
 }
 
 // promptAutoTmux offers, on first run only, to always relaunch moomux
@@ -144,7 +153,7 @@ func promptAutoTmux(stdin *bufio.Reader, cfg *config.Config, cfgPath string) {
 	cfg.AutoTmuxAsked = true
 
 	if !isatty.IsTerminal(os.Stdin.Fd()) {
-		_ = config.Save(cfgPath, cfg)
+		saveConfig(cfgPath, cfg)
 		return
 	}
 
@@ -165,7 +174,7 @@ func promptAutoTmux(stdin *bufio.Reader, cfg *config.Config, cfgPath string) {
 	}
 	fmt.Println()
 
-	_ = config.Save(cfgPath, cfg)
+	saveConfig(cfgPath, cfg)
 }
 
 // relaunchInTmux replaces the current process with `tmux new-session -A -s

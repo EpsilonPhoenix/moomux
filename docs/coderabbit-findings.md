@@ -42,8 +42,8 @@ All 18 fixed, each in its own commit with a regression test.
 - [x] `internal/app/app.go:271-275` — empty hint returned on error instead of existing hint
 - [x] `internal/app/app.go:527-529` — agent-name resolution inconsistency with validateProject
 - [x] `internal/app/app_test.go:1029-1059` — test fixtures need exact tmux pane match — already using `=moomux-feat` exact-match syntax; no change needed
-- [ ] `main.go:107-137` — `config.Save` errors silently discarded in setup flow
-- [ ] `main.go:143-169` — same silent-discard issue in `promptAutoTmux`
+- [x] `main.go:107-137` — `config.Save` errors silently discarded in setup flow
+- [x] `main.go:143-169` — same silent-discard issue in `promptAutoTmux`
 
 ## Informational only — planning docs, not live code
 
