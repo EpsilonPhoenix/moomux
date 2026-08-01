@@ -99,7 +99,7 @@ func checkDeps() error {
 // crash or Ctrl-C right after can't reopen the prompt on every launch.
 // Skipped entirely on a non-interactive stdin (e.g. CI, piped input), which
 // is treated the same as declining.
-func promptTmuxSetup(cfg *config.Config, cfgPath string) {
+func promptTmuxSetup(stdin *bufio.Reader, cfg *config.Config, cfgPath string) {
 	path := tmuxconf.Path()
 	cfg.TmuxSetupAsked = true
 
@@ -118,7 +118,7 @@ func promptTmuxSetup(cfg *config.Config, cfgPath string) {
 	fmt.Print("Add it now? [y/N] ")
 
 	answer := ""
-	if line, err := bufio.NewReader(os.Stdin).ReadString('\n'); err == nil {
+	if line, err := stdin.ReadString('\n'); err == nil {
 		answer = strings.ToLower(strings.TrimSpace(line))
 	}
 
@@ -140,7 +140,7 @@ func promptTmuxSetup(cfg *config.Config, cfgPath string) {
 // inside a dedicated tmux session ("moomux") from now on. Like
 // promptTmuxSetup, it always marks cfg.AutoTmuxAsked and saves immediately
 // so the prompt never reappears, and is skipped on a non-interactive stdin.
-func promptAutoTmux(cfg *config.Config, cfgPath string) {
+func promptAutoTmux(stdin *bufio.Reader, cfg *config.Config, cfgPath string) {
 	cfg.AutoTmuxAsked = true
 
 	if !isatty.IsTerminal(os.Stdin.Fd()) {
@@ -153,7 +153,7 @@ func promptAutoTmux(cfg *config.Config, cfgPath string) {
 	fmt.Print("Always start moomux inside tmux? [y/N] ")
 
 	answer := ""
-	if line, err := bufio.NewReader(os.Stdin).ReadString('\n'); err == nil {
+	if line, err := stdin.ReadString('\n'); err == nil {
 		answer = strings.ToLower(strings.TrimSpace(line))
 	}
 
@@ -271,12 +271,16 @@ func run() error {
 		return err
 	}
 	cfg, cfgPath := a.Cfg, a.CfgPath
+	// Shared across both prompts: a fresh bufio.Reader per prompt can read
+	// ahead past its own newline, silently discarding a fast/pasted second
+	// answer meant for the next prompt.
+	stdin := bufio.NewReader(os.Stdin)
 
 	if !cfg.TmuxSetupAsked {
-		promptTmuxSetup(cfg, cfgPath)
+		promptTmuxSetup(stdin, cfg, cfgPath)
 	}
 	if !cfg.AutoTmuxAsked {
-		promptAutoTmux(cfg, cfgPath)
+		promptAutoTmux(stdin, cfg, cfgPath)
 	}
 	if cfg.AutoTmux && os.Getenv("TMUX") == "" {
 		if err := relaunchInTmux(); err != nil {

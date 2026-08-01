@@ -30,7 +30,13 @@ func (w *windowOpener) OpenSession(tmuxSession, title string) (string, error) {
 	// server's environment and are unaffected — which is why the failure
 	// looks intermittent across terminals.
 	cmd.Env = envWithoutTmux(os.Environ())
-	return "", cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+	// Reap the child once it exits; without this every opened window/tab
+	// leaves a zombie for the lifetime of the long-running TUI process.
+	go func() { _ = cmd.Wait() }()
+	return "", nil
 }
 
 // envWithoutTmux returns env minus the TMUX/TMUX_PANE variables.
@@ -188,6 +194,16 @@ func cmuxArgs(title, tmuxSession string) []string {
 	if title != "" {
 		args = append(args, "--name", title)
 	}
-	args = append(args, "--command", "tmux attach -t "+tmuxSession)
+	args = append(args, "--command", "tmux attach -t "+shellQuote(tmuxSession))
 	return args
+}
+
+// shellQuote wraps s in single quotes for a POSIX shell, escaping any
+// embedded single quote. Unlike the other openers, cmux's --command hands
+// this string to a shell rather than exec'ing argv directly, so tmuxSession
+// (currently always moomux-<name>-<hash> or "="+that, never attacker
+// input) needs the same defense-in-depth quoting as iterm.go's
+// escapeAppleScript.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
