@@ -165,14 +165,33 @@ func TestSendKeys(t *testing.T) {
 	if err := c.SendKeys("moomux-foo", "do the thing"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"send-keys", "-t", "moomux-foo", "do the thing", "Enter"}
+	// "=moomux-foo:" pins send-keys to an exact session match; a bare name
+	// falls back to prefix matching and could type into moomux-foo-2 once
+	// moomux-foo is gone.
+	want := []string{"send-keys", "-t", "=moomux-foo:", "do the thing", "Enter"}
 	if got := fr.calls[0]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 }
 
+// TestSendKeysUsesExactSessionMatch guards against a bare session name in
+// -t, which falls back to tmux prefix matching: if "moomux-foo" no longer
+// exists but "moomux-foo-2" does, send-keys would silently type into the
+// wrong session instead of failing.
+func TestSendKeysUsesExactSessionMatch(t *testing.T) {
+	fr := &fakeRunner{}
+	c := &Client{Runner: fr}
+	if err := c.SendKeys("moomux-foo", "hi"); err != nil {
+		t.Fatal(err)
+	}
+	target := fr.calls[0][2]
+	if !strings.HasPrefix(target, "=") {
+		t.Fatalf("target %q is not pinned to an exact match (missing '=' prefix)", target)
+	}
+}
+
 func TestSendKeysError(t *testing.T) {
-	fr := &fakeRunner{failOn: map[string]bool{"send-keys -t moomux-foo hi Enter": true}}
+	fr := &fakeRunner{failOn: map[string]bool{"send-keys -t =moomux-foo: hi Enter": true}}
 	c := &Client{Runner: fr}
 	if err := c.SendKeys("moomux-foo", "hi"); err == nil {
 		t.Fatal("expected error")

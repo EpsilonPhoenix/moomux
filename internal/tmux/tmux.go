@@ -140,7 +140,7 @@ func (c *Client) NewSession(name, cwd, cmd, windowName string) error {
 // SendKeys types text into session's active pane followed by Enter. NewSession
 // leaves the left (agent) pane active, so this reaches the agent's input.
 func (c *Client) SendKeys(session, text string) error {
-	_, err := c.Runner.Run("send-keys", "-t", session, text, "Enter")
+	_, err := c.Runner.Run("send-keys", "-t", exactWindow(session), text, "Enter")
 	return err
 }
 
