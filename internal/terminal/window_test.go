@@ -136,6 +136,7 @@ func TestRemoteOpenerUsesRemoteWhenItSucceeds(t *testing.T) {
 	if remote.binary != "kitten" {
 		t.Fatalf("remote not invoked, got binary %q", remote.binary)
 	}
+	assertContains(t, remote.args, "=moomux-foo")
 	if fallback.binary != "" {
 		t.Fatalf("fallback should not run on remote success, ran %q", fallback.binary)
 	}
