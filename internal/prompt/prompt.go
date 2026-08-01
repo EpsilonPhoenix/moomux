@@ -13,8 +13,8 @@ import (
 	"strings"
 )
 
-// EncodeCwd mirrors Claude Code's project-dir encoding: both '/' and '.'
-// become '-'. Existing hyphens are preserved.
+// EncodeCwd mirrors Claude Code's project-dir encoding: '/', '.', and '_'
+// all become '-'. Existing hyphens are preserved.
 func EncodeCwd(p string) string {
 	r := strings.NewReplacer("/", "-", ".", "-", "_", "-")
 	return r.Replace(p)
@@ -48,6 +48,12 @@ func ForAgent(home, agent, worktreePath string) string {
 // by querying ~/.local/share/opencode/opencode.db.
 func FirstOpenCode(home, worktreePath string) string {
 	dbPath := filepath.Join(home, ".local", "share", "opencode", "opencode.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		// sqlite3 creates an empty db file at dbPath if it doesn't exist,
+		// even for a read-only query — avoid leaving that behind when the
+		// agent hasn't run yet.
+		return ""
+	}
 	query := `SELECT json_extract(p.data, '$.text')
 FROM part p
 JOIN message m ON p.message_id = m.id
@@ -118,7 +124,10 @@ func First(home, worktreePath string) string {
 		if p == "" {
 			continue
 		}
-		if bestPrompt == "" || ts < bestTS {
+		// An empty ts (missing timestamp field) sorts before every real
+		// RFC3339 value, so it must never overwrite a real one — only
+		// take it when nothing better has been found yet.
+		if bestPrompt == "" || (ts != "" && (bestTS == "" || ts < bestTS)) {
 			bestTS, bestPrompt = ts, p
 		}
 	}

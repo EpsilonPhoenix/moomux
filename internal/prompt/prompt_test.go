@@ -75,6 +75,24 @@ func TestFirstPicksEarliestTimestampAcrossFiles(t *testing.T) {
 	}
 }
 
+func TestFirstEmptyTimestampNeverOverridesARealOne(t *testing.T) {
+	home := t.TempDir()
+	wt := "/wt/demo/feat"
+	// A file scanned *after* the real-timestamped one (older mtime first,
+	// so it's processed earlier) whose entry is missing a timestamp must
+	// not win — an empty string sorts before every real RFC3339 value.
+	timed := writeJSONL(t, home, wt, "timed.jsonl", userLine("2026-01-01T00:00:00Z", "timed prompt"))
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(timed, old, old); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONL(t, home, wt, "notime.jsonl", userLine("", "notime prompt"))
+
+	if got := First(home, wt); got != "timed prompt" {
+		t.Fatalf("got %q, want the real-timestamped prompt to survive", got)
+	}
+}
+
 func TestFirstMissingDir(t *testing.T) {
 	if got := First(t.TempDir(), "/nope"); got != "" {
 		t.Fatalf("got %q", got)
@@ -135,6 +153,23 @@ func TestForAgentDispatch(t *testing.T) {
 	}
 	if got := ForAgent(home, "codex", wt); got != "" {
 		t.Fatalf("codex: got %q", got)
+	}
+}
+
+func TestFirstOpenCodeMissingDBLeavesNoStrayFile(t *testing.T) {
+	home := t.TempDir()
+	dbPath := filepath.Join(home, ".local", "share", "opencode", "opencode.db")
+	// The parent dir existing (opencode installed, db not created yet) is
+	// the realistic case: sqlite3 can create the db file itself, it just
+	// can't create missing parent directories.
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := FirstOpenCode(home, "/wt/x"); got != "" {
+		t.Fatalf("got %q", got)
+	}
+	if _, err := os.Stat(dbPath); err == nil {
+		t.Fatal("sqlite3 left an empty db file behind for a missing path")
 	}
 }
 
