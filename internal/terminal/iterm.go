@@ -31,6 +31,9 @@ func (c *itermClient) OpenSession(tmuxSession, title string) (string, error) {
 		escaped := escapeAppleScript(title)
 		setName = fmt.Sprintf("\n\t\t\tset name to \"%s\"", escaped)
 	}
+	// write text runs the line through the tab's interactive shell, so the
+	// "=" exact-match target has to be single-quoted — zsh's EQUALS
+	// expansion would read a bare "=name" as a command-path lookup.
 	script := fmt.Sprintf(`
 tell application "iTerm2"
 	activate
@@ -40,7 +43,7 @@ tell application "iTerm2"
 	tell current window
 		create tab with default profile
 		tell current session of current tab%s
-			write text "tmux attach -t %s"
+			write text "tmux attach -t '%s'"
 		end tell
 	end tell
 end tell`, setName, escapeAppleScript("="+tmuxSession))
