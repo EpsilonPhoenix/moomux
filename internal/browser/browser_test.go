@@ -7,7 +7,7 @@ func TestOpenRejectsNonHTTPURLs(t *testing.T) {
 		"",
 		"-a",
 		"-a Safari",
-		"file:///etc/passwd",
+		"file:///tmp/notes.txt",
 		"javascript:alert(1)",
 		"ftp://example.com/x",
 		"http://",
