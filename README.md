@@ -156,3 +156,14 @@ Keys: `?` help (full command list) · `n` new · `enter` open · `x` kill · `d`
 Press `?` at any time on the list screen to open a command palette with every keybinding grouped by category, so you don't have to memorize the footer.
 
 The chorded keys have plain-letter alternates for keyboards that can't send modifier+special-key chords (mobile terminal clients, terminals without `extended-keys`): `K`/`J` reorder session, `H`/`L` reorder project, `[`/`]` switch project.
+
+## Spawning a session from the CLI
+
+`moomux spawn` creates a session non-interactively — no TUI, just a worktree + tmux session + agent, same as pressing `n` — and optionally types an initial prompt into the agent's pane. Useful for one agent to delegate a sub-task to a fresh session of its own, or for any script/automation:
+
+```bash
+moomux spawn -project <project> [-name <name>] [-agent claude|codex|opencode] \
+  [-branch <existing-branch>] [-ticket <url>] [-prompt "<initial task>"]
+```
+
+It's fire-and-forget: prints the new tmux session's name and exits immediately, without waiting for the agent or reporting anything back. Run `moomux spawn -h` for the full flag list, or `moomux --help` for top-level usage.
