@@ -137,6 +137,40 @@ func TestSaveFailureKeepsExistingConfig(t *testing.T) {
 	}
 }
 
+func TestReloadRefreshesInPlace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	cfg := &Config{Projects: map[string]Project{"a": {Repo: "/tmp/a", BaseBranch: "main"}}}
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	// A second writer (another moomux process sharing this config.toml)
+	// adds a project after cfg was loaded.
+	other, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.Projects["b"] = Project{Repo: "/tmp/b", BaseBranch: "main"}
+	if err := Save(path, other); err != nil {
+		t.Fatal(err)
+	}
+
+	before := cfg // same pointer must be reused, not swapped
+	if err := Reload(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg != before {
+		t.Fatal("Reload must refresh the same *Config, not return a different one")
+	}
+	if _, ok := cfg.Projects["a"]; !ok {
+		t.Fatal("original project a lost after reload")
+	}
+	if _, ok := cfg.Projects["b"]; !ok {
+		t.Fatal("concurrently-added project b not picked up by reload")
+	}
+}
+
 func TestProjectAgentNameDefaultsToClaude(t *testing.T) {
 	p := Project{}
 	if got := p.AgentName(); got != "claude" {

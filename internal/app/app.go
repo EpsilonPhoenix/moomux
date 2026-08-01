@@ -82,6 +82,9 @@ func (a *App) Projects() []string { return a.Cfg.OrderedProjectNames() }
 // left, +1 right) in the manual project order and persists it. It's a no-op
 // if the move would go out of bounds.
 func (a *App) MoveProject(name string, delta int) error {
+	if err := config.Reload(a.CfgPath, a.Cfg); err != nil {
+		return fmt.Errorf("reload config: %w", err)
+	}
 	order := a.Projects()
 	idx := -1
 	for i, n := range order {
@@ -460,6 +463,9 @@ func (a *App) validateProject(name string, p *config.Project) error {
 }
 
 func (a *App) saveProject(name string, p config.Project) error {
+	if err := config.Reload(a.CfgPath, a.Cfg); err != nil {
+		return fmt.Errorf("reload config: %w", err)
+	}
 	if a.Cfg.Projects == nil {
 		a.Cfg.Projects = map[string]config.Project{}
 	}
@@ -511,6 +517,9 @@ func (a *App) AddPlainProject(name string, p config.Project) error {
 }
 
 func (a *App) UpdateProject(name string, updated config.Project) error {
+	if err := config.Reload(a.CfgPath, a.Cfg); err != nil {
+		return fmt.Errorf("reload config: %w", err)
+	}
 	previous, ok := a.Cfg.Projects[name]
 	if !ok {
 		return fmt.Errorf("unknown project %q", name)
@@ -560,6 +569,9 @@ func (a *App) UpdateProject(name string, updated config.Project) error {
 }
 
 func (a *App) RemoveProject(name string) error {
+	if err := config.Reload(a.CfgPath, a.Cfg); err != nil {
+		return fmt.Errorf("reload config: %w", err)
+	}
 	if _, ok := a.Cfg.Projects[name]; !ok {
 		return fmt.Errorf("unknown project %q", name)
 	}

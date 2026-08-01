@@ -58,10 +58,11 @@ type DirWatcher struct {
 
 // Run polls until ctx is canceled. Each tick produces one Snapshot on out.
 func (w *DirWatcher) Run(ctx context.Context, out chan<- Snapshot) {
-	if w.Interval == 0 {
-		w.Interval = 2 * time.Second
+	interval := w.Interval
+	if interval == 0 {
+		interval = 2 * time.Second
 	}
-	t := time.NewTicker(w.Interval)
+	t := time.NewTicker(interval)
 	defer t.Stop()
 	w.tick(ctx, out)
 	for {
