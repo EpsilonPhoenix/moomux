@@ -4,6 +4,7 @@ package tmux
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -24,6 +25,16 @@ func (execRunner) Run(args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "tmux", args...)
+	// A bare `tmux` command with no live server spawns one, and that server
+	// inherits this process's cwd as its permanent launch directory — used
+	// as tmux's silent fallback whenever a session's own -c doesn't stick
+	// (see PaneCwd's doc comment). If moomux is ever run from inside one of
+	// its own managed worktrees, that directory can later be deleted,
+	// permanently poisoning every future session on the same server with a
+	// dead fallback cwd. Home is stable for the tmux server's whole lifetime.
+	if home, err := os.UserHomeDir(); err == nil {
+		cmd.Dir = home
+	}
 	// Without WaitDelay, CombinedOutput can still block past ctx's
 	// deadline: if tmux forked a child that inherited the output pipe,
 	// killing tmux alone doesn't close it — Read() waits for every process

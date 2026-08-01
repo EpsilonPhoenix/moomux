@@ -276,6 +276,12 @@ func TestDetectReturnsWindowOpenerForAlacrittyViaWindowID(t *testing.T) {
 }
 
 func TestDetectReturnsWindowOpenerForWindowsTerminal(t *testing.T) {
+	t.Setenv("TERM_PROGRAM", "")
+	t.Setenv("__CFBundleIdentifier", "")
+	t.Setenv("KITTY_WINDOW_ID", "")
+	t.Setenv("GHOSTTY_RESOURCES_DIR", "")
+	t.Setenv("WEZTERM_PANE", "")
+	t.Setenv("TERM", "")
 	t.Setenv("WT_SESSION", "1")
 	got := Detect()
 	wo, ok := got.(*windowOpener)

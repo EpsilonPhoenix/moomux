@@ -59,6 +59,47 @@ func TestExecRunnerRespectsRunTimeout(t *testing.T) {
 	}
 }
 
+// TestExecRunnerDirIsStable pins execRunner.Run's cwd to the user's home
+// directory rather than letting it inherit moomux's own process cwd. A
+// bare `tmux` invocation with no live server spawns one, and that server
+// keeps its launch cwd for its entire lifetime as the silent fallback
+// target whenever a session's own -c doesn't stick (see PaneCwd's doc
+// comment) — if moomux runs from inside one of its own worktrees and that
+// worktree is later removed, every future session on the same server
+// would fall back into a directory that no longer exists.
+func TestExecRunnerDirIsStable(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+	fakeDir := t.TempDir()
+	fake := filepath.Join(fakeDir, "tmux")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\npwd\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory available")
+	}
+	wantHome, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := (execRunner{}).Run("list-sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := filepath.EvalSymlinks(strings.TrimSpace(out))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != wantHome {
+		t.Fatalf("tmux ran in %q, want home %q", got, wantHome)
+	}
+}
+
 func TestNewSession(t *testing.T) {
 	fr := &fakeRunner{out: map[string]string{"list-panes -t =moomux-foo: -F #{pane_id}": "%3\n"}}
 	c := &Client{Runner: fr}

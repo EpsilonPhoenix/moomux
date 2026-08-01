@@ -39,6 +39,13 @@ func (w *windowOpener) OpenSession(tmuxSession, title string) (string, error) {
 	// server's environment and are unaffected — which is why the failure
 	// looks intermittent across terminals.
 	cmd.Env = envWithoutTmux(os.Environ())
+	// The spawned terminal binary otherwise inherits moomux's own cwd, which
+	// can be a worktree that's later removed — see execRunner.Run's comment
+	// in internal/tmux/tmux.go for why a directory that can vanish should
+	// never be handed to a long-lived child as its launch directory.
+	if home, err := os.UserHomeDir(); err == nil {
+		cmd.Dir = home
+	}
 	if err := cmd.Start(); err != nil {
 		return "", err
 	}
