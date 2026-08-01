@@ -187,6 +187,17 @@ func TestExpandHome(t *testing.T) {
 	}
 }
 
+func TestTmuxSessionNameUniqueAcrossProjects(t *testing.T) {
+	a := TmuxSessionName("proja:feat", "feat")
+	b := TmuxSessionName("projb:feat", "feat")
+	if a == b {
+		t.Fatalf("same tmux name %q for two projects", a)
+	}
+	if !strings.HasPrefix(a, "moomux-feat-") {
+		t.Fatalf("name = %q", a)
+	}
+}
+
 func TestWorktreeRootDefault(t *testing.T) {
 	got := WorktreeRootDefault()
 	if !strings.HasSuffix(got, filepath.Join(".local", "share", "moomux", "worktrees")) {
@@ -196,7 +207,8 @@ func TestWorktreeRootDefault(t *testing.T) {
 
 func TestCreateSessionWorktree(t *testing.T) {
 	a, git, tm, term := newTestApp(t, gitProject("/repo"))
-	tm.out["list-panes -t moomux-feat -F #{pane_id}"] = "%0\n"
+	tn := TmuxSessionName("demo:feat", "feat")
+	tm.out["list-panes -t "+tn+" -F #{pane_id}"] = "%0\n"
 	noBranch(git, "feat")
 
 	s, hint, err := a.CreateSession("demo", "feat", "", "", "https://ticket/1")
@@ -207,7 +219,7 @@ func TestCreateSessionWorktree(t *testing.T) {
 		t.Fatalf("hint = %q", hint)
 	}
 	wantWt := filepath.Join(a.WorktreeRoot, "demo", "feat")
-	if s.WorktreePath != wantWt || s.Branch != "feat" || !s.NewBranch || s.TmuxSession != "moomux-feat" || s.Ticket != "https://ticket/1" {
+	if s.WorktreePath != wantWt || s.Branch != "feat" || !s.NewBranch || s.TmuxSession != tn || s.Ticket != "https://ticket/1" {
 		t.Fatalf("session = %+v", s)
 	}
 	if s.AgentName() != "claude" {
@@ -223,10 +235,10 @@ func TestCreateSessionWorktree(t *testing.T) {
 	if !found {
 		t.Fatalf("no worktree add call; calls = %v", git.calls)
 	}
-	if !tm.called("new-session -d -s moomux-feat -c " + wantWt) {
+	if !tm.called("new-session -d -s " + tn + " -c " + wantWt) {
 		t.Fatalf("no tmux new-session; calls = %v", tm.calls)
 	}
-	if len(term.calls) != 1 || term.calls[0] != [2]string{"moomux-feat", "feat"} {
+	if len(term.calls) != 1 || term.calls[0] != [2]string{tn, "feat"} {
 		t.Fatalf("terminal calls = %v", term.calls)
 	}
 	if _, ok := a.Store.Get("demo:feat"); !ok {
@@ -239,7 +251,7 @@ func TestCreateSessionBranchPrefix(t *testing.T) {
 		"demo": {Kind: "git", Repo: "/repo", BaseBranch: "main", BranchPrefix: "user"},
 	}
 	a, git, tm, _ := newTestApp(t, projects)
-	tm.out["list-panes -t moomux-feat -F #{pane_id}"] = "%0\n"
+	tm.out["list-panes -t "+TmuxSessionName("demo:feat", "feat")+" -F #{pane_id}"] = "%0\n"
 	noBranch(git, "user/feat")
 
 	s, _, err := a.CreateSession("demo", "feat", "", "", "")
@@ -253,7 +265,7 @@ func TestCreateSessionBranchPrefix(t *testing.T) {
 
 func TestCreateSessionExistingBranch(t *testing.T) {
 	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
-	tm.out["list-panes -t moomux-login-page -F #{pane_id}"] = "%0\n"
+	tm.out["list-panes -t "+TmuxSessionName("demo:login-page", "login-page")+" -F #{pane_id}"] = "%0\n"
 
 	s, _, err := a.CreateSession("demo", "", "", "feature/login-page", "")
 	if err != nil {
@@ -276,7 +288,7 @@ func TestCreateSessionExistingBranch(t *testing.T) {
 
 func TestCreateSessionExistingBranchRemovesStaleCleanWorktree(t *testing.T) {
 	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
-	tm.out["list-panes -t moomux-login-page -F #{pane_id}"] = "%0\n"
+	tm.out["list-panes -t "+TmuxSessionName("demo:login-page", "login-page")+" -F #{pane_id}"] = "%0\n"
 	staleWT := filepath.Join(a.WorktreeRoot, "demo", "old-login-page")
 	git.out["worktree list --porcelain"] = "worktree " + staleWT + "\nbranch refs/heads/feature/login-page\n"
 
@@ -318,8 +330,8 @@ func TestCreateSessionExistingBranchDirtyStaleWorktreeBlocks(t *testing.T) {
 
 func TestCreateSessionOpenCodePorts(t *testing.T) {
 	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
-	tm.out["list-panes -t moomux-one -F #{pane_id}"] = "%0\n"
-	tm.out["list-panes -t moomux-two -F #{pane_id}"] = "%0\n"
+	tm.out["list-panes -t "+TmuxSessionName("demo:one", "one")+" -F #{pane_id}"] = "%0\n"
+	tm.out["list-panes -t "+TmuxSessionName("demo:two", "two")+" -F #{pane_id}"] = "%0\n"
 	noBranch(git, "one")
 	noBranch(git, "two")
 
@@ -348,7 +360,7 @@ func TestCreateSessionPlainProject(t *testing.T) {
 		"notes": {Kind: "plain", Repo: "/notes"},
 	}
 	a, git, tm, _ := newTestApp(t, projects)
-	tm.out["list-panes -t moomux-todo -F #{pane_id}"] = "%0\n"
+	tm.out["list-panes -t "+TmuxSessionName("notes:todo", "todo")+" -F #{pane_id}"] = "%0\n"
 
 	s, _, err := a.CreateSession("notes", "todo", "", "", "")
 	if err != nil {
@@ -381,7 +393,7 @@ func TestCreateSessionErrors(t *testing.T) {
 
 	// tmux new-session fails
 	noBranch(git, "tmuxfail")
-	tm.failOn["new-session -d -s moomux-tmuxfail -c "+filepath.Join(a.WorktreeRoot, "demo", "tmuxfail")+" -n tmuxfail"] = true
+	tm.failOn["new-session -d -s "+TmuxSessionName("demo:tmuxfail", "tmuxfail")+" -c "+filepath.Join(a.WorktreeRoot, "demo", "tmuxfail")+" -n tmuxfail"] = true
 	if _, _, err := a.CreateSession("demo", "tmuxfail", "", "", ""); err == nil || !strings.Contains(err.Error(), "tmux new-session") {
 		t.Fatalf("err = %v", err)
 	}
@@ -390,16 +402,17 @@ func TestCreateSessionErrors(t *testing.T) {
 	// this point, so CreateSession degrades to a manual-attach hint instead
 	// of failing and stranding them outside the store.
 	noBranch(git, "termfail")
-	tm.out["list-panes -t moomux-termfail -F #{pane_id}"] = "%0\n"
+	termfailTn := TmuxSessionName("demo:termfail", "termfail")
+	tm.out["list-panes -t "+termfailTn+" -F #{pane_id}"] = "%0\n"
 	term.err = errors.New("no terminal")
 	s, hint, err := a.CreateSession("demo", "termfail", "", "", "")
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
-	if s.TmuxSession != "moomux-termfail" {
+	if s.TmuxSession != termfailTn {
 		t.Fatalf("session = %+v", s)
 	}
-	if !strings.Contains(hint, "tmux attach -t moomux-termfail") {
+	if !strings.Contains(hint, "tmux attach -t "+termfailTn) {
 		t.Fatalf("hint = %q", hint)
 	}
 }
@@ -435,7 +448,8 @@ func TestOpenSessionDeadAllocatesOpenCodePort(t *testing.T) {
 		WorktreePath: "/wt/oc", Agent: "opencode",
 	})
 	tm.failOn["has-session -t moomux-oc"] = true
-	tm.out["list-panes -t moomux-oc -F #{pane_id}"] = "%0\n"
+	// The dead session gets lazily migrated to the hashed name before recreation.
+	tm.out["list-panes -t "+TmuxSessionName("demo:oc", "oc")+" -F #{pane_id}"] = "%0\n"
 
 	if _, err := a.OpenSession("demo:oc"); err != nil {
 		t.Fatal(err)
@@ -452,8 +466,9 @@ func TestOpenSessionDeadAllocatesOpenCodePort(t *testing.T) {
 func TestOpenSessionCwdMismatchRecreates(t *testing.T) {
 	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
 	_ = a.Store.Put(session.Session{ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat", WorktreePath: "/wt/feat"})
+	tn := TmuxSessionName("demo:feat", "feat")
 	tm.out["list-panes -t moomux-feat -F #{pane_current_path}"] = "/somewhere/else\n"
-	tm.out["list-panes -t moomux-feat -F #{pane_id}"] = "%0\n"
+	tm.out["list-panes -t "+tn+" -F #{pane_id}"] = "%0\n"
 
 	if _, err := a.OpenSession("demo:feat"); err != nil {
 		t.Fatal(err)
@@ -461,7 +476,8 @@ func TestOpenSessionCwdMismatchRecreates(t *testing.T) {
 	if !tm.called("kill-session -t moomux-feat") {
 		t.Fatalf("expected kill-session; calls = %v", tm.calls)
 	}
-	if !tm.called("new-session -d -s moomux-feat -c /wt/feat") {
+	// Recreation happens under the lazily-migrated hashed name.
+	if !tm.called("new-session -d -s " + tn + " -c /wt/feat") {
 		t.Fatalf("expected recreation; calls = %v", tm.calls)
 	}
 }
@@ -473,7 +489,7 @@ func TestOpenSessionDeadRecreatesWithAgent(t *testing.T) {
 		WorktreePath: "/wt/oc", Agent: "opencode", AgentPort: 4099,
 	})
 	tm.failOn["has-session -t moomux-oc"] = true
-	tm.out["list-panes -t moomux-oc -F #{pane_id}"] = "%0\n"
+	tm.out["list-panes -t "+TmuxSessionName("demo:oc", "oc")+" -F #{pane_id}"] = "%0\n"
 
 	if _, err := a.OpenSession("demo:oc"); err != nil {
 		t.Fatal(err)

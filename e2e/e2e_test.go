@@ -132,7 +132,7 @@ func TestCreateSession_GitProject_NewBranch(t *testing.T) {
 	if !s.NewBranch {
 		t.Fatalf("expected NewBranch=true")
 	}
-	if s.TmuxSession != "moomux-feature-x" {
+	if s.TmuxSession != app.TmuxSessionName("demo:feature-x", "feature-x") {
 		t.Fatalf("tmux session = %q", s.TmuxSession)
 	}
 	if s.Agent != "claude" {
