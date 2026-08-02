@@ -253,7 +253,7 @@ func TestNewProjectFlow(t *testing.T) {
 	if got.name != "newproj" || got.p != want {
 		t.Fatalf("call = %+v", got)
 	}
-	if m.mode != ModeList || !strings.Contains(m.flash, "added project newproj") {
+	if m.mode != ModeNewForm || !strings.Contains(m.flash, "added project newproj") {
 		t.Fatalf("mode=%v flash=%q", m.mode, m.flash)
 	}
 }
@@ -450,7 +450,7 @@ func TestNewProjectNotGitRepoOffersInit(t *testing.T) {
 	if len(be.initProjectCalls) != 1 || be.initProjectCalls[0].name != "newproj" {
 		t.Fatalf("initProjectCalls = %v", be.initProjectCalls)
 	}
-	if m.mode != ModeList || !strings.Contains(m.flash, "initialized git repo") {
+	if m.mode != ModeNewForm || !strings.Contains(m.flash, "initialized git repo") {
 		t.Fatalf("mode=%v flash=%q", m.mode, m.flash)
 	}
 }
@@ -477,7 +477,7 @@ func TestProjectInitChoicePlainAndBack(t *testing.T) {
 	if len(be.plainCalls) != 1 || be.plainCalls[0].name != "plainy" {
 		t.Fatalf("plainCalls = %v", be.plainCalls)
 	}
-	if m.mode != ModeList || !strings.Contains(m.flash, "plain") {
+	if m.mode != ModeNewForm || !strings.Contains(m.flash, "plain") {
 		t.Fatalf("mode=%v flash=%q", m.mode, m.flash)
 	}
 }
