@@ -178,11 +178,11 @@ func TestMoveSessionErrorSetsFlashWithoutReordering(t *testing.T) {
 	}
 }
 
-// TestAllSessionsKeepsProjectGroupingDespiteLiveTmux guards against the
-// live-tmux-floats-to-top sort (below) escaping its per-project scope in the
-// all-sessions view: an unscoped sort would pull beta's live session ahead of
-// every alpha session, undoing the grouping refreshSessions just built.
-func TestAllSessionsKeepsProjectGroupingDespiteLiveTmux(t *testing.T) {
+// TestAllSessionsSortsLiveStatusBeforeProject guards the all-sessions view's
+// sort priority: a live tmux session floats to the very top of the combined
+// list regardless of which project it belongs to, with project order only
+// breaking ties among sessions that share the same status.
+func TestAllSessionsSortsLiveStatusBeforeProject(t *testing.T) {
 	be := &fakeBackend{sessions: []session.Session{
 		{ID: "alpha:a1", Project: "alpha", Name: "a1"},
 		{ID: "alpha:a2", Project: "alpha", Name: "a2"},
@@ -197,13 +197,13 @@ func TestAllSessionsKeepsProjectGroupingDespiteLiveTmux(t *testing.T) {
 	for i, s := range m.sessions {
 		got[i] = s.ID
 	}
-	want := []string{"alpha:a1", "alpha:a2", "beta:b1"}
+	want := []string{"beta:b1", "alpha:a1", "alpha:a2"}
 	if len(got) != len(want) {
 		t.Fatalf("sessions = %v, want %v", got, want)
 	}
 	for i := range want {
 		if got[i] != want[i] {
-			t.Fatalf("sessions = %v, want %v (beta's live session should not float ahead of alpha's group)", got, want)
+			t.Fatalf("sessions = %v, want %v (beta's live session should float above every non-live session)", got, want)
 		}
 	}
 }

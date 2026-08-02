@@ -483,13 +483,13 @@ func (m *Model) refreshSessions() {
 		selectedID = m.sessions[m.cursor].ID
 	}
 
-	// In the all-sessions view, projs is every project (grouped, in project
-	// order); otherwise it's just the active one. Either way, out is built
-	// grouped by projs' order and sessions with a live tmux window float to
-	// the top within their project's group — scoping the float-up to the
-	// group, rather than sorting globally, is what keeps a single project's
-	// view (projs has one entry, so every session shares the same group)
-	// and the grouped all-sessions view both correct.
+	// In the all-sessions view, projs is every project; otherwise it's just
+	// the active one. Sessions with a live tmux window float to the top
+	// across the whole list regardless of project, with project order as
+	// the tiebreaker among sessions sharing the same status — that
+	// tiebreaker is also what keeps a single project's view (projs has one
+	// entry, so it never affects ordering) in its existing (Order-based)
+	// place.
 	projs := m.projects
 	if !m.allSessions {
 		projs = m.projects[m.activeProj : m.activeProj+1]
@@ -508,10 +508,10 @@ func (m *Model) refreshSessions() {
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		if pi, pj := projIndex[out[i].Project], projIndex[out[j].Project]; pi != pj {
-			return pi < pj
+		if ai, aj := m.tmuxAlive[out[i].ID], m.tmuxAlive[out[j].ID]; ai != aj {
+			return ai && !aj
 		}
-		return m.tmuxAlive[out[i].ID] && !m.tmuxAlive[out[j].ID]
+		return projIndex[out[i].Project] < projIndex[out[j].Project]
 	})
 	m.sessions = out
 
