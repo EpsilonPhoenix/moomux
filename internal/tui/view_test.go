@@ -92,18 +92,28 @@ func TestNarrowHeaderTruncatesLongCurrentProject(t *testing.T) {
 	}
 }
 
-func TestWideHeaderClipsOverflowingTabs(t *testing.T) {
+// TestWideHeaderShowsOnlyCurrentProject covers the header on wide terminals
+// too: it now shows only the active project everywhere, the same as the
+// narrow layout, rather than a row of tabs for every project — the picker
+// (/) is the way to see and jump to the rest.
+func TestWideHeaderShowsOnlyCurrentProject(t *testing.T) {
 	m := layoutTestModel(1)
-	m.width = narrowWidthBreak
+	m.width = 100
 	m.projects = []string{
 		"a-very-long-project-name-one",
 		"a-very-long-project-name-two",
 		"a-very-long-project-name-three",
 	}
-	m.activeProj = 0
+	m.activeProj = 1
 
 	header := m.renderHeader()
 
+	if !strings.Contains(header, "a-very-long-project-name-two") {
+		t.Fatalf("wide header does not contain current project:\n%s", header)
+	}
+	if strings.Contains(header, "-one") || strings.Contains(header, "-three") {
+		t.Fatalf("wide header contains inactive projects — tabs should be gone:\n%s", header)
+	}
 	if got := lipgloss.Width(header); got > m.width {
 		t.Fatalf("header width = %d, terminal width = %d:\n%s", got, m.width, header)
 	}

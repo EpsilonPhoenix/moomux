@@ -101,6 +101,32 @@ func (m *Model) formFooter(hint, controls, errText string) string {
 	return strings.Join(rows, "\n")
 }
 
+// projectPickerFooter picks the widest of three preset control hints that
+// still fits the overlay's current width, rather than a single fixed-width
+// breakpoint — the picker has more controls than most dialogs (select,
+// reorder, delete, open, cancel), so a single narrow-terminal fallback
+// either doesn't fit mobile widths or truncates mid-word.
+func (m *Model) projectPickerFooter() string {
+	// ↑↓ itself isn't called out — same as the main session list's own
+	// footer, plain cursor movement is assumed — and the plain-letter
+	// alternates (jk, KJ — see keys.go) are dropped even at full width: with
+	// add/edit/delete all listed, the full string no longer fits under
+	// formHintWidth's cap with them included, and they're already
+	// documented exhaustively in the ? help overlay.
+	full := "n add  e edit  d delete  shift+↑↓ reorder  enter open  esc cancel"
+	medium := "esc cancel  enter open  n add  e edit  d delete"
+	short := "esc cancel  enter open"
+	avail := m.overlayWidth(formHintWidth)
+	controls := full
+	if lipgloss.Width(controls) > avail {
+		controls = medium
+	}
+	if lipgloss.Width(controls) > avail {
+		controls = short
+	}
+	return muteStyle.Render(controls)
+}
+
 func (m *Model) helpFooter() string {
 	controls := "↑↓/jk/pg scroll  ?/esc close"
 	if m.overlayWidth(formHintWidth) < 28 {
@@ -150,6 +176,10 @@ func (m *Model) focusedOverlayLine(content string) int {
 			return lineContaining(content, m.renderAgentSelector())
 		}
 		return lineContaining(content, m.renderWorktreeToggle())
+	case ModeProjectPicker:
+		if m.pickerCursor < len(m.projects) {
+			return lineContaining(content, projectPickerRowMarker+m.projects[m.pickerCursor])
+		}
 	}
 	return -1
 }
@@ -350,6 +380,13 @@ func (m *Model) View() string {
 		content := m.compactOverlayContent(m.renderEditProject())
 		footer := m.formFooter(editProjectFieldHints[m.projForm.focus], "tab/↑↓  ←→ change  enter save  esc cancel", m.projForm.err)
 		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))
+	case ModeProjectPicker:
+		content := m.compactOverlayContent(m.renderProjectPicker())
+		footer := m.projectPickerFooter()
+		if line := m.flashLine(m.overlayWidth(formHintWidth)); line != "" {
+			footer = line + "\n" + footer
+		}
+		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))
 	}
 	return base
 }
@@ -362,45 +399,27 @@ func (m *Model) renderHeader() string {
 		left = lipgloss.JoinHorizontal(lipgloss.Center, cow, "  ", wordmark)
 	}
 
-	counts := map[string]int{}
-	for _, s := range m.backend.Sessions() {
-		if !s.Archived {
-			counts[s.Project]++
-		}
-	}
-
-	projectLabel := func(i int) string {
-		p := m.projects[i]
-		label := p
-		if n := counts[p]; n > 0 {
-			label = p + superscript(n)
-		}
-		return label
-	}
-
 	remaining := m.width - 2 - lipgloss.Width(left)
 	if remaining < 0 {
 		remaining = 0
 	}
 
+	// Only the active project is shown — even on wide terminals — now that
+	// the picker (/) is the way to see and jump to every project; a row of
+	// every project's tab stopped pulling its weight once switching away
+	// from the active one is a whole separate dialog anyway.
 	var right string
-	if m.width < narrowWidthBreak {
-		if len(m.projects) > 0 && m.activeProj < len(m.projects) && remaining > 2 {
-			// tabActive contributes one padding cell on each side.
-			label := truncateToWidth(projectLabel(m.activeProj), remaining-2)
-			right = tabActive.Render(label)
-		}
-	} else {
-		tabs := make([]string, 0, len(m.projects))
-		for i := range m.projects {
-			label := projectLabel(i)
-			if i == m.activeProj {
-				tabs = append(tabs, tabActive.Render(label))
-			} else {
-				tabs = append(tabs, tabInactive.Render(label))
-			}
-		}
-		right = strings.Join(tabs, " ")
+	if len(m.projects) > 0 && m.activeProj < len(m.projects) && remaining > 2 {
+		// tabActive contributes one padding cell on each side. The session
+		// count used to show here as a superscript, but the picker's own
+		// detail column (active/archived) already covers that, so the
+		// header just names the project.
+		label := truncateToWidth(m.projects[m.activeProj], remaining-2)
+		right = tabActive.Render(label)
+	} else if remaining > 2 {
+		// No project to show as the active tab (no projects configured
+		// yet) — point at the picker instead of leaving the header blank.
+		right = muteStyle.Render(truncateToWidth("/ projects", remaining))
 	}
 
 	// Tabs that don't fit are clipped rather than allowed to widen the row
@@ -425,18 +444,27 @@ func (m *Model) renderFooter() string {
 	hint := helpKeyStyle.Foreground(colAccent).Render("?") + helpDescStyle.Render(" help")
 	hintRow := lipgloss.NewStyle().Width(inner).Render(hint)
 
-	messageLine := ""
-	if m.flash != "" {
-		flashStyle := infoFlashStyle
-		prefix := "✓ "
-		if m.flashKind == "error" {
-			flashStyle = errorFlashStyle
-			prefix = "✖ "
-		}
-		messageLine = flashStyle.Render(truncateToWidth(prefix+m.flash, inner))
-	}
-	messageRow := lipgloss.NewStyle().Width(inner).Render(messageLine)
+	messageRow := lipgloss.NewStyle().Width(inner).Render(m.flashLine(inner))
 
 	rows := lipgloss.JoinVertical(lipgloss.Left, messageRow, hintRow)
 	return footerStyle.Width(m.width).Render(rows)
+}
+
+// flashLine renders the current flash message styled by kind (or "" if
+// there's nothing to show), truncated to width. Shared by renderFooter and
+// any overlay — like the project picker — that needs to surface flash
+// feedback (e.g. an error blocking an action) without leaving its dialog:
+// overlays render via renderOverlay instead of the base view, so a flash set
+// while one is open would otherwise never reach the screen.
+func (m *Model) flashLine(width int) string {
+	if m.flash == "" {
+		return ""
+	}
+	flashStyle := infoFlashStyle
+	prefix := "✓ "
+	if m.flashKind == "error" {
+		flashStyle = errorFlashStyle
+		prefix = "✖ "
+	}
+	return flashStyle.Render(truncateToWidth(prefix+m.flash, width))
 }
