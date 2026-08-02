@@ -986,6 +986,21 @@ func TestListenStatus(t *testing.T) {
 	}
 }
 
+// Creating a session in a non-active project should switch the active
+// project to follow it, so the new session is immediately visible.
+func TestSessionCreatedSwitchesActiveProject(t *testing.T) {
+	be := &fakeBackend{}
+	m := newMultiProjectTestModel(be)
+	if m.projects[m.activeProj] != "alpha" {
+		t.Fatalf("start proj=%q", m.projects[m.activeProj])
+	}
+	be.sessions = []session.Session{{ID: "beta:a", Project: "beta", Name: "a"}}
+	m.Update(SessionCreatedMsg{Session: session.Session{ID: "beta:a", Project: "beta", Name: "a"}})
+	if m.projects[m.activeProj] != "beta" {
+		t.Fatalf("proj=%q, want beta", m.projects[m.activeProj])
+	}
+}
+
 func TestSessionMovedErrorFlashes(t *testing.T) {
 	be := &fakeBackend{}
 	m := newTestModel(be)

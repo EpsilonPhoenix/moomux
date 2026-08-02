@@ -98,6 +98,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setFlash("info", text)
 		// Remove from prompt cache so the next tick scans the new session.
 		delete(m.prompts, msg.Session.ID)
+		for i, name := range m.projects {
+			if name == msg.Session.Project {
+				m.activeProj = i
+				break
+			}
+		}
 		m.refreshSessions()
 		return m, refreshStatusCmd(m)
 
