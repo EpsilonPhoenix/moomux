@@ -394,6 +394,37 @@ func (m *Model) projectSessionCount() int {
 	return n
 }
 
+// projectHasSessions reports whether the named project has any session at
+// all (archived or not) — used to skip empty projects when cycling.
+func (m *Model) projectHasSessions(name string) bool {
+	for _, s := range m.backend.Sessions() {
+		if s.Project == name {
+			return true
+		}
+	}
+	return false
+}
+
+// nextNonEmptyProject returns the index to land on when cycling projects in
+// the given direction (+1/-1), skipping projects with no sessions. If every
+// other project is empty it just takes one step, so cycling never gets
+// stuck — that one remaining case is how you still reach an empty project
+// on purpose.
+func (m *Model) nextNonEmptyProject(dir int) int {
+	n := len(m.projects)
+	if n == 0 {
+		return 0
+	}
+	i := m.activeProj
+	for step := 0; step < n-1; step++ {
+		i = (i + dir + n) % n
+		if m.projectHasSessions(m.projects[i]) {
+			return i
+		}
+	}
+	return (m.activeProj + dir + n) % n
+}
+
 // archivedCount returns how many archived sessions the active project has.
 func (m *Model) archivedCount() int {
 	if len(m.projects) == 0 {
