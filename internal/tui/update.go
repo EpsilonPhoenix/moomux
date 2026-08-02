@@ -175,8 +175,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "add":
 			if msg.Err == nil {
 				m.activateProject(msg.Name)
-				m.mode = ModeList
 				m.setFlash("info", "added project "+msg.Name)
+				m.openNewSessionForm()
 				return m, nil
 			}
 			if errors.Is(msg.Err, gitwt.ErrNotGitRepo) {
@@ -194,8 +194,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.activateProject(msg.Name)
-			m.mode = ModeList
 			m.setFlash("info", "initialized git repo + added "+msg.Name)
+			m.openNewSessionForm()
 			return m, nil
 		case "plain":
 			if msg.Err != nil {
@@ -204,8 +204,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.activateProject(msg.Name)
-			m.mode = ModeList
 			m.setFlash("info", "added plain (non-git) project "+msg.Name)
+			m.openNewSessionForm()
 			return m, nil
 		}
 		return m, nil
@@ -350,6 +350,30 @@ func (m *Model) resetOverlayViewport() {
 	m.overlayFocus = -1
 }
 
+// openNewSessionForm opens the new-session dialog for the active project,
+// pre-selecting its default agent unless it requires an explicit choice on
+// every session.
+func (m *Model) openNewSessionForm() {
+	m.mode = ModeNewForm
+	m.newFormErr = ""
+	m.newFormFocus = 0
+	m.nameInput.SetValue("")
+	m.nameInput.Focus()
+	m.branchInput.SetValue("")
+	m.branchInput.Blur()
+	m.ticketInput.SetValue("")
+	m.ticketInput.Blur()
+	m.resetOverlayViewport()
+	m.resizeFormInputs()
+	proj := m.projects[m.activeProj]
+	p := m.cfg.Projects[proj]
+	if p.PromptAgent {
+		m.newFormAgentIdx = -1
+	} else {
+		m.newFormAgentIdx = agentChoiceIndex(p.AgentName())
+	}
+}
+
 func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
@@ -444,27 +468,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.projects) == 0 {
 			return m.flashError(fmt.Errorf("no projects configured — press P to add one"))
 		}
-		m.mode = ModeNewForm
-		m.newFormErr = ""
-		m.newFormFocus = 0
-		m.nameInput.SetValue("")
-		m.nameInput.Focus()
-		m.branchInput.SetValue("")
-		m.branchInput.Blur()
-		m.ticketInput.SetValue("")
-		m.ticketInput.Blur()
-		m.newFormFocus = 0
-		m.resetOverlayViewport()
-		m.resizeFormInputs()
-		// pre-select the project's default agent, unless it requires an
-		// explicit choice on every session
-		proj := m.projects[m.activeProj]
-		p := m.cfg.Projects[proj]
-		if p.PromptAgent {
-			m.newFormAgentIdx = -1
-		} else {
-			m.newFormAgentIdx = agentChoiceIndex(p.AgentName())
-		}
+		m.openNewSessionForm()
 	case key.Matches(msg, m.keys.Delete):
 		if len(m.sessions) > 0 {
 			m.mode = ModeConfirmDelete
