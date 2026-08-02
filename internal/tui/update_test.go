@@ -683,6 +683,71 @@ func TestNavigationAndProjectSwitching(t *testing.T) {
 	}
 }
 
+// Cycling skips over projects with no sessions at all, so a repo with many
+// freshly-added-but-unused projects doesn't require tabbing through each one.
+func TestProjectCyclingSkipsEmptyProjects(t *testing.T) {
+	cfg := &config.Config{
+		Projects: map[string]config.Project{
+			"alpha": {Repo: "/tmp/alpha"},
+			"empty": {Repo: "/tmp/empty"},
+			"beta":  {Repo: "/tmp/beta"},
+		},
+		Order: []string{"alpha", "empty", "beta"},
+	}
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "alpha:a", Project: "alpha", Name: "a"},
+		{ID: "beta:c", Project: "beta", Name: "c"},
+	}}
+	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
+	m.width, m.height = 80, 24
+
+	if m.projects[m.activeProj] != "alpha" {
+		t.Fatalf("start proj=%q", m.projects[m.activeProj])
+	}
+	press(m, tea.KeyTab)
+	if m.projects[m.activeProj] != "beta" {
+		t.Fatalf("after tab: proj=%q, want beta (empty skipped)", m.projects[m.activeProj])
+	}
+	press(m, tea.KeyShiftTab)
+	if m.projects[m.activeProj] != "alpha" {
+		t.Fatalf("after shift+tab: proj=%q, want alpha (empty skipped)", m.projects[m.activeProj])
+	}
+
+	// "}" / "{" step one at a time and do land on the empty project — the
+	// only way to reach it now that Tab/]/[ skip past it.
+	m.Update(keyRune("}"))
+	if m.projects[m.activeProj] != "empty" || len(m.sessions) != 0 {
+		t.Fatalf("after }}: proj=%q sessions=%v, want empty with no sessions", m.projects[m.activeProj], m.sessions)
+	}
+	m.Update(keyRune("{"))
+	if m.projects[m.activeProj] != "alpha" || len(m.sessions) != 1 || m.sessions[0].ID != "alpha:a" {
+		t.Fatalf("after {{: proj=%q sessions=%v, want alpha with its session", m.projects[m.activeProj], m.sessions)
+	}
+}
+
+// When the active project is non-empty and the only other project is empty,
+// Tab must still take the one-step fallback rather than silently returning
+// to the project it's already on.
+func TestProjectCyclingStepsOnceWhenOnlyOtherIsEmpty(t *testing.T) {
+	cfg := &config.Config{
+		Projects: map[string]config.Project{
+			"alpha": {Repo: "/tmp/alpha"},
+			"empty": {Repo: "/tmp/empty"},
+		},
+		Order: []string{"alpha", "empty"},
+	}
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "alpha:a", Project: "alpha", Name: "a"},
+	}}
+	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
+	m.width, m.height = 80, 24
+
+	press(m, tea.KeyTab)
+	if m.projects[m.activeProj] != "empty" {
+		t.Fatalf("after tab: proj=%q, want empty (fallback step)", m.projects[m.activeProj])
+	}
+}
+
 // Mobile/remote terminals often can't send shift+arrow or shift+tab as a single
 // keypress, so every chorded action has a plain-letter alternate.
 func TestPlainLetterAlternatesForChordedKeys(t *testing.T) {

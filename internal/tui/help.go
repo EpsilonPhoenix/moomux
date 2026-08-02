@@ -59,8 +59,8 @@ func (m *Model) helpGroups() []helpGroup {
 				{"shift+↑↓ / KJ", "reorder session"},
 				{"tab / ]", "next project"},
 				{"shift+tab / [", "prev project"},
+				{"} / {", "...incl. empty ones"},
 				{"shift+←→ / HL", "reorder project"},
-				{"r", "refresh"},
 				{"R", linkDesc},
 			},
 		},
@@ -77,6 +77,7 @@ func (m *Model) helpGroups() []helpGroup {
 			entries: []helpEntry{
 				{"?", "toggle this help"},
 				{"q", "quit"},
+				{"r", "refresh"},
 			},
 		},
 	}

@@ -3,39 +3,41 @@ package tui
 import "github.com/charmbracelet/bubbles/key"
 
 type KeyMap struct {
-	Up            key.Binding
-	Down          key.Binding
-	MoveUp        key.Binding
-	MoveDown      key.Binding
-	MoveProjLeft  key.Binding
-	MoveProjRight key.Binding
-	Open          key.Binding
-	New           key.Binding
-	Delete        key.Binding
-	Archive       key.Binding
-	ShowArchived  key.Binding
-	Kill          key.Binding
-	Refresh       key.Binding
-	Tab           key.Binding
-	ShiftTab      key.Binding
-	NextProject   key.Binding
-	PrevProject   key.Binding
-	Quit          key.Binding
-	Cancel        key.Binding
-	Confirm       key.Binding
-	NewProject    key.Binding
-	DelProject    key.Binding
-	EditSession   key.Binding
-	EditProject   key.Binding
-	Tag           key.Binding
-	Enter         key.Binding
-	Left          key.Binding
-	Right         key.Binding
-	No            key.Binding
-	FormUp        key.Binding
-	FormDown      key.Binding
-	Help          key.Binding
-	RemoteLinks   key.Binding
+	Up             key.Binding
+	Down           key.Binding
+	MoveUp         key.Binding
+	MoveDown       key.Binding
+	MoveProjLeft   key.Binding
+	MoveProjRight  key.Binding
+	Open           key.Binding
+	New            key.Binding
+	Delete         key.Binding
+	Archive        key.Binding
+	ShowArchived   key.Binding
+	Kill           key.Binding
+	Refresh        key.Binding
+	Tab            key.Binding
+	ShiftTab       key.Binding
+	NextProject    key.Binding
+	PrevProject    key.Binding
+	NextProjectAll key.Binding
+	PrevProjectAll key.Binding
+	Quit           key.Binding
+	Cancel         key.Binding
+	Confirm        key.Binding
+	NewProject     key.Binding
+	DelProject     key.Binding
+	EditSession    key.Binding
+	EditProject    key.Binding
+	Tag            key.Binding
+	Enter          key.Binding
+	Left           key.Binding
+	Right          key.Binding
+	No             key.Binding
+	FormUp         key.Binding
+	FormDown       key.Binding
+	Help           key.Binding
+	RemoteLinks    key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -64,18 +66,24 @@ func DefaultKeyMap() KeyMap {
 		// ordinary text input.
 		NextProject: key.NewBinding(key.WithKeys("]"), key.WithHelp("]", "next project")),
 		PrevProject: key.NewBinding(key.WithKeys("["), key.WithHelp("[", "prev project")),
-		Quit:        key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
-		Cancel:      key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
-		Confirm:     key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "confirm")),
-		NewProject:  key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "add project")),
-		DelProject:  key.NewBinding(key.WithKeys("D"), key.WithHelp("D", "remove project")),
-		EditSession: key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit session")),
-		EditProject: key.NewBinding(key.WithKeys("E"), key.WithHelp("E", "edit project")),
-		Tag:         key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "tag")),
-		Enter:       key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "submit")),
-		Left:        key.NewBinding(key.WithKeys("left"), key.WithHelp("←", "left")),
-		Right:       key.NewBinding(key.WithKeys("right"), key.WithHelp("→", "right")),
-		No:          key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "no")),
+		// "{" / "}" step one project at a time without skipping empty ones —
+		// the only way to land on an empty project that isn't reachable via
+		// Tab/]/[, which skip past it. Plain characters rather than a shift
+		// chord so they still work as a single keypress over mobile/remote.
+		NextProjectAll: key.NewBinding(key.WithKeys("}"), key.WithHelp("}", "next project (all)")),
+		PrevProjectAll: key.NewBinding(key.WithKeys("{"), key.WithHelp("{", "prev project (all)")),
+		Quit:           key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		Cancel:         key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+		Confirm:        key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "confirm")),
+		NewProject:     key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "add project")),
+		DelProject:     key.NewBinding(key.WithKeys("D"), key.WithHelp("D", "remove project")),
+		EditSession:    key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit session")),
+		EditProject:    key.NewBinding(key.WithKeys("E"), key.WithHelp("E", "edit project")),
+		Tag:            key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "tag")),
+		Enter:          key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "submit")),
+		Left:           key.NewBinding(key.WithKeys("left"), key.WithHelp("←", "left")),
+		Right:          key.NewBinding(key.WithKeys("right"), key.WithHelp("→", "right")),
+		No:             key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "no")),
 		// Arrow-only (no j/k) for forms with text inputs, so typing "j"/"k" isn't hijacked as navigation.
 		FormUp:      key.NewBinding(key.WithKeys("up"), key.WithHelp("↑", "up")),
 		FormDown:    key.NewBinding(key.WithKeys("down"), key.WithHelp("↓", "down")),

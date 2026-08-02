@@ -433,11 +433,23 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.NextProject):
 		if len(m.projects) > 0 {
-			m.activeProj = (m.activeProj + 1) % len(m.projects)
+			m.activeProj = m.nextNonEmptyProject(1)
 			m.cursor = 0
 			m.refreshSessions()
 		}
 	case key.Matches(msg, m.keys.ShiftTab), key.Matches(msg, m.keys.PrevProject):
+		if len(m.projects) > 0 {
+			m.activeProj = m.nextNonEmptyProject(-1)
+			m.cursor = 0
+			m.refreshSessions()
+		}
+	case key.Matches(msg, m.keys.NextProjectAll):
+		if len(m.projects) > 0 {
+			m.activeProj = (m.activeProj + 1) % len(m.projects)
+			m.cursor = 0
+			m.refreshSessions()
+		}
+	case key.Matches(msg, m.keys.PrevProjectAll):
 		if len(m.projects) > 0 {
 			m.activeProj = (m.activeProj - 1 + len(m.projects)) % len(m.projects)
 			m.cursor = 0
