@@ -725,10 +725,10 @@ func TestProjectCyclingSkipsEmptyProjects(t *testing.T) {
 	}
 }
 
-// When the active project is non-empty and the only other project is empty,
-// Tab must still take the one-step fallback rather than silently returning
-// to the project it's already on.
-func TestProjectCyclingStepsOnceWhenOnlyOtherIsEmpty(t *testing.T) {
+// When the active project is the only one with sessions, Tab/shift+tab must
+// stay put rather than hopping to an empty neighbor — there's nothing to
+// cycle to.
+func TestProjectCyclingStaysWhenOnlyActiveHasSessions(t *testing.T) {
 	cfg := &config.Config{
 		Projects: map[string]config.Project{
 			"alpha": {Repo: "/tmp/alpha"},
@@ -743,8 +743,12 @@ func TestProjectCyclingStepsOnceWhenOnlyOtherIsEmpty(t *testing.T) {
 	m.width, m.height = 80, 24
 
 	press(m, tea.KeyTab)
-	if m.projects[m.activeProj] != "empty" {
-		t.Fatalf("after tab: proj=%q, want empty (fallback step)", m.projects[m.activeProj])
+	if m.projects[m.activeProj] != "alpha" {
+		t.Fatalf("after tab: proj=%q, want alpha (only project with sessions)", m.projects[m.activeProj])
+	}
+	press(m, tea.KeyShiftTab)
+	if m.projects[m.activeProj] != "alpha" {
+		t.Fatalf("after shift+tab: proj=%q, want alpha (only project with sessions)", m.projects[m.activeProj])
 	}
 }
 

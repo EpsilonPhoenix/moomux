@@ -408,9 +408,10 @@ func (m *Model) projectHasSessions(name string) bool {
 
 // nextNonEmptyProject returns the index to land on when cycling projects in
 // the given direction (+1/-1), skipping projects with no sessions. If every
-// other project is empty it just takes one step, so cycling never gets
-// stuck — that one remaining case is how you still reach an empty project
-// on purpose.
+// other project is empty and the current one has sessions, it stays put. If
+// every project including the current one is empty, it takes one step, so
+// cycling never gets stuck — that's how you still reach an empty project on
+// purpose.
 func (m *Model) nextNonEmptyProject(dir int) int {
 	n := len(m.projects)
 	if n == 0 {
@@ -422,6 +423,9 @@ func (m *Model) nextNonEmptyProject(dir int) int {
 		if m.projectHasSessions(m.projects[i]) {
 			return i
 		}
+	}
+	if m.projectHasSessions(m.projects[m.activeProj]) {
+		return m.activeProj
 	}
 	return (m.activeProj + dir + n) % n
 }
