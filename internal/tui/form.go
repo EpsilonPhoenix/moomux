@@ -127,29 +127,27 @@ func (m *Model) renderFormHint(text string) string {
 // newFormFieldHints gives a one-line explanation for whichever field of the
 // new-session form is currently focused, so the jargon (worktree, base
 // branch) doesn't have to be memorized up front.
-// newFormFieldCount is the focus cycle length: name, branch, agent
-// selector, ticket — matching the rendered order.
-const newFormFieldCount = 4
+// newFormFieldCount is the focus cycle length: project selector, name,
+// branch, agent selector, ticket — matching the rendered order.
+const newFormFieldCount = 5
 
 // newFormAgentFocus is the newFormFocus value for the agent selector row.
-const newFormAgentFocus = 2
+const newFormAgentFocus = 3
 
 var newFormFieldHints = []string{
-	0: "shown in the session list and used for the worktree folder name — leave blank to derive one from the branch",
-	1: "an existing branch to resume, or a new one to branch off the project's base branch",
-	2: "which agent CLI runs in the session's pane — ←→ to choose",
-	3: "optional — shown as a clickable ticket icon next to the session",
+	0: "which project this session belongs to — ←→ to choose",
+	1: "shown in the session list and used for the worktree folder name — leave blank to derive one from the branch",
+	2: "an existing branch to resume, or a new one to branch off the project's base branch",
+	3: "which agent CLI runs in the session's pane — ←→ to choose",
+	4: "optional — shown as a clickable ticket icon next to the session",
 }
 
 func (m *Model) renderNewForm() string {
 	var b strings.Builder
-	proj := ""
-	if len(m.projects) > 0 {
-		proj = m.projects[m.activeProj]
-	}
 	b.WriteString(titleStyle.Render("New session"))
 	b.WriteString("\n\n")
-	b.WriteString(muteStyle.Render(fmt.Sprintf("project: %s", proj)))
+	b.WriteString(muteStyle.Render("project:  "))
+	b.WriteString(m.renderNewFormProjectSelector())
 	b.WriteString("\n\n")
 	b.WriteString(m.nameInput.View())
 	b.WriteString("\n\n")
@@ -160,6 +158,37 @@ func (m *Model) renderNewForm() string {
 	b.WriteString("\n\n")
 	b.WriteString(m.ticketInput.View())
 	return b.String()
+}
+
+// newFormProjFocus is the newFormFocus value for the project selector row.
+const newFormProjFocus = 0
+
+func (m *Model) renderNewFormProjectSelector() string {
+	if len(m.projects) == 0 {
+		return ""
+	}
+	focused := m.newFormFocus == newFormProjFocus
+	var b strings.Builder
+	for i, name := range m.projects {
+		if i > 0 {
+			b.WriteString("  ")
+		}
+		if i == m.newFormProjIdx {
+			if focused {
+				b.WriteString(titleStyle.Render("[" + name + "]"))
+			} else {
+				b.WriteString(lipgloss.NewStyle().Bold(true).Render("[" + name + "]"))
+			}
+		} else {
+			b.WriteString(muteStyle.Render(name))
+		}
+	}
+	rendered := b.String()
+	available := m.overlayWidth(formHintWidth) - lipgloss.Width("project:  ")
+	if lipgloss.Width(rendered) > available {
+		return renderCompactAgentSelector(m.projects[m.newFormProjIdx], focused, available)
+	}
+	return rendered
 }
 
 func (m *Model) renderNewFormAgentSelector() string {

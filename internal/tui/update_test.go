@@ -55,7 +55,7 @@ func TestNewSessionFormFlow(t *testing.T) {
 	typeText(m, "https://t/1")
 	press(m, tea.KeyShiftTab)
 	press(m, tea.KeyShiftTab) // -> branch again
-	if m.newFormFocus != 1 {
+	if m.newFormFocus != 2 {
 		t.Fatalf("focus = %d", m.newFormFocus)
 	}
 
