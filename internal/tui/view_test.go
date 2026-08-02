@@ -335,8 +335,8 @@ func TestShortFormViewportKeepsFocusedInputVisible(t *testing.T) {
 	m.ticketInput.SetValue("unique-ticket")
 	m.resizeFormInputs()
 
-	values := []string{"unique-name", "unique-branch", "[claude]", "unique-ticket"}
-	hints := []string{"worktree folder", "existing branch", "←→ to choose", "clickable ticket"}
+	values := []string{"[demo]", "unique-name", "unique-branch", "[claude]", "unique-ticket"}
+	hints := []string{"which project", "worktree folder", "existing branch", "←→ to choose", "clickable ticket"}
 	for focus, value := range values {
 		m.newFormBlurAll()
 		m.newFormFocus = focus

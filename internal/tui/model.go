@@ -137,9 +137,10 @@ type Model struct {
 	nameInput       textinput.Model
 	branchInput     textinput.Model
 	ticketInput     textinput.Model
-	newFormFocus    int // 0=nameInput, 1=branchInput, 2=agent selector, 3=ticketInput
+	newFormFocus    int // 0=project selector, 1=nameInput, 2=branchInput, 3=agent selector, 4=ticketInput
 	newFormErr      string
 	newFormAgentIdx int // agent selector in the new-session form; -1 means "not chosen yet"
+	newFormProjIdx  int // project selector in the new-session form; index into m.projects
 	projForm        projectForm
 	sessionForm     sessionForm
 	editProjectName string

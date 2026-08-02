@@ -356,7 +356,8 @@ func (m *Model) resetOverlayViewport() {
 func (m *Model) openNewSessionForm() {
 	m.mode = ModeNewForm
 	m.newFormErr = ""
-	m.newFormFocus = 0
+	m.newFormFocus = 1 // start below the project picker, at the name field
+	m.newFormProjIdx = m.activeProj
 	m.nameInput.SetValue("")
 	m.nameInput.Focus()
 	m.branchInput.SetValue("")
@@ -365,7 +366,14 @@ func (m *Model) openNewSessionForm() {
 	m.ticketInput.Blur()
 	m.resetOverlayViewport()
 	m.resizeFormInputs()
-	proj := m.projects[m.activeProj]
+	m.newFormApplyProjectDefaults()
+}
+
+// newFormApplyProjectDefaults sets the agent selector to the currently
+// selected project's default agent, unless that project requires an
+// explicit choice on every session.
+func (m *Model) newFormApplyProjectDefaults() {
+	proj := m.projects[m.newFormProjIdx]
 	p := m.cfg.Projects[proj]
 	if p.PromptAgent {
 		m.newFormAgentIdx = -1
@@ -598,8 +606,20 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.newFormFocusInput()
 		return m, nil
 	case key.Matches(msg, m.keys.Left), key.Matches(msg, m.keys.Right):
-		// Only steer the agent selector when it's the focused field;
-		// otherwise the arrows belong to the text input's cursor.
+		// Only steer the project/agent selectors when one of them is the
+		// focused field; otherwise the arrows belong to the text input's
+		// cursor.
+		if m.newFormFocus == newFormProjFocus {
+			if len(m.projects) > 0 {
+				if key.Matches(msg, m.keys.Left) {
+					m.newFormProjIdx = (m.newFormProjIdx - 1 + len(m.projects)) % len(m.projects)
+				} else {
+					m.newFormProjIdx = (m.newFormProjIdx + 1) % len(m.projects)
+				}
+				m.newFormApplyProjectDefaults()
+			}
+			return m, nil
+		}
 		if m.newFormFocus == newFormAgentFocus {
 			if m.newFormAgentIdx < 0 {
 				m.newFormAgentIdx = 0
@@ -623,7 +643,7 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.newFormErr = ""
-		proj := m.projects[m.activeProj]
+		proj := m.projects[m.newFormProjIdx]
 		agent := agentChoices[m.newFormAgentIdx]
 		m.mode = ModeList
 		label := name
@@ -642,11 +662,13 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	switch m.newFormFocus {
-	case 1:
+	case newFormProjFocus:
+		// selector row: no text input to type into
+	case 2:
 		m.branchInput, cmd = m.branchInput.Update(msg)
 	case newFormAgentFocus:
 		// selector row: no text input to type into
-	case 3:
+	case 4:
 		m.ticketInput, cmd = m.ticketInput.Update(msg)
 	default:
 		m.nameInput, cmd = m.nameInput.Update(msg)
@@ -662,11 +684,13 @@ func (m *Model) newFormBlurAll() {
 
 func (m *Model) newFormFocusInput() {
 	switch m.newFormFocus {
-	case 1:
+	case newFormProjFocus:
+		// selector row: nothing to focus
+	case 2:
 		m.branchInput.Focus()
 	case newFormAgentFocus:
 		// selector row: nothing to focus
-	case 3:
+	case 4:
 		m.ticketInput.Focus()
 	default:
 		m.nameInput.Focus()
