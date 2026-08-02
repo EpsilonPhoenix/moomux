@@ -17,6 +17,13 @@ const narrowWidthBreak = 72
 // above the visible viewport by the detail pane.
 const minStackedPaneHeight = 10
 
+// compactScreen reports whether the terminal is small enough (short or
+// narrow) that panel titles should be dropped to reclaim their rows for
+// content — used by both the session list and detail panels.
+func (m *Model) compactScreen() bool {
+	return m.height < 20 || m.width < narrowWidthBreak
+}
+
 var superDigits = [...]string{"⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"}
 
 // superscript renders n using superscript Unicode digits, e.g. 12 -> "¹²".
@@ -131,7 +138,10 @@ func (m *Model) focusedOverlayLine(content string) int {
 		if m.projForm.focus < len(m.projForm.inputs) {
 			return lineContaining(content, m.projForm.inputs[m.projForm.focus].View())
 		}
-		if m.projForm.focus == projFormInputCount {
+		switch m.projForm.focus {
+		case projFormInputCount:
+			return lineContaining(content, m.renderProjectEmojiSelector())
+		case projFormInputCount + 1:
 			return lineContaining(content, m.renderAgentSelector())
 		}
 		return lineContaining(content, m.renderWorktreeToggle())
@@ -146,7 +156,10 @@ func (m *Model) focusedOverlayLine(content string) int {
 		if m.projForm.focus < len(m.projForm.inputs) {
 			return lineContaining(content, m.projForm.inputs[m.projForm.focus].View())
 		}
-		if m.projForm.focus == projFormInputCount {
+		switch m.projForm.focus {
+		case projFormInputCount:
+			return lineContaining(content, m.renderProjectEmojiSelector())
+		case projFormInputCount + 1:
 			return lineContaining(content, m.renderAgentSelector())
 		}
 		return lineContaining(content, m.renderWorktreeToggle())
@@ -384,7 +397,11 @@ func (m *Model) renderHeader() string {
 	}
 
 	var right string
-	if m.width < narrowWidthBreak {
+	if m.allSessions {
+		// No single project is "active" in this view, so there's nothing
+		// meaningful to show in the project-tabs slot — leave it blank
+		// rather than a stale or misleading label.
+	} else if m.width < narrowWidthBreak {
 		if len(m.projects) > 0 && m.activeProj < len(m.projects) && remaining > 2 {
 			// tabActive contributes one padding cell on each side.
 			label := truncateToWidth(projectLabel(m.activeProj), remaining-2)

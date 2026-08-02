@@ -273,8 +273,9 @@ var projFormFieldHints = []string{
 	1: "path to the project's git repo — prefilled from the current directory; edit it, or point elsewhere",
 	2: "the branch new session worktrees branch off of (usually main or master)",
 	3: "prepended to every new session's branch name, e.g. \"alice/\" → alice/feature-x — leave blank to skip",
-	4: "coding agent launched by default for new sessions in this project — \"ask each time\" requires choosing one on every new session",
-	5: "off: every session runs directly in the repo folder instead of its own worktree/branch",
+	4: "shown instead of the project name in the all-sessions view — ←→ to choose, \"auto\" picks one automatically",
+	5: "coding agent launched by default for new sessions in this project — \"ask each time\" requires choosing one on every new session",
+	6: "off: every session runs directly in the repo folder instead of its own worktree/branch",
 }
 
 var editProjectFieldHints = []string{
@@ -282,8 +283,9 @@ var editProjectFieldHints = []string{
 	1: "repository path used by new sessions — existing worktrees stay where they are",
 	2: "base branch used when creating new session worktrees",
 	3: "prepended to branches created for new sessions — leave blank to skip",
-	4: "coding agent copied into new sessions by default — \"ask each time\" requires choosing one on every new session",
-	5: "changes worktree behavior for new sessions only",
+	4: "shown instead of the project name in the all-sessions view — ←→ to choose, \"auto\" picks one automatically",
+	5: "coding agent copied into new sessions by default — \"ask each time\" requires choosing one on every new session",
+	6: "changes worktree behavior for new sessions only",
 }
 
 func (m *Model) renderNewProject() string {
@@ -296,6 +298,9 @@ func (m *Model) renderNewProject() string {
 		b.WriteString(ti.View())
 		b.WriteString("\n")
 	}
+	b.WriteString(m.renderFormLabel("emoji", 15))
+	b.WriteString(m.renderProjectEmojiSelector())
+	b.WriteString("\n")
 	b.WriteString(m.renderFormLabel("agent", 15))
 	b.WriteString(m.renderAgentSelector())
 	b.WriteString("\n")
@@ -325,6 +330,9 @@ func (m *Model) renderEditProject() string {
 		b.WriteString(m.projForm.inputs[3].View())
 		b.WriteString("\n")
 	}
+	b.WriteString(m.renderFormLabel("emoji", 15))
+	b.WriteString(m.renderProjectEmojiSelector())
+	b.WriteString("\n")
 	b.WriteString(m.renderFormLabel("agent", 15))
 	b.WriteString(m.renderAgentSelector())
 	b.WriteString("\n")
@@ -336,8 +344,35 @@ func (m *Model) renderEditProject() string {
 	return b.String()
 }
 
+func (m *Model) renderProjectEmojiSelector() string {
+	focused := m.projForm.focus == projFormInputCount
+	selectedIdx := m.projForm.emojiIdx
+	choices := m.projForm.emojiChoices
+	var b strings.Builder
+	for i, e := range choices {
+		if i > 0 {
+			b.WriteString("  ")
+		}
+		if i == selectedIdx {
+			if focused {
+				b.WriteString(titleStyle.Render("[" + e + "]"))
+			} else {
+				b.WriteString(lipgloss.NewStyle().Bold(true).Render("[" + e + "]"))
+			}
+		} else {
+			b.WriteString(muteStyle.Render(e))
+		}
+	}
+	rendered := b.String()
+	available := m.overlayWidth(formHintWidth) - m.formLabelWidth("emoji", 15)
+	if lipgloss.Width(rendered) > available {
+		return renderCompactAgentSelector(choices[selectedIdx], focused, available)
+	}
+	return rendered
+}
+
 func (m *Model) renderWorktreeToggle() string {
-	focused := m.projForm.focus == projFormInputCount+1
+	focused := m.projForm.focus == projFormInputCount+2
 	choice := "on"
 	if m.projForm.noWorktree {
 		choice = "off"
@@ -355,7 +390,7 @@ func (m *Model) renderWorktreeToggle() string {
 var projectAgentChoices = append(append([]string{}, agentChoices...), "ask each time")
 
 func (m *Model) renderAgentSelector() string {
-	focused := m.projForm.focus == projFormInputCount
+	focused := m.projForm.focus == projFormInputCount+1
 	selectedIdx := m.projForm.agentIdx
 	if selectedIdx == askAgentIdx {
 		selectedIdx = len(agentChoices)

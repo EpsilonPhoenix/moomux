@@ -32,7 +32,10 @@ func TestNarrowShortLayoutShowsOnlySessionList(t *testing.T) {
 
 	view := m.View()
 
-	if !strings.Contains(view, "SESSIONS") {
+	// Narrow terminals hide the "SESSIONS" title itself (to reclaim rows for
+	// content), so check for a session's own name as the signal the list
+	// pane rendered instead.
+	if !strings.Contains(view, m.sessions[0].Name) {
 		t.Fatalf("short narrow view does not contain session list:\n%s", view)
 	}
 	if strings.Contains(view, "DETAIL") {
@@ -190,7 +193,10 @@ func TestNarrowTallLayoutShowsStackedDetail(t *testing.T) {
 
 	view := m.View()
 
-	if !strings.Contains(view, "SESSIONS") || !strings.Contains(view, "DETAIL") {
+	// Still narrow, so the "SESSIONS"/"DETAIL" titles stay hidden even in
+	// the tall (stacked) layout — check for a session's own name and a
+	// detail-pane field instead.
+	if !strings.Contains(view, m.sessions[0].Name) || !strings.Contains(view, "status:") {
 		t.Fatalf("tall narrow view should contain both panes:\n%s", view)
 	}
 	if got := lipgloss.Height(view); got > m.height {
@@ -200,13 +206,15 @@ func TestNarrowTallLayoutShowsStackedDetail(t *testing.T) {
 
 func TestNarrowLayoutRestoresDetailAfterResize(t *testing.T) {
 	m := layoutTestModel(3)
+	// "DETAIL" itself is hidden at this narrow width regardless of the
+	// stacked/list-only split, so check for a detail-pane field instead.
 	m.Update(tea.WindowSizeMsg{Width: 50, Height: 24})
-	if view := m.View(); strings.Contains(view, "DETAIL") {
+	if view := m.View(); strings.Contains(view, "status:") {
 		t.Fatalf("detail visible before resize:\n%s", view)
 	}
 
 	m.Update(tea.WindowSizeMsg{Width: 50, Height: 40})
-	if view := m.View(); !strings.Contains(view, "DETAIL") {
+	if view := m.View(); !strings.Contains(view, "status:") {
 		t.Fatalf("detail not restored after resize:\n%s", view)
 	}
 }

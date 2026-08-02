@@ -27,6 +27,10 @@ type Project struct {
 	// itself instead of giving each one its own worktree/branch — the same
 	// single-folder behavior as a "plain" project, but for a real git repo.
 	NoWorktree bool `toml:"no_worktree,omitempty"`
+	// Emoji is a short, user-set glyph shown in place of the project name in
+	// compact views (e.g. the all-projects session list). Empty means no
+	// glyph has been chosen — callers fall back to a deterministic pick.
+	Emoji string `toml:"emoji,omitempty"`
 }
 
 func (p Project) IsPlain() bool { return p.Kind == "plain" }

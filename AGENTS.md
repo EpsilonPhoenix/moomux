@@ -10,11 +10,11 @@ This is a terminal UI — you can't see it render just by reading the Go source.
 ./scripts/screenshot.sh <screen> /tmp/<screen>.png
 ```
 
-`<screen>` is one of the scenarios `cmd/uishot` knows about (`list`, `new-session`, `new-project`, `tag`, `confirm-delete`, `confirm-delete-project` — run `go run ./cmd/uishot -screen=x` to see the current list if unsure). It renders the real `tui.Model` against a fake backend with canned sample data, so no real projects, git repos, or tmux sessions are needed.
+`<screen>` is one of the scenarios `cmd/uishot` knows about (`list`, `new-session`, `new-project`, `tag`, `confirm-delete`, `confirm-delete-project`, `all-sessions`, `edit-project-emoji` — run `go run ./cmd/uishot -screen=x` to see the current list if unsure). It renders the real `tui.Model` against a fake backend with canned sample data, so no real projects, git repos, or tmux sessions are needed.
 
 If a change adds a new mode or scenario that isn't covered, add it to the `screens` map in `cmd/uishot/main.go` (drive it there with the same key-press sequence a user would use) rather than skipping the screenshot.
 
-Send the resulting PNG to the user so they can see the change, the same way you'd report a code diff.
+Send the resulting PNG to the user so they can see the change, the same way you'd report a code diff — surface it as a clickable `file://` link (e.g. `[all-sessions.png](file:///tmp/all-sessions.png)`) rather than just viewing it inline, since inline rendering isn't guaranteed to reach the user.
 
 ## Bug fixes and logic changes
 

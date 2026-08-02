@@ -177,3 +177,33 @@ func TestMoveSessionErrorSetsFlashWithoutReordering(t *testing.T) {
 		t.Fatalf("expected cursor unchanged on error, got %d", m.cursor)
 	}
 }
+
+// TestAllSessionsKeepsProjectGroupingDespiteLiveTmux guards against the
+// live-tmux-floats-to-top sort (below) escaping its per-project scope in the
+// all-sessions view: an unscoped sort would pull beta's live session ahead of
+// every alpha session, undoing the grouping refreshSessions just built.
+func TestAllSessionsKeepsProjectGroupingDespiteLiveTmux(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "alpha:a1", Project: "alpha", Name: "a1"},
+		{ID: "alpha:a2", Project: "alpha", Name: "a2"},
+		{ID: "beta:b1", Project: "beta", Name: "b1"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.allSessions = true
+	m.tmuxAlive = map[string]bool{"beta:b1": true}
+	m.refreshSessions()
+
+	got := make([]string, len(m.sessions))
+	for i, s := range m.sessions {
+		got[i] = s.ID
+	}
+	want := []string{"alpha:a1", "alpha:a2", "beta:b1"}
+	if len(got) != len(want) {
+		t.Fatalf("sessions = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("sessions = %v, want %v (beta's live session should not float ahead of alpha's group)", got, want)
+		}
+	}
+}

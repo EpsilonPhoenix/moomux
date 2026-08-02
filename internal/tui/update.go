@@ -518,6 +518,10 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showArchived = !m.showArchived
 		m.cursor = 0
 		m.refreshSessions()
+	case key.Matches(msg, m.keys.AllSessions):
+		m.allSessions = !m.allSessions
+		m.cursor = 0
+		m.refreshSessions()
 	case key.Matches(msg, m.keys.Tag):
 		if len(m.sessions) > 0 {
 			s := m.sessions[m.cursor]
@@ -769,7 +773,7 @@ func projectAgentFields(agentIdx int) (agent string, promptAgent bool) {
 }
 
 func (m *Model) updateNewProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	const totalFields = projFormInputCount + 2 // +1 agent selector, +1 worktree toggle
+	const totalFields = projFormInputCount + 3 // +1 emoji selector, +1 agent selector, +1 worktree toggle
 	switch {
 	case key.Matches(msg, m.keys.Cancel):
 		m.mode = ModeList
@@ -783,18 +787,24 @@ func (m *Model) updateNewProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Left):
 		switch m.projForm.focus {
 		case projFormInputCount:
-			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, -1)
+			m.projForm.emojiIdx = cycleProjectEmojiIdx(m.projForm.emojiChoices, m.projForm.emojiIdx, -1)
 			return m, nil
 		case projFormInputCount + 1:
+			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, -1)
+			return m, nil
+		case projFormInputCount + 2:
 			m.projForm.noWorktree = !m.projForm.noWorktree
 			return m, nil
 		}
 	case key.Matches(msg, m.keys.Right):
 		switch m.projForm.focus {
 		case projFormInputCount:
-			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, 1)
+			m.projForm.emojiIdx = cycleProjectEmojiIdx(m.projForm.emojiChoices, m.projForm.emojiIdx, 1)
 			return m, nil
 		case projFormInputCount + 1:
+			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, 1)
+			return m, nil
+		case projFormInputCount + 2:
 			m.projForm.noWorktree = !m.projForm.noWorktree
 			return m, nil
 		}
@@ -803,11 +813,12 @@ func (m *Model) updateNewProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		repo := m.projForm.inputs[1].Value()
 		base := m.projForm.inputs[2].Value()
 		prefix := m.projForm.inputs[3].Value()
+		emoji := projectEmojiFieldValue(m.projForm.emojiChoices, m.projForm.emojiIdx)
 		if base == "" {
 			base = "main"
 		}
 		agent, promptAgent := projectAgentFields(m.projForm.agentIdx)
-		p := config.Project{Repo: repo, BaseBranch: base, BranchPrefix: prefix, Agent: agent, PromptAgent: promptAgent, NoWorktree: m.projForm.noWorktree}
+		p := config.Project{Repo: repo, BaseBranch: base, BranchPrefix: prefix, Emoji: emoji, Agent: agent, PromptAgent: promptAgent, NoWorktree: m.projForm.noWorktree}
 		return m, func() tea.Msg {
 			err := m.backend.AddProject(name, p)
 			return ProjectAddedMsg{Kind: "add", Name: name, Project: p, Err: err}
@@ -853,9 +864,9 @@ func (m *Model) updateEditSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func editProjectFocuses(p config.Project) []int {
 	if p.IsPlain() {
-		return []int{1, projFormInputCount}
+		return []int{1, projFormInputCount, projFormInputCount + 1}
 	}
-	return []int{1, 2, 3, projFormInputCount, projFormInputCount + 1}
+	return []int{1, 2, 3, projFormInputCount, projFormInputCount + 1, projFormInputCount + 2}
 }
 
 func (m *Model) cycleEditProjectFocus(forward bool) {
@@ -902,21 +913,26 @@ func (m *Model) updateEditProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Left):
 		switch m.projForm.focus {
 		case projFormInputCount:
-			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, -1)
+			m.projForm.emojiIdx = cycleProjectEmojiIdx(m.projForm.emojiChoices, m.projForm.emojiIdx, -1)
 		case projFormInputCount + 1:
+			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, -1)
+		case projFormInputCount + 2:
 			m.projForm.noWorktree = !m.projForm.noWorktree
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Right):
 		switch m.projForm.focus {
 		case projFormInputCount:
-			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, 1)
+			m.projForm.emojiIdx = cycleProjectEmojiIdx(m.projForm.emojiChoices, m.projForm.emojiIdx, 1)
 		case projFormInputCount + 1:
+			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, 1)
+		case projFormInputCount + 2:
 			m.projForm.noWorktree = !m.projForm.noWorktree
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Enter):
 		project.Repo = m.projForm.inputs[1].Value()
+		project.Emoji = projectEmojiFieldValue(m.projForm.emojiChoices, m.projForm.emojiIdx)
 		project.Agent, project.PromptAgent = projectAgentFields(m.projForm.agentIdx)
 		if !project.IsPlain() {
 			project.BaseBranch = m.projForm.inputs[2].Value()
