@@ -50,8 +50,14 @@ func TestDetailLinkHitsSurviveWrappedRows(t *testing.T) {
 
 	width := 30
 	rendered, hits := m.renderDetail(width, 24)
-	if len(hits) != 1 {
-		t.Fatalf("hits = %+v", hits)
+	var ticketHit *linkHit
+	for i := range hits {
+		if hits[i].url == "https://t/1" {
+			ticketHit = &hits[i]
+		}
+	}
+	if ticketHit == nil {
+		t.Fatalf("no ticket hit found, hits = %+v", hits)
 	}
 	lines := strings.Split(rendered, "\n")
 	ticketLine := -1
@@ -64,7 +70,7 @@ func TestDetailLinkHitsSurviveWrappedRows(t *testing.T) {
 	if ticketLine == -1 {
 		t.Fatalf("no ticket row rendered:\n%s", rendered)
 	}
-	if hits[0].line != ticketLine {
-		t.Fatalf("hit line = %d, rendered ticket row = %d\n%s", hits[0].line, ticketLine, rendered)
+	if ticketHit.line != ticketLine {
+		t.Fatalf("hit line = %d, rendered ticket row = %d\n%s", ticketHit.line, ticketLine, rendered)
 	}
 }

@@ -18,6 +18,7 @@ import (
 type linkHit struct {
 	sessionID  string
 	url        string
+	copyOnly   bool // force clipboard copy instead of browser.Open (e.g. a tmux command, not a URL)
 	line       int
 	col0, col1 int // half-open column range
 }
