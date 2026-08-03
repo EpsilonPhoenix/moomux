@@ -31,12 +31,15 @@ import (
 // whole word like "demo/Documents/foo" types into the focused input in one
 // step).
 var screens = map[string][]string{
-	"list":           {},
-	"new-session":    {"n"},
-	"new-project":    {"P"},
+	"list":        {},
+	"new-session": {"n"},
+	// Adding/editing a project only happens inside the picker now (P/E were
+	// removed from the main list), so these open it first.
+	"new-project":    {"/", "n"},
 	"tag":            {"t"},
+	"project-picker": {"/"},
 	"edit-session":   {"e"},
-	"edit-project":   {"E"},
+	"edit-project":   {"/", "e"},
 	"confirm-delete": {"d"},
 	// "demo" has sample sessions, so D there flashes the blocked error; the
 	// confirm screen is only reachable on the sessionless "spare" project
@@ -51,11 +54,21 @@ var screens = map[string][]string{
 	// expanded to the real home dir at runtime so the warning actually
 	// triggers regardless of machine. "ctrl+u" clears each field's cwd
 	// prefill (see newProjectForm) before typing over it.
-	"project-init-choice": {"P", "ctrl+u", "demo2", "tab", "ctrl+u", "$HOME/Documents/projects", "enter"},
-	// no-projects starts from a config with zero projects, which
-	// auto-opens the add-project form (tui.New's zero-projects branch);
-	// esc backs out to the empty list to show its empty-state hint.
+	"project-init-choice": {"/", "n", "ctrl+u", "demo2", "tab", "ctrl+u", "$HOME/Documents/projects", "enter"},
+	// no-projects-startup is the actual first screen a zero-projects config
+	// renders (tui.New's zero-projects branch auto-opens the add-project
+	// form before any key is pressed) — no keys, since that's the point.
+	"no-projects-startup": {},
+	// no-projects starts from the same zero-projects config; esc backs out
+	// of that auto-opened form to the empty list, to show its own
+	// empty-state hint (for whoever backs out without adding one yet).
 	"no-projects": {"esc"},
+	// project-picker-emptied deletes the only (sessionless) project from
+	// inside the picker itself, landing back on the picker's own "no
+	// projects yet" render — a path the shared demo/spare sample data can't
+	// reach (demo always has sessions, so it can never pass the delete
+	// guard), hence the dedicated single-project config below.
+	"project-picker-emptied": {"/", "d", "y"},
 }
 
 var namedKeys = map[string]tea.KeyType{
@@ -106,6 +119,12 @@ func runCmd(m *tui.Model, cmd tea.Cmd) {
 
 type fakeBackend struct {
 	sessions []session.Session
+	// cfg, when set, is mutated by RemoveProject so scenarios that need to
+	// screenshot the state *after* a removal (e.g. project-picker-emptied)
+	// see it reflected in m.projects on the next refresh — every other
+	// backend method here is a no-op since no other scenario needs its
+	// project/session data to actually change.
+	cfg *config.Config
 }
 
 func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket string) (session.Session, string, error) {
@@ -132,7 +151,12 @@ func (f *fakeBackend) AddProject(name string, p config.Project) error        { r
 func (f *fakeBackend) InitProjectAndAdd(name string, p config.Project) error { return nil }
 func (f *fakeBackend) AddPlainProject(name string, p config.Project) error   { return nil }
 func (f *fakeBackend) UpdateProject(name string, p config.Project) error     { return nil }
-func (f *fakeBackend) RemoveProject(name string) error                       { return nil }
+func (f *fakeBackend) RemoveProject(name string) error {
+	if f.cfg != nil {
+		delete(f.cfg.Projects, name)
+	}
+	return nil
+}
 
 func sampleSessions() []session.Session {
 	now := time.Now().UTC()
@@ -194,11 +218,17 @@ func renderScreen(screenName string, width, height int) (string, error) {
 		},
 	}}
 	sessions := sampleSessions()
-	if screenName == "no-projects" {
+	switch screenName {
+	case "no-projects-startup", "no-projects":
 		cfg = &config.Config{Projects: map[string]config.Project{}}
 		sessions = nil
+	case "project-picker-emptied":
+		cfg = &config.Config{Projects: map[string]config.Project{
+			"solo": {Kind: "git", Repo: "/tmp/solo", BaseBranch: "main"},
+		}}
+		sessions = nil
 	}
-	be := &fakeBackend{sessions: sessions}
+	be := &fakeBackend{sessions: sessions, cfg: cfg}
 	statusCh := make(chan watcher.Snapshot)
 	m := tui.New(cfg, be, statusCh, func() {})
 

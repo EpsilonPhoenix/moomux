@@ -182,7 +182,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Err == nil {
 				m.activateProject(msg.Name)
 				m.setFlash("info", "added project "+msg.Name)
-				m.openNewSessionForm()
+				m.finishProjectAdded(msg.Name)
 				return m, nil
 			}
 			if errors.Is(msg.Err, gitwt.ErrNotGitRepo) {
@@ -201,7 +201,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.activateProject(msg.Name)
 			m.setFlash("info", "initialized git repo + added "+msg.Name)
-			m.openNewSessionForm()
+			m.finishProjectAdded(msg.Name)
 			return m, nil
 		case "plain":
 			if msg.Err != nil {
@@ -211,7 +211,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.activateProject(msg.Name)
 			m.setFlash("info", "added plain (non-git) project "+msg.Name)
-			m.openNewSessionForm()
+			m.finishProjectAdded(msg.Name)
 			return m, nil
 		}
 		return m, nil
@@ -221,11 +221,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setError(msg.Err)
 			return m, nil
 		}
+		// Re-anchor by name rather than index on both cursors: the active
+		// project (which may not be the one that just moved, when the
+		// reorder came from the picker) and, while the picker is open, its
+		// own highlight following the project it just reordered.
+		var activeName string
+		if m.activeProj < len(m.projects) {
+			activeName = m.projects[m.activeProj]
+		}
 		m.refreshProjects()
-		for i, n := range m.projects {
-			if n == msg.Name {
-				m.activeProj = i
-				break
+		if i := indexOfProject(m.projects, activeName); i >= 0 {
+			m.activeProj = i
+		}
+		if m.mode == ModeProjectPicker {
+			if i := indexOfProject(m.projects, msg.Name); i >= 0 {
+				m.pickerCursor = i
 			}
 		}
 		return m, nil
@@ -241,20 +251,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.activateProject(msg.Name)
-		m.mode = ModeList
+		m.mode = m.projectDialogReturn
 		m.setFlash("info", "updated project "+msg.Name)
 		return m, nil
 
 	case ProjectRemovedMsg:
 		if msg.Err != nil {
-			m.mode = ModeList
+			m.mode = m.projectDialogReturn
 			m.setFlash("error", msg.Err.Error())
 			return m, nil
 		}
 		m.refreshProjects()
 		m.cursor = 0
 		m.refreshSessions()
-		m.mode = ModeList
+		m.mode = m.projectDialogReturn
 		m.setFlash("info", "removed project "+msg.Name)
 		return m, nil
 
@@ -334,6 +344,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateEditSession(msg)
 		case ModeEditProject:
 			return m.updateEditProject(msg)
+		case ModeProjectPicker:
+			return m.updateProjectPicker(msg)
 		default:
 			return m.updateList(msg)
 		}
@@ -492,7 +504,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(msg, m.keys.New):
 		if len(m.projects) == 0 {
-			return m.flashError(fmt.Errorf("no projects configured — press P to add one"))
+			return m.flashError(fmt.Errorf("no projects configured — press / then n to add one"))
 		}
 		m.openNewSessionForm()
 	case key.Matches(msg, m.keys.Delete):
@@ -538,22 +550,14 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				agentIdx: agentChoiceIndex(s.AgentName()),
 			}
 		}
-	case key.Matches(msg, m.keys.NewProject):
-		m.mode = ModeNewProject
-		m.projForm = newProjectForm()
+	case key.Matches(msg, m.keys.ProjectPicker):
+		// No zero-projects guard: the picker is now the only way to add a
+		// project (main list's P/E were removed), so it has to stay reachable
+		// even with none yet — its own empty-state hint covers that ("press
+		// n to add one").
+		m.pickerCursor = m.activeProj
+		m.mode = ModeProjectPicker
 		m.resetOverlayViewport()
-		m.resizeFormInputs()
-		return m, nil
-	case key.Matches(msg, m.keys.EditProject):
-		if len(m.projects) == 0 {
-			return m.flashError(fmt.Errorf("no projects to edit"))
-		}
-		name := m.projects[m.activeProj]
-		m.editProjectName = name
-		m.projForm = editProjectForm(name, m.cfg.Projects[name])
-		m.mode = ModeEditProject
-		m.resetOverlayViewport()
-		m.resizeFormInputs()
 		return m, nil
 	case key.Matches(msg, m.keys.DelProject):
 		if len(m.projects) == 0 {
@@ -562,6 +566,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if n := m.projectSessionCount(); n > 0 {
 			return m.flashError(fmt.Errorf("%s has %d session(s) (incl. archived) — delete them first", m.projects[m.activeProj], n))
 		}
+		m.projectDialogReturn = ModeList
 		m.mode = ModeConfirmDeleteProject
 		m.resetOverlayViewport()
 		return m, nil
@@ -772,7 +777,10 @@ func (m *Model) updateNewProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	const totalFields = projFormInputCount + 2 // +1 agent selector, +1 worktree toggle
 	switch {
 	case key.Matches(msg, m.keys.Cancel):
-		m.mode = ModeList
+		// projectDialogReturn defaults to ModeList (its zero value), which is
+		// also correct for New()'s zero-projects startup case that opens
+		// this form directly without going through the picker or main list.
+		m.mode = m.projectDialogReturn
 		return m, nil
 	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.FormDown):
 		cycleFormFocus(m.projForm.inputs, &m.projForm.focus, totalFields, true)
@@ -884,14 +892,14 @@ func (m *Model) cycleEditProjectFocus(forward bool) {
 func (m *Model) updateEditProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.busy {
 		if key.Matches(msg, m.keys.Cancel) {
-			m.mode = ModeList
+			m.mode = m.projectDialogReturn
 		}
 		return m, nil
 	}
 	project := m.cfg.Projects[m.editProjectName]
 	switch {
 	case key.Matches(msg, m.keys.Cancel):
-		m.mode = ModeList
+		m.mode = m.projectDialogReturn
 		return m, nil
 	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.FormDown):
 		m.cycleEditProjectFocus(true)
@@ -970,16 +978,41 @@ func (m *Model) updateTagForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// indexOfProject returns name's index in m.projects, or -1 if it's not
+// there (e.g. removed, or never added).
+func indexOfProject(projects []string, name string) int {
+	for i, n := range projects {
+		if n == name {
+			return i
+		}
+	}
+	return -1
+}
+
 func (m *Model) activateProject(name string) {
 	m.refreshProjects()
-	for i, n := range m.projects {
-		if n == name {
-			m.activeProj = i
-			break
-		}
+	if i := indexOfProject(m.projects, name); i >= 0 {
+		m.activeProj = i
 	}
 	m.cursor = 0
 	m.refreshSessions()
+}
+
+// finishProjectAdded is the shared tail of every successful ProjectAddedMsg
+// branch (add/init/plain). Adding a project from the main list still funnels
+// into creating its first session, but adding one from the picker returns to
+// the picker — with the cursor following the project just added — rather
+// than yanking the user into an unrelated dialog they didn't ask for.
+func (m *Model) finishProjectAdded(name string) {
+	if m.projectDialogReturn == ModeProjectPicker {
+		if i := indexOfProject(m.projects, name); i >= 0 {
+			m.pickerCursor = i
+		}
+		m.mode = ModeProjectPicker
+		m.resetOverlayViewport()
+		return
+	}
+	m.openNewSessionForm()
 }
 
 func (m *Model) updateProjectInitChoice(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1013,16 +1046,117 @@ func (m *Model) updateConfirmDeleteProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	switch msg.String() {
 	case "y":
 		if len(m.projects) == 0 {
-			m.mode = ModeList
+			m.mode = m.projectDialogReturn
 			return m, nil
 		}
 		name := m.projects[m.activeProj]
-		m.mode = ModeList
+		m.mode = m.projectDialogReturn
 		return m, func() tea.Msg {
 			err := m.backend.RemoveProject(name)
 			return ProjectRemovedMsg{Name: name, Err: err}
 		}
 	case "n", "esc":
+		m.mode = m.projectDialogReturn
+	}
+	return m, nil
+}
+
+// updateProjectPicker handles keys while ModeProjectPicker is open: ↑↓/jk
+// move the cursor, enter/o jumps to the highlighted project and closes the
+// dialog, esc backs out without changing the active project.
+func (m *Model) updateProjectPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Cancel):
+		m.mode = ModeList
+		return m, nil
+	case key.Matches(msg, m.keys.Up):
+		if len(m.projects) > 0 {
+			m.pickerCursor = (m.pickerCursor - 1 + len(m.projects)) % len(m.projects)
+		}
+	case key.Matches(msg, m.keys.Down):
+		if len(m.projects) > 0 {
+			m.pickerCursor = (m.pickerCursor + 1) % len(m.projects)
+		}
+	// Reorder with the same up/down chords the session list uses (shift+↑↓ /
+	// KJ) rather than MoveProjLeft/Right — this list is vertical, like the
+	// session list, not the header's horizontal tabs.
+	case key.Matches(msg, m.keys.MoveUp):
+		if len(m.projects) > 0 && m.pickerCursor > 0 {
+			name := m.projects[m.pickerCursor]
+			return m, func() tea.Msg {
+				if err := m.backend.MoveProject(name, -1); err != nil {
+					return ProjectMovedMsg{Name: name, Err: err}
+				}
+				return ProjectMovedMsg{Name: name}
+			}
+		}
+	case key.Matches(msg, m.keys.MoveDown):
+		if len(m.projects) > 0 && m.pickerCursor < len(m.projects)-1 {
+			name := m.projects[m.pickerCursor]
+			return m, func() tea.Msg {
+				if err := m.backend.MoveProject(name, 1); err != nil {
+					return ProjectMovedMsg{Name: name, Err: err}
+				}
+				return ProjectMovedMsg{Name: name}
+			}
+		}
+	// d rather than the main list's D (capitalized there to stay distinct
+	// from the session-level d shown on the same screen) — the picker only
+	// ever lists projects, so there's no session-level d to collide with.
+	// e has no main-list equivalent at all anymore; edit only happens here.
+	case key.Matches(msg, m.keys.Delete):
+		if len(m.projects) > 0 {
+			proj := m.projects[m.pickerCursor]
+			if n := m.projectSessionCountFor(proj); n > 0 {
+				return m.flashError(fmt.Errorf("%s has %d session(s) (incl. archived) — delete them first", proj, n))
+			}
+			// ModeConfirmDeleteProject acts on m.activeProj, so land on the
+			// highlighted project first — the same "jump to it" step Open
+			// does, just followed immediately by the confirm dialog instead
+			// of returning to the list. Route through activateProject (not a
+			// bare m.activeProj assignment) so m.sessions/m.cursor stay in
+			// sync too — otherwise canceling back out of the confirm dialog
+			// leaves the header pointing at this project while the session
+			// list still shows the previous one's sessions.
+			m.activateProject(proj)
+			m.projectDialogReturn = ModeProjectPicker
+			m.mode = ModeConfirmDeleteProject
+			m.resetOverlayViewport()
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.EditSession):
+		// m.busy stays true (not reset) if a previous edit's save is still
+		// in flight when its Cancel is pressed — see updateEditProject's own
+		// busy guard — so without this check a second edit opened here could
+		// have its state clobbered when that first ProjectUpdatedMsg lands.
+		if len(m.projects) > 0 && !m.busy {
+			name := m.projects[m.pickerCursor]
+			m.editProjectName = name
+			m.projForm = editProjectForm(name, m.cfg.Projects[name])
+			m.activateProject(name) // keeps m.sessions/m.cursor in sync — see the delete case above
+			m.projectDialogReturn = ModeProjectPicker
+			m.mode = ModeEditProject
+			m.resetOverlayViewport()
+			m.resizeFormInputs()
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.New):
+		// No len(m.projects)==0 guard: this is now the only way to add a
+		// project at all (past the zero-projects startup flow), so it must
+		// work from the picker's own empty state too — see its "press n to
+		// add one" hint.
+		m.projectDialogReturn = ModeProjectPicker
+		m.mode = ModeNewProject
+		m.projForm = newProjectForm()
+		m.resetOverlayViewport()
+		m.resizeFormInputs()
+		return m, nil
+	case key.Matches(msg, m.keys.Open):
+		if len(m.projects) > 0 {
+			m.activeProj = m.pickerCursor
+			m.cursor = 0
+			m.refreshSessions()
+		}
 		m.mode = ModeList
 	}
 	return m, nil
