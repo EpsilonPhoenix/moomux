@@ -23,13 +23,13 @@ func TestClassifyBusy(t *testing.T) {
 		t.Fatal("busy=true should be Working")
 	}
 	bf := false
-	if classify(rawSession{Busy: &bf}) != Waiting {
-		t.Fatal("busy=false should be Waiting")
+	if classify(rawSession{Busy: &bf}) != Done {
+		t.Fatal("busy=false should be Done")
 	}
 }
 
 func TestClassifyStatusFields(t *testing.T) {
-	if classify(rawSession{Status: "idle"}) != Waiting {
+	if classify(rawSession{Status: "idle"}) != Done {
 		t.Fatal("status idle")
 	}
 	if classify(rawSession{Status: "busy"}) != Working {
@@ -62,7 +62,7 @@ func TestWatcherTickEmitsSnapshot(t *testing.T) {
 		if snap.States["/tmp/wt-a"] != Working {
 			t.Fatalf("wt-a = %v", snap.States["/tmp/wt-a"])
 		}
-		if snap.States["/tmp/wt-b"] != Waiting {
+		if snap.States["/tmp/wt-b"] != Done {
 			t.Fatalf("wt-b = %v", snap.States["/tmp/wt-b"])
 		}
 	case <-ctx.Done():
@@ -113,7 +113,7 @@ func TestStateString(t *testing.T) {
 	if Working.String() != "working" {
 		t.Fatal()
 	}
-	if Waiting.String() != "waiting" {
+	if Done.String() != "done" {
 		t.Fatal()
 	}
 	if Parked.String() != "parked" {
@@ -160,7 +160,7 @@ func TestWatcherTickNeedsInputWinsOverStaleBusy(t *testing.T) {
 
 func TestClassifyUnrecognizedIsUnknown(t *testing.T) {
 	// A status we don't recognize is not evidence of idleness; Unknown loses
-	// the max-merge against any real signal instead of masquerading as Waiting.
+	// the max-merge against any real signal instead of masquerading as Done.
 	if got := classify(rawSession{Status: "garbled"}); got != Unknown {
 		t.Fatalf("got %v", got)
 	}

@@ -16,7 +16,7 @@ type State int
 const (
 	Unknown State = iota
 	Parked
-	Waiting
+	Done
 	Working
 	// NeedsInput means the agent is blocked on the user: a permission
 	// prompt, an idle-prompt timeout, or similar. Ranked above Working so a
@@ -28,8 +28,8 @@ func (s State) String() string {
 	switch s {
 	case Parked:
 		return "parked"
-	case Waiting:
-		return "waiting"
+	case Done:
+		return "done"
 	case Working:
 		return "working"
 	case NeedsInput:

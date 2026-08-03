@@ -43,7 +43,7 @@ func classify(rs rawSession) State {
 		if *rs.Busy {
 			return Working
 		}
-		return Waiting
+		return Done
 	}
 	switch {
 	case rs.Status == "needs-input":
@@ -51,7 +51,7 @@ func classify(rs rawSession) State {
 	case rs.Status == "busy", rs.Status == "working", rs.State == "busy":
 		return Working
 	case rs.Status == "idle", rs.Status == "waiting", rs.State == "idle":
-		return Waiting
+		return Done
 	}
 	// A status we don't recognize is not evidence the session is idle —
 	// Unknown lets the merge in tick() keep any better signal for the path.

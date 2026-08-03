@@ -7,7 +7,7 @@ var (
 	colMute       = lipgloss.AdaptiveColor{Light: "#5b5b66", Dark: "#7a7a85"}
 	colAccent     = lipgloss.AdaptiveColor{Light: "#2952cc", Dark: "#7aa2f7"}
 	colWorking    = lipgloss.AdaptiveColor{Light: "#4b7a1f", Dark: "#9ece6a"}
-	colWaiting    = lipgloss.AdaptiveColor{Light: "#946f1a", Dark: "#e0af68"}
+	colDone       = lipgloss.AdaptiveColor{Light: "#946f1a", Dark: "#e0af68"}
 	colNeedsInput = lipgloss.AdaptiveColor{Light: "#9c3ba1", Dark: "#bb70d2"}
 	colParked     = lipgloss.AdaptiveColor{Light: "#7d7d85", Dark: "#565a6e"}
 	colDanger     = lipgloss.AdaptiveColor{Light: "#c0293f", Dark: "#f7768e"}
@@ -33,11 +33,11 @@ var (
 	errorFlashStyle = lipgloss.NewStyle().Foreground(colDanger).Bold(true)
 
 	dotWorkingStyle    = lipgloss.NewStyle().Foreground(colWorking)
-	dotWaitingStyle    = lipgloss.NewStyle().Foreground(colWaiting)
+	dotDoneStyle       = lipgloss.NewStyle().Foreground(colDone)
 	dotNeedsInputStyle = lipgloss.NewStyle().Foreground(colNeedsInput)
 	dotParkedStyle     = lipgloss.NewStyle().Foreground(colParked)
 	dotWorking         = dotWorkingStyle.Render("⬤")
-	dotWaiting         = dotWaitingStyle.Render("⬤")
+	dotDone            = dotDoneStyle.Render("⬤")
 	dotNeedsInput      = dotNeedsInputStyle.Render("⬤")
 	dotParked          = dotParkedStyle.Render("⬤")
 
@@ -53,7 +53,7 @@ var (
 			Padding(1, 2)
 
 	dangerStyle = lipgloss.NewStyle().Foreground(colDanger).Bold(true)
-	warnStyle   = lipgloss.NewStyle().Foreground(colWaiting).Bold(true)
+	warnStyle   = lipgloss.NewStyle().Foreground(colDone).Bold(true)
 
 	// hintStyle is the contextual, per-field explainer shown in forms —
 	// italic to read as a transient tip rather than a persistent label.

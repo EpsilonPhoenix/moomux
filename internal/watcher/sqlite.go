@@ -69,7 +69,7 @@ func (w *SQLiteWatcher) tick(ctx context.Context, out chan<- Snapshot, activeAge
 			continue
 		}
 		for path, updatedMs := range rows {
-			st := Waiting
+			st := Done
 			if now.Sub(time.UnixMilli(updatedMs)) <= activeAge {
 				st = Working
 			}

@@ -109,8 +109,8 @@ func renderRow(s session.Session, st watcher.State, width int, selected bool, pr
 	switch st {
 	case watcher.Working:
 		dotStyle = dotWorkingStyle
-	case watcher.Waiting:
-		dotStyle = dotWaitingStyle
+	case watcher.Done:
+		dotStyle = dotDoneStyle
 	case watcher.NeedsInput:
 		dotStyle = dotNeedsInputStyle
 	}

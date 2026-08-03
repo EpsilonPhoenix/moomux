@@ -15,9 +15,9 @@ var quipsWorking = []string{
 	"deep focus",
 }
 
-var quipsWaiting = []string{
+var quipsDone = []string{
 	"moo...",
-	"waiting for orders",
+	"all done",
 	"chewing cud",
 	"your move",
 	"ready when you are",
@@ -27,7 +27,7 @@ var quipsWaiting = []string{
 	"anytime now...",
 	"still here",
 	"no rush... or is there?",
-	"patiently waiting",
+	"wrapped up",
 }
 
 var quipsNeedsInput = []string{

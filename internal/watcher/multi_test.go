@@ -19,7 +19,7 @@ func (s *staticWatcher) Run(ctx context.Context, out chan<- Snapshot) {
 
 func TestMultiWatcherMergesSnapshots(t *testing.T) {
 	wa := &staticWatcher{states: map[string]State{"/wt-a": Working}}
-	wb := &staticWatcher{states: map[string]State{"/wt-b": Waiting}}
+	wb := &staticWatcher{states: map[string]State{"/wt-b": Done}}
 
 	m := &MultiWatcher{Watchers: []Watcher{wa, wb}}
 	ch := make(chan Snapshot, 4)
@@ -42,8 +42,8 @@ func TestMultiWatcherMergesSnapshots(t *testing.T) {
 	if seen["/wt-a"] != Working {
 		t.Fatalf("/wt-a = %v, want Working", seen["/wt-a"])
 	}
-	if seen["/wt-b"] != Waiting {
-		t.Fatalf("/wt-b = %v, want Waiting", seen["/wt-b"])
+	if seen["/wt-b"] != Done {
+		t.Fatalf("/wt-b = %v, want Done", seen["/wt-b"])
 	}
 }
 
