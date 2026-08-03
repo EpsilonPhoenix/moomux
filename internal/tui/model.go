@@ -29,6 +29,9 @@ type Backend interface {
 	OpenSession(id string) (hint string, err error)
 	DeleteSession(id string) error
 	KillTmux(id string) error
+	// SetSessionStatusTitle renames id's tmux window to reflect st, so
+	// terminals tracking the window name as their tab title show it live.
+	SetSessionStatusTitle(id string, st watcher.State) error
 	SetSessionTags(id, ticket, pr string) (session.Session, error)
 	SetSessionAgent(id, agent string) (session.Session, error)
 	// SetSessionArchived hides (or restores) a session from the default
@@ -141,6 +144,7 @@ type Model struct {
 	allSessions  bool // when true, the list shows every project's sessions, grouped by project, instead of just the active one
 	cursor       int
 	states       map[string]watcher.State
+	titleState   map[string]watcher.State // last status pushed as each session's tmux window title, by session id
 	tmuxAlive    map[string]bool
 	prompts      map[string]string
 	statusCh     <-chan watcher.Snapshot
@@ -273,6 +277,7 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 		backend:         backend,
 		keys:            DefaultKeyMap(),
 		states:          map[string]watcher.State{},
+		titleState:      map[string]watcher.State{},
 		tmuxAlive:       map[string]bool{},
 		prompts:         map[string]string{},
 		statusCh:        statusCh,

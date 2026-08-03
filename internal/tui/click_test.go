@@ -104,6 +104,7 @@ func (f *fakeBackend) KillTmux(id string) error {
 	f.killCalls = append(f.killCalls, id)
 	return nil
 }
+func (f *fakeBackend) SetSessionStatusTitle(id string, st watcher.State) error { return nil }
 func (f *fakeBackend) SetSessionTags(id, ticket, pr string) (session.Session, error) {
 	f.tagCalls = append(f.tagCalls, tagCall{id, ticket, pr})
 	if f.tagErr != nil {
