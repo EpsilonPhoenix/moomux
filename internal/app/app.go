@@ -43,25 +43,18 @@ func agentCmd(agent string) string {
 }
 
 // needsInputInstallers maps an agent name to the function that wires its
-// "needs input" hooks into place for a freshly created worktree. Agents with
-// no entry here (opencode) don't support the needs-input state yet — add a
-// sibling package and a map entry to bring one in. changed reports whether
-// the call actually wrote something new (see codexHooksHint).
+// "needs input" hooks into the user's global config. Agents with no entry
+// here (opencode) don't support the needs-input state yet — add a sibling
+// package and a map entry to bring one in. changed reports whether the call
+// actually wrote something new (see codexHooksHint).
 //
-// The installer receives the new worktree's path, but codex's ignores it:
-// Codex requires trusting a hook file's exact path via `/hooks` before it
-// runs, so installing per-worktree would mean re-trusting on every new
-// session — codexhook.EnsureHooks instead installs once into the user's
-// global ~/.codex/hooks.json (see its doc comment).
-var needsInputInstallers = map[string]func(worktreePath string) (changed bool, err error){
-	"claude": claudehook.EnsureWorktreeHooks,
-	"codex": func(string) (bool, error) {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return false, err
-		}
-		return codexhook.EnsureHooks(home)
-	},
+// Both installers are global rather than per-worktree/per-project: each
+// agent's own trust model would otherwise force re-approving hooks on every
+// new worktree (see claudehook.EnsureHooksInstalled and codexhook.EnsureHooks
+// doc comments for why).
+var needsInputInstallers = map[string]func(home string) (changed bool, err error){
+	"claude": claudehook.EnsureHooksInstalled,
+	"codex":  codexhook.EnsureHooks,
 }
 
 func validateAgent(agent string) error {
@@ -285,16 +278,17 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 		}
 		slog.Info("worktree added", "path", wt, "branch", branch)
 	}
-	// Not gated on proj.UsesWorktree(): codex's installer ignores the
-	// worktree path entirely (see needsInputInstallers's doc comment) and
-	// writes to a fixed global location, so a plain/no-worktree project
-	// deserves it just as much as a worktree one. wt is valid either way —
-	// it's proj.Repo itself for plain projects (see above).
+	// Not gated on proj.UsesWorktree(): both installers ignore the worktree
+	// path entirely (see needsInputInstallers's doc comment) and write to a
+	// fixed global location, so a plain/no-worktree project deserves it just
+	// as much as a worktree one.
 	hooksHint := ""
 	if install, ok := needsInputInstallers[agent]; ok {
-		changed, err := install(wt)
+		home, err := os.UserHomeDir()
 		if err != nil {
-			slog.Warn("needs-input hook install failed", "agent", agent, "worktree", wt, "err", err)
+			slog.Warn("needs-input hook install failed", "agent", agent, "err", err)
+		} else if changed, err := install(home); err != nil {
+			slog.Warn("needs-input hook install failed", "agent", agent, "err", err)
 		} else if changed {
 			hooksHint = codexHooksHint(agent)
 		}
@@ -430,8 +424,8 @@ func (a *App) SetSessionArchived(id string, archived bool) (session.Session, err
 // entry in needsInputInstallers, or before a newer moomux build added a hook
 // event an older one didn't install). Each installer is idempotent, so
 // running this on every open is cheap and safe. Not gated on the project
-// using worktrees — codex's installer ignores the worktree path and writes
-// to a fixed global location (see needsInputInstallers), so a plain-project
+// using worktrees — both installers ignore the worktree path and write to a
+// fixed global location (see needsInputInstallers), so a plain-project
 // session deserves the repair just as much as a worktree one. Returns a hint
 // (see codexHooksHint) if this call is what just installed or changed
 // codex's hooks, or "" otherwise.
@@ -443,9 +437,14 @@ func (a *App) repairNeedsInputHooks(s session.Session) string {
 	if !ok {
 		return ""
 	}
-	changed, err := install(s.WorktreePath)
+	home, err := os.UserHomeDir()
 	if err != nil {
-		slog.Warn("needs-input hook repair failed", "agent", s.AgentName(), "worktree", s.WorktreePath, "err", err)
+		slog.Warn("needs-input hook repair failed", "agent", s.AgentName(), "err", err)
+		return ""
+	}
+	changed, err := install(home)
+	if err != nil {
+		slog.Warn("needs-input hook repair failed", "agent", s.AgentName(), "err", err)
 		return ""
 	}
 	if !changed {
