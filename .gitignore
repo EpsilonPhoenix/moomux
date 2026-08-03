@@ -1,5 +1,6 @@
 .superpowers/
 .omc/
+.claude/settings.json
 /moomux
 /dist/
 *.test
