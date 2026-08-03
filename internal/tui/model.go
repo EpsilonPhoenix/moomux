@@ -223,6 +223,7 @@ func agentChoiceIndex(agent string) int {
 type resolvedLinkHit struct {
 	sessionID string
 	url       string
+	copyOnly  bool
 	y         int
 	x0, x1    int // half-open column range
 }
@@ -242,6 +243,7 @@ func (m *Model) updateLinkHits(header string, listHits, detailHits []linkHit, de
 			m.linkHits = append(m.linkHits, resolvedLinkHit{
 				sessionID: h.sessionID,
 				url:       h.url,
+				copyOnly:  h.copyOnly,
 				y:         originY + h.line,
 				x0:        originX + h.col0,
 				x1:        originX + h.col1,
@@ -261,15 +263,16 @@ func (m *Model) isRemote() bool {
 	return m.forceCopyLinks || browser.Remote()
 }
 
-// linkAt returns the URL of the ticket/PR icon at absolute terminal
-// coordinates (x, y), if any.
-func (m *Model) linkAt(x, y int) string {
+// linkAt returns the URL of the ticket/PR/tmux icon at absolute terminal
+// coordinates (x, y), if any, and whether it must always be copied rather
+// than opened in a browser (true for non-URL text like a tmux command).
+func (m *Model) linkAt(x, y int) (string, bool) {
 	for _, h := range m.linkHits {
 		if y == h.y && x >= h.x0 && x < h.x1 {
-			return h.url
+			return h.url, h.copyOnly
 		}
 	}
-	return ""
+	return "", false
 }
 
 func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, cancel context.CancelFunc) *Model {

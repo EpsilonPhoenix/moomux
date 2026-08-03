@@ -222,13 +222,13 @@ func TestLinkHitsResolveClicks(t *testing.T) {
 	ticketLine, ticketCol := findCol(iconTicket)
 	prLine, prCol := findCol(iconPR)
 
-	if got := m.linkAt(ticketCol, ticketLine); got != be.sessions[0].Ticket {
+	if got, _ := m.linkAt(ticketCol, ticketLine); got != be.sessions[0].Ticket {
 		t.Errorf("click on ticket icon at (%d,%d) = %q, want %q", ticketCol, ticketLine, got, be.sessions[0].Ticket)
 	}
-	if got := m.linkAt(prCol, prLine); got != be.sessions[0].PR {
+	if got, _ := m.linkAt(prCol, prLine); got != be.sessions[0].PR {
 		t.Errorf("click on pr icon at (%d,%d) = %q, want %q", prCol, prLine, got, be.sessions[0].PR)
 	}
-	if got := m.linkAt(ticketCol-1, ticketLine); got != "" {
+	if got, _ := m.linkAt(ticketCol-1, ticketLine); got != "" {
 		t.Errorf("click one column left of ticket icon resolved to %q, want empty", got)
 	}
 }
@@ -257,7 +257,7 @@ func TestTruncatedDetailURLsRemainClickable(t *testing.T) {
 		for line, rendered := range lines {
 			if idx := strings.Index(rendered, visibleTail); idx >= 0 {
 				col := lipgloss.Width(rendered[:idx])
-				if got := m.linkAt(col, line); got != wantURL {
+				if got, _ := m.linkAt(col, line); got != wantURL {
 					t.Fatalf("click on detail URL tail %q at (%d,%d) = %q, want %q\n%s", visibleTail, col, line, got, wantURL, frame)
 				}
 				return
@@ -314,7 +314,12 @@ func TestLinkClickOverSSHCopiesInsteadOfOpening(t *testing.T) {
 	m.width, m.height = 80, 24
 	m.View() // populate m.linkHits
 
-	hit := m.linkHits[0]
+	var hit resolvedLinkHit
+	for _, h := range m.linkHits {
+		if h.url == be.sessions[0].Ticket {
+			hit = h
+		}
+	}
 	updated, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: hit.x0, Y: hit.y})
 	m2 := updated.(*Model)
 
@@ -353,5 +358,45 @@ func TestRemoteLinksToggleOverridesAutoDetection(t *testing.T) {
 	m = updated.(*Model)
 	if m.forceCopyLinks || m.isRemote() {
 		t.Errorf("after two R presses: forceCopyLinks = %v, isRemote() = %v, want false/false", m.forceCopyLinks, m.isRemote())
+	}
+}
+
+// TestTmuxRowClickAlwaysCopies asserts a click on the detail panel's tmux
+// row copies the "tmux attach" command to the clipboard even when not
+// remote — unlike ticket/PR rows it isn't a URL, so browser.Open would
+// reject it outright, and opening a browser wouldn't make sense either way.
+func TestTmuxRowClickAlwaysCopies(t *testing.T) {
+	cfg := &config.Config{Projects: map[string]config.Project{"demo": {Repo: "/tmp/demo"}}}
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "demo:one", Project: "demo", Name: "one", TmuxSession: "moomux-one"},
+	}}
+	statusCh := make(chan watcher.Snapshot)
+	m := New(cfg, be, statusCh, func() {})
+	m.width, m.height = 80, 24
+	m.View() // populate m.linkHits
+
+	if m.isRemote() {
+		t.Fatalf("expected local (non-remote) environment for this test")
+	}
+
+	wantURL := "tmux attach -t moomux-one"
+	var hit resolvedLinkHit
+	for _, h := range m.linkHits {
+		if h.url == wantURL {
+			hit = h
+		}
+	}
+	if hit.url == "" {
+		t.Fatalf("no link hit found for tmux command %q, hits: %+v", wantURL, m.linkHits)
+	}
+
+	updated, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: hit.x0, Y: hit.y})
+	m2 := updated.(*Model)
+
+	if cmd != nil {
+		t.Errorf("expected no async command for the copy path, got one")
+	}
+	if m2.flashKind != "info" || m2.flash != "copied "+wantURL {
+		t.Errorf("flash = (%q, %q), want (\"info\", %q)", m2.flashKind, m2.flash, "copied "+wantURL)
 	}
 }

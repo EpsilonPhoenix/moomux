@@ -33,7 +33,7 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 		dot, label = dotNeedsInput, "needs input"
 	}
 	var hits []linkHit
-	row := func(k, v, url string) {
+	rowLink := func(k, v, url string, copyOnly bool) {
 		// Measure the rendered height, not logical newlines: the final
 		// Width(width) render *wraps* long rows rather than clipping, and a
 		// wrapped row above would shift every later hitbox down.
@@ -48,6 +48,7 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 				hits = append(hits, linkHit{
 					sessionID: s.ID,
 					url:       url,
+					copyOnly:  copyOnly,
 					line:      line,
 					col0:      col0,
 					col1:      col1,
@@ -57,6 +58,7 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 		}
 		b.WriteString(fmt.Sprintf("%s %s\n", key, v))
 	}
+	row := func(k, v, url string) { rowLink(k, v, url, false) }
 	valueWidth := width - 14
 	if valueWidth < 8 {
 		valueWidth = 8
@@ -68,7 +70,7 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 	row("agent", s.AgentName(), "")
 	row("name", truncate(s.Name, valueWidth), "")
 	row("worktree", truncateLeft(s.WorktreePath, valueWidth), "")
-	row("tmux", truncate(s.TmuxSession, valueWidth), "")
+	rowLink("tmux", truncate(s.TmuxSession, valueWidth), "tmux attach -t "+s.TmuxSession, true)
 	row("created", humanizeAge(time.Since(s.CreatedAt)), "")
 	if s.Ticket != "" {
 		row("ticket", truncateLeft(s.Ticket, valueWidth), s.Ticket)

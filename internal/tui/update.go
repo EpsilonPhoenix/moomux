@@ -309,8 +309,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-			if url := m.linkAt(msg.X, msg.Y); url != "" {
-				if m.isRemote() {
+			if url, copyOnly := m.linkAt(msg.X, msg.Y); url != "" {
+				if copyOnly || m.isRemote() {
 					// Over SSH, `open` launches a browser on the remote
 					// machine, not the phone/laptop the user is actually
 					// looking at — and moomux's mouse tracking means the
