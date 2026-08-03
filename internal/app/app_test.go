@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/erickgnclvs/moomux/internal/codexhook"
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/gitwt"
 	"github.com/erickgnclvs/moomux/internal/session"
@@ -313,12 +314,39 @@ func TestCreateSessionSkipsClaudeHooksForOtherAgents(t *testing.T) {
 	tm.out["list-panes -t ="+tn+": -F #{pane_id}"] = "%0\n"
 	noBranch(git, "feat")
 
-	s, _, err := a.CreateSession("demo", "feat", "codex", "", "")
+	// opencode has no needs-input installer at all, unlike codex — picking it
+	// here keeps this test's assertion (no .claude/settings.json) meaningful
+	// without also asserting anything about codex's own hooks file.
+	s, _, err := a.CreateSession("demo", "feat", "opencode", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(s.WorktreePath, ".claude", "settings.json")); !os.IsNotExist(err) {
 		t.Fatalf("expected no .claude/settings.json for a non-claude agent, stat err = %v", err)
+	}
+}
+
+func TestCreateSessionInstallsCodexHooks(t *testing.T) {
+	// Codex hooks install globally (see codexhook.EnsureHooks's doc comment),
+	// not per-worktree — point $HOME at a scratch dir so this doesn't touch
+	// the real developer's ~/.codex/hooks.json.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	tn := TmuxSessionName("demo:feat", "feat")
+	tm.out["list-panes -t ="+tn+": -F #{pane_id}"] = "%0\n"
+	noBranch(git, "feat")
+
+	if _, _, err := a.CreateSession("demo", "feat", "codex", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".codex", "hooks.json"))
+	if err != nil {
+		t.Fatalf("expected ~/.codex/hooks.json to be written: %v", err)
+	}
+	if !strings.Contains(string(data), "moomux hook codex set") || !strings.Contains(string(data), "moomux hook codex clear") {
+		t.Fatalf("hooks.json missing moomux hooks: %s", data)
 	}
 }
 
@@ -569,6 +597,21 @@ func TestCreateSessionErrors(t *testing.T) {
 }
 
 func TestOpenSessionAlive(t *testing.T) {
+	// codexhook.EnsureHooks (invoked via repairNeedsInputHooks, since this
+	// session's agent is codex) installs into the real $HOME by design (see
+	// its doc comment) — point it at a scratch dir so this doesn't touch the
+	// developer's actual ~/.codex/hooks.json.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// Pre-install codex's hooks so repairNeedsInputHooks's call is a no-op
+	// (changed=false): this test is about alive-session reuse behavior, not
+	// about the hooks-hint text (covered by TestOpenSessionRepairsMissingCodexHooks),
+	// so this keeps its hint assertion focused on what OpenSession actually
+	// returned for terminal reuse.
+	if _, err := codexhook.EnsureHooks(home); err != nil {
+		t.Fatal(err)
+	}
+
 	a, _, tm, term := newTestApp(t, gitProject("/repo"))
 	term.hint = "run: tmux attach -t moomux-feat"
 	_ = a.Store.Put(session.Session{
@@ -715,6 +758,35 @@ func TestOpenSessionRepairsMissingClaudeHooks(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "moomux hook claude set") {
 		t.Fatalf("settings.json missing moomux hooks: %s", data)
+	}
+}
+
+func TestOpenSessionRepairsMissingCodexHooks(t *testing.T) {
+	// Codex hooks install globally (see codexhook.EnsureHooks's doc comment),
+	// not per-worktree — point $HOME at a scratch dir so this doesn't touch
+	// the real developer's ~/.codex/hooks.json.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	a, _, tm, term := newTestApp(t, gitProject("/repo"))
+	term.hint = "run: tmux attach -t moomux-feat"
+	wt := filepath.Join(t.TempDir(), "feat")
+	_ = a.Store.Put(session.Session{
+		ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat",
+		WorktreePath: wt, Agent: "codex",
+	})
+	tm.out["list-panes -t =moomux-feat: -F #{pane_current_path}"] = wt + "\n"
+
+	// Predates the needs-input feature: no ~/.codex/hooks.json yet.
+	if _, err := a.OpenSession("demo:feat"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".codex", "hooks.json"))
+	if err != nil {
+		t.Fatalf("expected OpenSession to backfill ~/.codex/hooks.json: %v", err)
+	}
+	if !strings.Contains(string(data), "moomux hook codex set") {
+		t.Fatalf("hooks.json missing moomux hooks: %s", data)
 	}
 }
 

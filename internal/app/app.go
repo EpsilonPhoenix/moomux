@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/erickgnclvs/moomux/internal/claudehook"
+	"github.com/erickgnclvs/moomux/internal/codexhook"
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/gitwt"
 	"github.com/erickgnclvs/moomux/internal/session"
@@ -42,11 +43,25 @@ func agentCmd(agent string) string {
 }
 
 // needsInputInstallers maps an agent name to the function that wires its
-// "needs input" hooks into a freshly created worktree. Agents with no entry
-// here (codex, opencode) don't support the needs-input state yet — add a
-// sibling package (internal/codexhook, ...) and a map entry to bring one in.
-var needsInputInstallers = map[string]func(worktreePath string) error{
+// "needs input" hooks into place for a freshly created worktree. Agents with
+// no entry here (opencode) don't support the needs-input state yet — add a
+// sibling package and a map entry to bring one in. changed reports whether
+// the call actually wrote something new (see codexHooksHint).
+//
+// The installer receives the new worktree's path, but codex's ignores it:
+// Codex requires trusting a hook file's exact path via `/hooks` before it
+// runs, so installing per-worktree would mean re-trusting on every new
+// session — codexhook.EnsureHooks instead installs once into the user's
+// global ~/.codex/hooks.json (see its doc comment).
+var needsInputInstallers = map[string]func(worktreePath string) (changed bool, err error){
 	"claude": claudehook.EnsureWorktreeHooks,
+	"codex": func(string) (bool, error) {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return false, err
+		}
+		return codexhook.EnsureHooks(home)
+	},
 }
 
 func validateAgent(agent string) error {
@@ -269,10 +284,19 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 			return session.Session{}, "", fmt.Errorf("git worktree add: %w", err)
 		}
 		slog.Info("worktree added", "path", wt, "branch", branch)
-		if install, ok := needsInputInstallers[agent]; ok {
-			if err := install(wt); err != nil {
-				slog.Warn("needs-input hook install failed", "agent", agent, "worktree", wt, "err", err)
-			}
+	}
+	// Not gated on proj.UsesWorktree(): codex's installer ignores the
+	// worktree path entirely (see needsInputInstallers's doc comment) and
+	// writes to a fixed global location, so a plain/no-worktree project
+	// deserves it just as much as a worktree one. wt is valid either way —
+	// it's proj.Repo itself for plain projects (see above).
+	hooksHint := ""
+	if install, ok := needsInputInstallers[agent]; ok {
+		changed, err := install(wt)
+		if err != nil {
+			slog.Warn("needs-input hook install failed", "agent", agent, "worktree", wt, "err", err)
+		} else if changed {
+			hooksHint = codexHooksHint(agent)
 		}
 	}
 	cmd := agentCmd(agent)
@@ -294,6 +318,9 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 		// manual-attach hint instead.
 		slog.Error("terminal open failed", "tmux_session", tmuxName, "name", name, "err", err)
 		hint = fmt.Sprintf("couldn't open a terminal (%v) — attach yourself: tmux attach -t %s", err, tmuxName)
+	}
+	if hooksHint != "" {
+		hint = joinHints(hooksHint, hint)
 	}
 	slog.Info("terminal opened", "tmux_session", tmuxName)
 
@@ -399,20 +426,62 @@ func (a *App) SetSessionArchived(id string, archived bool) (session.Session, err
 }
 
 // repairNeedsInputHooks backfills a session's needs-input hooks on open, for
-// worktrees created before this feature existed (or before its agent got an
-// entry in needsInputInstallers). EnsureWorktreeHooks is idempotent, so
-// running this on every open is cheap and safe.
-func (a *App) repairNeedsInputHooks(s session.Session) {
-	proj, ok := a.Cfg.Projects[s.Project]
-	if !ok || !proj.UsesWorktree() {
-		return
+// sessions created before this feature existed (or before its agent got an
+// entry in needsInputInstallers, or before a newer moomux build added a hook
+// event an older one didn't install). Each installer is idempotent, so
+// running this on every open is cheap and safe. Not gated on the project
+// using worktrees — codex's installer ignores the worktree path and writes
+// to a fixed global location (see needsInputInstallers), so a plain-project
+// session deserves the repair just as much as a worktree one. Returns a hint
+// (see codexHooksHint) if this call is what just installed or changed
+// codex's hooks, or "" otherwise.
+func (a *App) repairNeedsInputHooks(s session.Session) string {
+	if _, ok := a.Cfg.Projects[s.Project]; !ok {
+		return ""
 	}
 	install, ok := needsInputInstallers[s.AgentName()]
 	if !ok {
-		return
+		return ""
 	}
-	if err := install(s.WorktreePath); err != nil {
+	changed, err := install(s.WorktreePath)
+	if err != nil {
 		slog.Warn("needs-input hook repair failed", "agent", s.AgentName(), "worktree", s.WorktreePath, "err", err)
+		return ""
+	}
+	if !changed {
+		return ""
+	}
+	return codexHooksHint(s.AgentName())
+}
+
+// codexHooksHint returns a message telling the user how to activate the
+// codex hooks that were just installed or changed, or "" if agent isn't
+// codex. Codex requires an explicit `/hooks` review before it will run a new
+// or changed hook entry (trust is keyed by the file's path and per-entry
+// content hash — see codexhook.EnsureHooks's doc comment) — without this
+// nudge, needs-input would silently never activate for the new/changed
+// entry and there'd be no indication why. Callers only call this when
+// needsInputInstallers reported changed=true, so it naturally re-fires
+// whenever a future moomux release adds another hook event, not just once
+// ever.
+func codexHooksHint(agent string) string {
+	if agent != "codex" {
+		return ""
+	}
+	return "Codex needs-input hooks were installed/updated in ~/.codex/hooks.json — run /hooks inside Codex once to trust them"
+}
+
+// joinHints combines two non-empty hint strings for display, e.g. a
+// one-time educational note alongside a manual-attach fallback. Either may
+// be empty.
+func joinHints(a, b string) string {
+	switch {
+	case a == "":
+		return b
+	case b == "":
+		return a
+	default:
+		return a + "; " + b
 	}
 }
 
@@ -421,7 +490,7 @@ func (a *App) OpenSession(id string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("unknown session %q", id)
 	}
-	a.repairNeedsInputHooks(s)
+	hooksHint := a.repairNeedsInputHooks(s)
 	has, err := a.Tmux.HasSession(s.TmuxSession)
 	slog.Info("open session", "id", id, "tmux_session", s.TmuxSession, "worktree", s.WorktreePath, "tmux_has_session", has)
 	if err != nil {
@@ -471,6 +540,9 @@ func (a *App) OpenSession(id string) (string, error) {
 		// The tmux session is up regardless; give the user a way in.
 		slog.Error("Terminal.OpenSession failed", "id", id, "tmux_session", s.TmuxSession, "name", s.Name, "err", err)
 		hint = fmt.Sprintf("couldn't open a terminal (%v) — attach yourself: tmux attach -t %s", err, s.TmuxSession)
+	}
+	if hooksHint != "" {
+		hint = joinHints(hooksHint, hint)
 	}
 	if tabID != s.TermTabID {
 		s.TermTabID = tabID

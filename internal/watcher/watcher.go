@@ -82,19 +82,39 @@ func (w *DirWatcher) Run(ctx context.Context, out chan<- Snapshot) {
 }
 
 func (w *DirWatcher) tick(ctx context.Context, out chan<- Snapshot) {
-	snap := Snapshot{States: map[string]State{}, PollTime: time.Now()}
-	entries, err := os.ReadDir(w.Dir)
-	if err != nil {
-		snap.Err = fmt.Errorf("read %s: %w", w.Dir, err)
+	snap := Snapshot{PollTime: time.Now()}
+	states, readErr, parseErr := scanDir(w.Dir)
+	if readErr != nil {
+		snap.States = map[string]State{}
+		snap.Err = fmt.Errorf("read %s: %w", w.Dir, readErr)
 		send(ctx, out, snap)
 		return
 	}
+	snap.States = states
+	snap.Err = parseErr
+	send(ctx, out, snap)
+}
+
+// scanDir reads dir for *.json session/marker files, classifies each, and
+// max-merges the result by cwd. Shared by DirWatcher (Claude's session dir)
+// and SQLiteWatcher's optional MarkerDir (Codex's needs-input markers) —
+// both watch a directory of small JSON files keyed by cwd. readErr means dir
+// itself couldn't be read (states is unpopulated); parseErr (an errors.Join
+// of per-file failures) leaves states populated with everything that did
+// parse, so one half-written file doesn't blind the caller to every other
+// session in the directory.
+func scanDir(dir string) (states map[string]State, readErr, parseErr error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err, nil
+	}
+	states = map[string]State{}
 	var parseErrs []error
 	for _, e := range entries {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
 			continue
 		}
-		rs, err := parseFile(filepath.Join(w.Dir, e.Name()))
+		rs, err := parseFile(filepath.Join(dir, e.Name()))
 		if err != nil {
 			parseErrs = append(parseErrs, fmt.Errorf("parse %s: %w", e.Name(), err))
 			continue
@@ -103,14 +123,14 @@ func (w *DirWatcher) tick(ctx context.Context, out chan<- Snapshot) {
 			continue
 		}
 		st := classify(rs)
-		if prev, ok := snap.States[rs.CWD]; !ok || st > prev {
-			snap.States[rs.CWD] = st
+		if prev, ok := states[rs.CWD]; !ok || st > prev {
+			states[rs.CWD] = st
 		}
 	}
 	if len(parseErrs) > 0 {
-		snap.Err = errors.Join(parseErrs...)
+		parseErr = errors.Join(parseErrs...)
 	}
-	send(ctx, out, snap)
+	return states, nil, parseErr
 }
 
 func send(ctx context.Context, out chan<- Snapshot, snap Snapshot) {
