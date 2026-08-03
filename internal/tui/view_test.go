@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/erickgnclvs/moomux/internal/session"
+K	"github.com/erickgnclvs/moomux/internal/watcher"
 )
 
 func layoutTestModel(sessionCount int) *Model {
@@ -57,6 +58,20 @@ func TestNarrowHeaderHidesWordmark(t *testing.T) {
 	m.width = narrowWidthBreak
 	if header := m.renderHeader(); !strings.Contains(header, "moomux") {
 		t.Fatalf("wide header does not contain wordmark:\n%s", header)
+	}
+}
+
+func TestHeaderEyesShowNeedsInputForSelectedSession(t *testing.T) {
+	m := layoutTestModel(1)
+	m.cursor = 0
+	s := m.sessions[0]
+	m.tmuxAlive = map[string]bool{s.ID: true}
+	m.states = map[string]watcher.State{s.WorktreePath: watcher.NeedsInput}
+
+	header := m.renderHeader()
+
+	if !strings.Contains(header, "!!") {
+		t.Fatalf("header eyes did not show needs-input state:\n%s", header)
 	}
 }
 
