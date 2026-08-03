@@ -46,8 +46,12 @@ func hookCommands(t *testing.T, settings map[string]any, event string) []string 
 
 func TestEnsureWorktreeHooksCreatesSettings(t *testing.T) {
 	wt := t.TempDir()
-	if err := EnsureWorktreeHooks(wt); err != nil {
+	changed, err := EnsureWorktreeHooks(wt)
+	if err != nil {
 		t.Fatalf("EnsureWorktreeHooks: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected changed=true for a brand-new install")
 	}
 	settings := readSettings(t, wt)
 	if got := hookCommands(t, settings, "Notification"); len(got) != 1 || got[0] != "moomux hook claude set" {
@@ -63,11 +67,15 @@ func TestEnsureWorktreeHooksCreatesSettings(t *testing.T) {
 
 func TestEnsureWorktreeHooksIsIdempotent(t *testing.T) {
 	wt := t.TempDir()
-	if err := EnsureWorktreeHooks(wt); err != nil {
+	if _, err := EnsureWorktreeHooks(wt); err != nil {
 		t.Fatalf("first EnsureWorktreeHooks: %v", err)
 	}
-	if err := EnsureWorktreeHooks(wt); err != nil {
+	changed, err := EnsureWorktreeHooks(wt)
+	if err != nil {
 		t.Fatalf("second EnsureWorktreeHooks: %v", err)
+	}
+	if changed {
+		t.Fatal("expected changed=false when hooks are already installed")
 	}
 	settings := readSettings(t, wt)
 	if got := hookCommands(t, settings, "Notification"); len(got) != 1 {
@@ -81,7 +89,7 @@ func TestEnsureWorktreeHooksIsIdempotent(t *testing.T) {
 // half-written settings.json, so a no-op call must not touch the file.
 func TestEnsureWorktreeHooksSkipsNoopWrite(t *testing.T) {
 	wt := t.TempDir()
-	if err := EnsureWorktreeHooks(wt); err != nil {
+	if _, err := EnsureWorktreeHooks(wt); err != nil {
 		t.Fatalf("first EnsureWorktreeHooks: %v", err)
 	}
 	path := filepath.Join(wt, ".claude", "settings.json")
@@ -97,8 +105,12 @@ func TestEnsureWorktreeHooksSkipsNoopWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := EnsureWorktreeHooks(wt); err != nil {
+	changed, err := EnsureWorktreeHooks(wt)
+	if err != nil {
 		t.Fatalf("second EnsureWorktreeHooks: %v", err)
+	}
+	if changed {
+		t.Fatal("expected changed=false for a no-op call")
 	}
 	after, err := os.Stat(path)
 	if err != nil {
@@ -124,7 +136,7 @@ func TestEnsureWorktreeHooksPreservesExistingConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := EnsureWorktreeHooks(wt); err != nil {
+	if _, err := EnsureWorktreeHooks(wt); err != nil {
 		t.Fatalf("EnsureWorktreeHooks: %v", err)
 	}
 	settings := readSettings(t, wt)

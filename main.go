@@ -17,6 +17,7 @@ import (
 	"github.com/mattn/go-isatty"
 
 	"github.com/erickgnclvs/moomux/internal/app"
+	"github.com/erickgnclvs/moomux/internal/codexhook"
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/gitwt"
 	"github.com/erickgnclvs/moomux/internal/session"
@@ -324,10 +325,12 @@ func buildWatcher(home string) watcher.Watcher {
 	return &watcher.MultiWatcher{Watchers: []watcher.Watcher{
 		// Claude Code: JSON session files in ~/.claude/sessions/
 		&watcher.DirWatcher{Dir: filepath.Join(home, ".claude", "sessions")},
-		// Codex: activity tracked in SQLite DB (~/.codex/state_N.sqlite)
+		// Codex: activity tracked in SQLite DB (~/.codex/state_N.sqlite),
+		// plus needs-input markers from internal/codexhook's installed hooks.
 		&watcher.SQLiteWatcher{
-			DB:    filepath.Join(home, ".codex", "state_*.sqlite"),
-			Query: "SELECT cwd, MAX(updated_at_ms) FROM threads GROUP BY cwd",
+			DB:        filepath.Join(home, ".codex", "state_*.sqlite"),
+			Query:     "SELECT cwd, MAX(updated_at_ms) FROM threads GROUP BY cwd",
+			MarkerDir: codexhook.MarkerDir(home),
 		},
 		// OpenCode: activity tracked in SQLite DB (~/.local/share/opencode/opencode.db)
 		&watcher.SQLiteWatcher{

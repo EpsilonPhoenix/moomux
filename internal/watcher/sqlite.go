@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -21,6 +22,13 @@ type SQLiteWatcher struct {
 	Query     string        // SELECT path_col, updated_ms_col FROM ... GROUP BY path_col
 	ActiveAge time.Duration // within this age = Working; default 10s
 	Interval  time.Duration // poll interval; default 2s
+	// MarkerDir, if set, is scanned each tick for the *.json needs-input
+	// marker files internal/codexhook writes and clears (see scanDir). The
+	// merge must happen in the same tick as the SQLite query: NeedsInput and
+	// Working both come from Codex here, and update.go's per-watcher
+	// last-snapshot-wins semantics mean combining them across separate
+	// snapshots would let whichever tick lands last clobber the other.
+	MarkerDir string
 }
 
 func (w *SQLiteWatcher) Run(ctx context.Context, out chan<- Snapshot) {
@@ -54,11 +62,9 @@ func (w *SQLiteWatcher) tick(ctx context.Context, out chan<- Snapshot, activeAge
 		send(ctx, out, snap)
 		return
 	}
-	if len(dbPaths) == 0 {
-		// No matching DB yet (e.g. agent hasn't started); not an error.
-		send(ctx, out, snap)
-		return
-	}
+	// No matching DB yet (e.g. agent hasn't started) isn't an error, and
+	// mustn't skip the MarkerDir scan below: a needs-input hook can fire
+	// (and a marker can exist) before Codex's own state db does.
 
 	var queryErrs []error
 	now := time.Now()
@@ -76,6 +82,22 @@ func (w *SQLiteWatcher) tick(ctx context.Context, out chan<- Snapshot, activeAge
 			// Max-merge like DirWatcher: the glob can match several DBs
 			// (CLI + IDE plugin) holding the same cwd, and iteration order
 			// must not let a staler DB downgrade a Working path.
+			if prev, ok := snap.States[path]; !ok || st > prev {
+				snap.States[path] = st
+			}
+		}
+	}
+	if w.MarkerDir != "" {
+		markerStates, readErr, parseErr := scanDir(w.MarkerDir)
+		if readErr != nil && !os.IsNotExist(readErr) {
+			// A missing MarkerDir just means no hook has ever fired yet —
+			// not an error.
+			queryErrs = append(queryErrs, fmt.Errorf("scan %s: %w", w.MarkerDir, readErr))
+		}
+		if parseErr != nil {
+			queryErrs = append(queryErrs, parseErr)
+		}
+		for path, st := range markerStates {
 			if prev, ok := snap.States[path]; !ok || st > prev {
 				snap.States[path] = st
 			}

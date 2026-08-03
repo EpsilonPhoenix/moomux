@@ -11,17 +11,21 @@ import (
 // hooks that report "needs input" into the worktree's .claude/settings.json,
 // preserving any hooks already configured there. Safe to call more than
 // once: it won't add a duplicate entry for a hook it already installed.
-func EnsureWorktreeHooks(worktreePath string) error {
+// changed reports whether this call actually wrote the file (new install or
+// content change) as opposed to a no-op — callers can use that to decide
+// whether anything needs telling the user about (e.g. Claude re-prompting to
+// trust changed project hooks).
+func EnsureWorktreeHooks(worktreePath string) (changed bool, err error) {
 	path := filepath.Join(worktreePath, ".claude", "settings.json")
 
 	settings := map[string]any{}
 	existing, err := os.ReadFile(path)
 	if err == nil {
 		if err := json.Unmarshal(existing, &settings); err != nil {
-			return err
+			return false, err
 		}
 	} else if !os.IsNotExist(err) {
-		return err
+		return false, err
 	}
 
 	hooks, _ := settings["hooks"].(map[string]any)
@@ -35,7 +39,7 @@ func EnsureWorktreeHooks(worktreePath string) error {
 
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
-		return err
+		return false, err
 	}
 	data = append(data, '\n')
 	if bytes.Equal(data, existing) {
@@ -43,12 +47,15 @@ func EnsureWorktreeHooks(worktreePath string) error {
 		// just once at creation — often against a worktree whose Claude Code
 		// process is live and reading this same file. Skipping a no-op write
 		// avoids most opportunities for it to observe a half-written file.
-		return nil
+		return false, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+		return false, err
 	}
-	return writeFileAtomic(path, data)
+	if err := writeFileAtomic(path, data); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // writeFileAtomic writes data via a temp file + rename in path's directory,

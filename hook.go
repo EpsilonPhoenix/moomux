@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/erickgnclvs/moomux/internal/claudehook"
+	"github.com/erickgnclvs/moomux/internal/codexhook"
 )
 
 type hookPayload struct {
@@ -31,6 +32,8 @@ func runHook(args []string) error {
 	switch agent {
 	case "claude":
 		return handleClaudeHook(action, os.Stdin, home)
+	case "codex":
+		return handleCodexHook(action, os.Stdin, home)
 	default:
 		return fmt.Errorf("unsupported agent %q", agent)
 	}
@@ -52,4 +55,25 @@ func handleClaudeHook(action string, stdin io.Reader, home string) error {
 		return claudehook.SetNeedsInput(home, p.SessionID, p.CWD)
 	}
 	return claudehook.Clear(home, p.SessionID)
+}
+
+// handleCodexHook mirrors handleClaudeHook, but Codex's marker is keyed by
+// cwd (see codexhook.markerPath) rather than a session id, so only cwd is
+// required here.
+func handleCodexHook(action string, stdin io.Reader, home string) error {
+	data, err := io.ReadAll(stdin)
+	if err != nil {
+		return fmt.Errorf("read hook payload: %w", err)
+	}
+	var p hookPayload
+	if err := json.Unmarshal(data, &p); err != nil {
+		return fmt.Errorf("parse hook payload: %w", err)
+	}
+	if p.CWD == "" {
+		return fmt.Errorf("hook payload missing cwd")
+	}
+	if action == "set" {
+		return codexhook.SetNeedsInput(home, p.CWD)
+	}
+	return codexhook.Clear(home, p.CWD)
 }
