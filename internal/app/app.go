@@ -18,6 +18,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/terminal"
 	"github.com/erickgnclvs/moomux/internal/tmux"
+	"github.com/erickgnclvs/moomux/internal/watcher"
 )
 
 type App struct {
@@ -380,6 +381,32 @@ func (a *App) MoveSession(id string, delta int) error {
 	}
 	peers[idx], peers[j] = peers[j], peers[idx]
 	return a.Store.Reorder(peers)
+}
+
+// titleGlyph prefixes name with a marker for the given status so terminals
+// tracking the tmux window name as their tab title (see
+// tmux.Client.ConfigureTitleTracking) show it at a glance.
+func titleGlyph(st watcher.State, name string) string {
+	switch st {
+	case watcher.Working:
+		return "● " + name
+	case watcher.NeedsInput:
+		return "⚠ " + name
+	case watcher.Done:
+		return "✓ " + name
+	default:
+		return name
+	}
+}
+
+// SetSessionStatusTitle renames id's tmux window to reflect st, so its
+// terminal tab title updates live as the session's status changes.
+func (a *App) SetSessionStatusTitle(id string, st watcher.State) error {
+	s, ok := a.Store.Get(id)
+	if !ok {
+		return nil
+	}
+	return a.Tmux.SetWindowName(s.TmuxSession, titleGlyph(st, s.Name))
 }
 
 func (a *App) SetSessionTags(id, ticket, pr string) (session.Session, error) {
