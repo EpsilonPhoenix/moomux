@@ -12,8 +12,10 @@ import (
 
 func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("DETAIL"))
-	b.WriteString("\n\n")
+	if !m.compactScreen() {
+		b.WriteString(titleStyle.Render("DETAIL"))
+		b.WriteString("\n\n")
+	}
 	if len(m.sessions) == 0 {
 		b.WriteString(muteStyle.Render("nothing selected"))
 		return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), nil

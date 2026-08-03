@@ -231,12 +231,12 @@ func TestNewProjectFlow(t *testing.T) {
 	m.projForm.inputs[3].SetValue("me")
 
 	// walk focus to the agent selector and worktree toggle
-	m.projForm.focus = projFormInputCount
+	m.projForm.focus = projFormInputCount + 1
 	press(m, tea.KeyRight) // agent claude -> codex
 	if m.projForm.agentIdx != 1 {
 		t.Fatalf("agentIdx = %d", m.projForm.agentIdx)
 	}
-	m.projForm.focus = projFormInputCount + 1
+	m.projForm.focus = projFormInputCount + 2
 	press(m, tea.KeyLeft) // toggle no-worktree on
 	if !m.projForm.noWorktree {
 		t.Fatal("noWorktree not toggled")
@@ -256,6 +256,41 @@ func TestNewProjectFlow(t *testing.T) {
 	}
 	if m.mode != ModeProjectPicker || !strings.Contains(m.flash, "added project newproj") {
 		t.Fatalf("mode=%v flash=%q", m.mode, m.flash)
+	}
+}
+
+// TestNewProjectEmojiSelectorDefaultsToAutoAndCycles guards the emoji
+// picker's index<->value mapping: index 0 ("auto") must store an empty
+// Emoji so callers fall back to the deterministic pick, and cycling right
+// must select the next palette glyph.
+func TestNewProjectEmojiSelectorDefaultsToAutoAndCycles(t *testing.T) {
+	be := &fakeBackend{}
+	m := newTestModel(be)
+	m.Update(slashKey())
+	m.Update(keyRune("n"))
+	m.projForm.inputs[0].SetValue("newproj")
+	m.projForm.inputs[1].SetValue("/tmp/newproj")
+
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if got := be.addProjectCalls[0].p.Emoji; got != "" {
+		t.Fatalf("default emoji = %q, want empty (auto)", got)
+	}
+
+	be.addProjectCalls = nil
+	m.mode = ModeList
+	m.Update(slashKey())
+	m.Update(keyRune("n"))
+	m.projForm.inputs[0].SetValue("newproj2")
+	m.projForm.inputs[1].SetValue("/tmp/newproj2")
+	m.projForm.focus = projFormInputCount
+	press(m, tea.KeyRight) // cycle off "auto" to the first palette glyph
+	if m.projForm.emojiIdx != 1 {
+		t.Fatalf("emojiIdx = %d, want 1", m.projForm.emojiIdx)
+	}
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	want := projectEmojiChoices[1]
+	if got := be.addProjectCalls[0].p.Emoji; got != want {
+		t.Fatalf("emoji = %q, want %q", got, want)
 	}
 }
 
@@ -396,7 +431,11 @@ func TestEditPlainProjectShowsOnlyRepoAndAgent(t *testing.T) {
 		}
 	}
 	press(m, tea.KeyTab)
-	if m.projForm.focus != projFormInputCount {
+	if m.projForm.focus != 4 {
+		t.Fatalf("focus = %d, want emoji field", m.projForm.focus)
+	}
+	press(m, tea.KeyTab)
+	if m.projForm.focus != projFormInputCount+1 {
 		t.Fatalf("focus = %d, want agent selector", m.projForm.focus)
 	}
 	m.projForm.agentIdx = agentChoiceIndex("codex")
@@ -410,12 +449,37 @@ func TestEditPlainProjectShowsOnlyRepoAndAgent(t *testing.T) {
 	}
 }
 
+// TestEditProjectPreservesOutOfPaletteEmoji guards against a project whose
+// Emoji isn't one of projectEmojiPalette's glyphs (e.g. hand-edited into the
+// TOML config) getting silently reset to "" (auto) just by saving the edit
+// form after touching an unrelated field.
+func TestEditProjectPreservesOutOfPaletteEmoji(t *testing.T) {
+	cfg := &config.Config{Projects: map[string]config.Project{
+		"notes": {Kind: "git", Repo: "/tmp/notes", BaseBranch: "main", Emoji: "😀"},
+	}}
+	be := &fakeBackend{}
+	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
+	m.width, m.height = 80, 24
+
+	m.Update(slashKey())
+	m.Update(keyRune("e"))
+	m.projForm.inputs[1].SetValue("/tmp/notes2") // touch an unrelated field
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if len(be.updateProjectCalls) != 1 {
+		t.Fatalf("updateProjectCalls = %v", be.updateProjectCalls)
+	}
+	if got := be.updateProjectCalls[0].p.Emoji; got != "😀" {
+		t.Fatalf("emoji = %q, want unchanged 😀", got)
+	}
+}
+
 func TestNewProjectTabCyclesFocus(t *testing.T) {
 	be := &fakeBackend{}
 	m := newTestModel(be)
 	m.Update(slashKey())
 	m.Update(keyRune("n"))
-	total := projFormInputCount + 2
+	total := projFormInputCount + 3
 	for i := 1; i < total; i++ {
 		press(m, tea.KeyTab)
 		if m.projForm.focus != i {

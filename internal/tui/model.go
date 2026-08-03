@@ -71,14 +71,25 @@ var agentChoices = []string{"claude", "codex", "opencode"}
 // agent selector — it maps to config.Project.PromptAgent instead of Agent.
 const askAgentIdx = -1
 
-const projFormInputCount = 4 // text inputs; focus==4 is the agent selector
+// projFormInputCount is the number of plain text inputs in the project form
+// (name, repo, base branch, branch prefix). Non-text controls follow at
+// fixed offsets from it: focus==projFormInputCount is the emoji selector,
+// +1 the agent selector, +2 the worktree toggle.
+const projFormInputCount = 4
 
 type projectForm struct {
-	inputs     []textinput.Model
-	focus      int
-	agentIdx   int // index into agentChoices, or askAgentIdx for "ask each time"
-	noWorktree bool
-	err        string
+	inputs   []textinput.Model
+	focus    int
+	emojiIdx int // index into emojiChoices; 0 is the "auto" (deterministic pick) sentinel
+	// emojiChoices is normally projectEmojiChoices, but editProjectForm
+	// inserts the project's existing Emoji as its own entry when it isn't
+	// one of projectEmojiPalette's glyphs (e.g. hand-edited into the TOML
+	// config) — otherwise it would be indistinguishable from "auto" and
+	// saving any unrelated field would silently discard it.
+	emojiChoices []string
+	agentIdx     int // index into agentChoices, or askAgentIdx for "ask each time"
+	noWorktree   bool
+	err          string
 }
 
 type pendingProject struct {
@@ -127,6 +138,7 @@ type Model struct {
 	activeProj   int
 	sessions     []session.Session
 	showArchived bool // when true, the list shows archived sessions instead of active ones
+	allSessions  bool // when true, the list shows every project's sessions, grouped by project, instead of just the active one
 	cursor       int
 	states       map[string]watcher.State
 	tmuxAlive    map[string]bool
@@ -364,6 +376,7 @@ func newProjectForm() projectForm {
 			mk("base branch (default: main)", 24),
 			mk("branch prefix (optional)", 24),
 		},
+		emojiChoices: projectEmojiChoices,
 	}
 	if cwd, err := os.Getwd(); err == nil && cwd != "/" {
 		pf.inputs[0].SetValue(filepath.Base(cwd))
@@ -379,6 +392,21 @@ func editProjectForm(name string, p config.Project) projectForm {
 	pf.inputs[1].SetValue(p.Repo)
 	pf.inputs[2].SetValue(p.BaseBranch)
 	pf.inputs[3].SetValue(p.BranchPrefix)
+	pf.emojiIdx = 0
+	for i, e := range projectEmojiPalette {
+		if e == p.Emoji {
+			pf.emojiIdx = i + 1
+			break
+		}
+	}
+	if p.Emoji != "" && pf.emojiIdx == 0 {
+		// p.Emoji isn't one of the palette's glyphs — keep it as its own
+		// selectable entry (right after "auto") instead of collapsing it
+		// into the auto sentinel, which would silently discard it the next
+		// time this project is saved without touching the emoji field.
+		pf.emojiChoices = append([]string{"auto", p.Emoji}, projectEmojiPalette...)
+		pf.emojiIdx = 1
+	}
 	pf.inputs[0].Blur()
 	pf.inputs[1].Focus()
 	pf.focus = 1
@@ -473,19 +501,35 @@ func (m *Model) refreshSessions() {
 		selectedID = m.sessions[m.cursor].ID
 	}
 
-	proj := m.projects[m.activeProj]
+	// In the all-sessions view, projs is every project; otherwise it's just
+	// the active one. Sessions with a live tmux window float to the top
+	// across the whole list regardless of project, with project order as
+	// the tiebreaker among sessions sharing the same status — that
+	// tiebreaker is also what keeps a single project's view (projs has one
+	// entry, so it never affects ordering) in its existing (Order-based)
+	// place.
+	projs := m.projects
+	if !m.allSessions {
+		projs = m.projects[m.activeProj : m.activeProj+1]
+	}
+	projIndex := make(map[string]int, len(projs))
+	for i, p := range projs {
+		projIndex[p] = i
+	}
 	all := m.backend.Sessions()
 	out := make([]session.Session, 0, len(all))
-	for _, s := range all {
-		if s.Project == proj && s.Archived == m.showArchived {
-			out = append(out, s)
+	for _, proj := range projs {
+		for _, s := range all {
+			if s.Project == proj && s.Archived == m.showArchived {
+				out = append(out, s)
+			}
 		}
 	}
-	// Sessions with a live tmux window float to the top regardless of
-	// status — stable sort keeps everything else in its existing
-	// (Order-based) place.
 	sort.SliceStable(out, func(i, j int) bool {
-		return m.tmuxAlive[out[i].ID] && !m.tmuxAlive[out[j].ID]
+		if ai, aj := m.tmuxAlive[out[i].ID], m.tmuxAlive[out[j].ID]; ai != aj {
+			return ai && !aj
+		}
+		return projIndex[out[i].Project] < projIndex[out[j].Project]
 	})
 	m.sessions = out
 

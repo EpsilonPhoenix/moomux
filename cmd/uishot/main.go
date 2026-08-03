@@ -40,13 +40,19 @@ var screens = map[string][]string{
 	"project-picker": {"/"},
 	"edit-session":   {"e"},
 	"edit-project":   {"/", "e"},
-	"confirm-delete": {"d"},
+	// 3 tabs walks focus from repo (1) through base branch (2) and branch
+	// prefix (3) to land on the emoji selector, showing its focused/[glyph]
+	// state rather than the unfocused default the plain "edit-project" and
+	// "new-project" scenarios capture.
+	"edit-project-emoji": {"/", "e", "tab", "tab", "tab"},
+	"confirm-delete":     {"d"},
 	// "demo" has sample sessions, so D there flashes the blocked error; the
 	// confirm screen is only reachable on the sessionless "spare" project
 	// (tab switches to it).
 	"confirm-delete-project": {"tab", "D"},
 	"delete-project-blocked": {"D"},
 	"archived":               {"A"},
+	"all-sessions":           {"G"},
 	"help":                   {"?"},
 	// Submits the new-project form with a path under ~/Documents that isn't
 	// a git repo, landing on the "skip git" choice screen with its macOS

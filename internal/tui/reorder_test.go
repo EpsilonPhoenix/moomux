@@ -177,3 +177,33 @@ func TestMoveSessionErrorSetsFlashWithoutReordering(t *testing.T) {
 		t.Fatalf("expected cursor unchanged on error, got %d", m.cursor)
 	}
 }
+
+// TestAllSessionsSortsLiveStatusBeforeProject guards the all-sessions view's
+// sort priority: a live tmux session floats to the very top of the combined
+// list regardless of which project it belongs to, with project order only
+// breaking ties among sessions that share the same status.
+func TestAllSessionsSortsLiveStatusBeforeProject(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "alpha:a1", Project: "alpha", Name: "a1"},
+		{ID: "alpha:a2", Project: "alpha", Name: "a2"},
+		{ID: "beta:b1", Project: "beta", Name: "b1"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.allSessions = true
+	m.tmuxAlive = map[string]bool{"beta:b1": true}
+	m.refreshSessions()
+
+	got := make([]string, len(m.sessions))
+	for i, s := range m.sessions {
+		got[i] = s.ID
+	}
+	want := []string{"beta:b1", "alpha:a1", "alpha:a2"}
+	if len(got) != len(want) {
+		t.Fatalf("sessions = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("sessions = %v, want %v (beta's live session should float above every non-live session)", got, want)
+		}
+	}
+}

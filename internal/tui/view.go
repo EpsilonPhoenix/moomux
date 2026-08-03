@@ -19,6 +19,13 @@ const narrowWidthBreak = 72
 // above the visible viewport by the detail pane.
 const minStackedPaneHeight = 10
 
+// compactScreen reports whether the terminal is small enough (short or
+// narrow) that panel titles should be dropped to reclaim their rows for
+// content — used by both the session list and detail panels.
+func (m *Model) compactScreen() bool {
+	return m.height < 20 || m.width < narrowWidthBreak
+}
+
 var superDigits = [...]string{"⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"}
 
 // superscript renders n using superscript Unicode digits, e.g. 12 -> "¹²".
@@ -159,7 +166,10 @@ func (m *Model) focusedOverlayLine(content string) int {
 		if m.projForm.focus < len(m.projForm.inputs) {
 			return lineContaining(content, m.projForm.inputs[m.projForm.focus].View())
 		}
-		if m.projForm.focus == projFormInputCount {
+		switch m.projForm.focus {
+		case projFormInputCount:
+			return lineContaining(content, m.renderProjectEmojiSelector())
+		case projFormInputCount + 1:
 			return lineContaining(content, m.renderAgentSelector())
 		}
 		return lineContaining(content, m.renderWorktreeToggle())
@@ -174,7 +184,10 @@ func (m *Model) focusedOverlayLine(content string) int {
 		if m.projForm.focus < len(m.projForm.inputs) {
 			return lineContaining(content, m.projForm.inputs[m.projForm.focus].View())
 		}
-		if m.projForm.focus == projFormInputCount {
+		switch m.projForm.focus {
+		case projFormInputCount:
+			return lineContaining(content, m.renderProjectEmojiSelector())
+		case projFormInputCount + 1:
 			return lineContaining(content, m.renderAgentSelector())
 		}
 		return lineContaining(content, m.renderWorktreeToggle())
@@ -422,7 +435,11 @@ func (m *Model) renderHeader() string {
 	// every project's tab stopped pulling its weight once switching away
 	// from the active one is a whole separate dialog anyway.
 	var right string
-	if len(m.projects) > 0 && m.activeProj < len(m.projects) && remaining > 2 {
+	if m.allSessions {
+		// No single project is "active" in this view, so there's nothing
+		// meaningful to show in the project-tabs slot — leave it blank
+		// rather than a stale or misleading label.
+	} else if len(m.projects) > 0 && m.activeProj < len(m.projects) && remaining > 2 {
 		// tabActive contributes one padding cell on each side. The session
 		// count used to show here as a superscript, but the picker's own
 		// detail column (active/archived) already covers that, so the
