@@ -288,6 +288,40 @@ func TestCreateSessionWorktree(t *testing.T) {
 	}
 }
 
+func TestCreateSessionInstallsClaudeHooks(t *testing.T) {
+	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	tn := TmuxSessionName("demo:feat", "feat")
+	tm.out["list-panes -t ="+tn+": -F #{pane_id}"] = "%0\n"
+	noBranch(git, "feat")
+
+	s, _, err := a.CreateSession("demo", "feat", "claude", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(s.WorktreePath, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatalf("expected .claude/settings.json to be written: %v", err)
+	}
+	if !strings.Contains(string(data), "moomux hook claude set") || !strings.Contains(string(data), "moomux hook claude clear") {
+		t.Fatalf("settings.json missing moomux hooks: %s", data)
+	}
+}
+
+func TestCreateSessionSkipsClaudeHooksForOtherAgents(t *testing.T) {
+	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	tn := TmuxSessionName("demo:feat", "feat")
+	tm.out["list-panes -t ="+tn+": -F #{pane_id}"] = "%0\n"
+	noBranch(git, "feat")
+
+	s, _, err := a.CreateSession("demo", "feat", "codex", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(s.WorktreePath, ".claude", "settings.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected no .claude/settings.json for a non-claude agent, stat err = %v", err)
+	}
+}
+
 func TestCreateSessionBranchPrefix(t *testing.T) {
 	projects := map[string]config.Project{
 		"demo": {Kind: "git", Repo: "/repo", BaseBranch: "main", BranchPrefix: "user"},
@@ -623,7 +657,11 @@ func TestOpenSessionDeadAllocatesOpenCodePort(t *testing.T) {
 
 func TestOpenSessionCwdMismatchRecreates(t *testing.T) {
 	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
-	_ = a.Store.Put(session.Session{ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat", WorktreePath: "/wt/feat"})
+	// A real, writable path: this session's agent defaults to claude, so
+	// OpenSession's needs-input hook repair (see repairNeedsInputHooks) will
+	// actually write a .claude/settings.json under it.
+	wt := filepath.Join(t.TempDir(), "feat")
+	_ = a.Store.Put(session.Session{ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat", WorktreePath: wt})
 	tn := TmuxSessionName("demo:feat", "feat")
 	tm.out["list-panes -t =moomux-feat: -F #{pane_current_path}"] = "/somewhere/else\n"
 	tm.out["list-panes -t ="+tn+": -F #{pane_id}"] = "%0\n"
@@ -635,7 +673,7 @@ func TestOpenSessionCwdMismatchRecreates(t *testing.T) {
 		t.Fatalf("expected kill-session; calls = %v", tm.calls)
 	}
 	// Recreation happens under the lazily-migrated hashed name.
-	if !tm.called("new-session -d -s " + tn + " -c /wt/feat") {
+	if !tm.called("new-session -d -s " + tn + " -c " + wt) {
 		t.Fatalf("expected recreation; calls = %v", tm.calls)
 	}
 }
@@ -654,6 +692,46 @@ func TestOpenSessionDeadRecreatesWithAgent(t *testing.T) {
 	}
 	if !tm.called("send-keys -t %0 opencode --port 4099 Enter") {
 		t.Fatalf("expected opencode relaunch with port; calls = %v", tm.calls)
+	}
+}
+
+func TestOpenSessionRepairsMissingClaudeHooks(t *testing.T) {
+	a, _, tm, term := newTestApp(t, gitProject("/repo"))
+	term.hint = "run: tmux attach -t moomux-feat"
+	wt := filepath.Join(t.TempDir(), "feat")
+	_ = a.Store.Put(session.Session{
+		ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat",
+		WorktreePath: wt, Agent: "claude",
+	})
+	tm.out["list-panes -t =moomux-feat: -F #{pane_current_path}"] = wt + "\n"
+
+	// Worktree predates the needs-input feature: no .claude/settings.json yet.
+	if _, err := a.OpenSession("demo:feat"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(wt, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatalf("expected OpenSession to backfill .claude/settings.json: %v", err)
+	}
+	if !strings.Contains(string(data), "moomux hook claude set") {
+		t.Fatalf("settings.json missing moomux hooks: %s", data)
+	}
+}
+
+func TestOpenSessionSkipsHookRepairForOtherAgents(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
+	wt := filepath.Join(t.TempDir(), "oc")
+	_ = a.Store.Put(session.Session{
+		ID: "demo:oc", Project: "demo", Name: "oc", TmuxSession: "moomux-oc",
+		WorktreePath: wt, Agent: "opencode",
+	})
+	tm.out["list-panes -t =moomux-oc: -F #{pane_current_path}"] = wt + "\n"
+
+	if _, err := a.OpenSession("demo:oc"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(wt, ".claude", "settings.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected no .claude/settings.json for a non-claude agent, stat err = %v", err)
 	}
 }
 

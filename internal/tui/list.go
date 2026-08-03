@@ -111,6 +111,8 @@ func renderRow(s session.Session, st watcher.State, width int, selected bool, pr
 		dotStyle = dotWorkingStyle
 	case watcher.Waiting:
 		dotStyle = dotWaitingStyle
+	case watcher.NeedsInput:
+		dotStyle = dotNeedsInputStyle
 	}
 	iconTicketStyle, iconPRStyle := iconTicketStyle, iconPRStyle
 	if selected {

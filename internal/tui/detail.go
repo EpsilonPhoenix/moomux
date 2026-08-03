@@ -29,6 +29,8 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 		dot, label = dotWorking, "working"
 	case watcher.Waiting:
 		dot, label = dotWaiting, "waiting"
+	case watcher.NeedsInput:
+		dot, label = dotNeedsInput, "needs input"
 	}
 	var hits []linkHit
 	row := func(k, v, url string) {
@@ -85,6 +87,8 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 		cowMsg = pickQuip(s.ID, quipsWorking)
 	case watcher.Waiting:
 		cowMsg = pickQuip(s.ID, quipsWaiting)
+	case watcher.NeedsInput:
+		cowMsg = pickQuip(s.ID, quipsNeedsInput)
 	default:
 		cowMsg = pickQuip(s.ID, quipsParked)
 	}
@@ -132,6 +136,8 @@ func cowsay(msg string, maxWidth int, st watcher.State) string {
 		eyes = "**"
 	case watcher.Waiting:
 		eyes = "oo"
+	case watcher.NeedsInput:
+		eyes = "!!"
 	default:
 		eyes = "--"
 	}

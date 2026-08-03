@@ -34,11 +34,11 @@ test-e2e: check-deps
 	go test -tags e2e ./e2e/... -count=1
 
 install: check-deps build
-	mkdir -p $(PREFIX)/bin
-	cp $(BIN) $(PREFIX)/bin/$(BIN)
+	mkdir -p "$(PREFIX)/bin"
+	cp $(BIN) "$(PREFIX)/bin/$(BIN)"
 
 run: check-deps build
 	./$(BIN)
 
 clean:
-	rm -f $(BIN)
+	rm -f $(BIN) "$(PREFIX)/bin/$(BIN)"

@@ -54,6 +54,13 @@ func main() {
 		fmt.Printf("moomux %s (%s) built %s\n", version, commit, date)
 		return
 	}
+	if len(os.Args) >= 2 && os.Args[1] == "hook" {
+		if err := runHook(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "moomux:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := checkDeps(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

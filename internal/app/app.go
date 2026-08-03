@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/erickgnclvs/moomux/internal/claudehook"
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/gitwt"
 	"github.com/erickgnclvs/moomux/internal/session"
@@ -38,6 +39,14 @@ func agentCmd(agent string) string {
 	default:
 		return "claude"
 	}
+}
+
+// needsInputInstallers maps an agent name to the function that wires its
+// "needs input" hooks into a freshly created worktree. Agents with no entry
+// here (codex, opencode) don't support the needs-input state yet — add a
+// sibling package (internal/codexhook, ...) and a map entry to bring one in.
+var needsInputInstallers = map[string]func(worktreePath string) error{
+	"claude": claudehook.EnsureWorktreeHooks,
 }
 
 func validateAgent(agent string) error {
@@ -260,6 +269,11 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 			return session.Session{}, "", fmt.Errorf("git worktree add: %w", err)
 		}
 		slog.Info("worktree added", "path", wt, "branch", branch)
+		if install, ok := needsInputInstallers[agent]; ok {
+			if err := install(wt); err != nil {
+				slog.Warn("needs-input hook install failed", "agent", agent, "worktree", wt, "err", err)
+			}
+		}
 	}
 	cmd := agentCmd(agent)
 	agentPort := 0
@@ -384,11 +398,30 @@ func (a *App) SetSessionArchived(id string, archived bool) (session.Session, err
 	return a.Store.SetArchived(id, archived)
 }
 
+// repairNeedsInputHooks backfills a session's needs-input hooks on open, for
+// worktrees created before this feature existed (or before its agent got an
+// entry in needsInputInstallers). EnsureWorktreeHooks is idempotent, so
+// running this on every open is cheap and safe.
+func (a *App) repairNeedsInputHooks(s session.Session) {
+	proj, ok := a.Cfg.Projects[s.Project]
+	if !ok || !proj.UsesWorktree() {
+		return
+	}
+	install, ok := needsInputInstallers[s.AgentName()]
+	if !ok {
+		return
+	}
+	if err := install(s.WorktreePath); err != nil {
+		slog.Warn("needs-input hook repair failed", "agent", s.AgentName(), "worktree", s.WorktreePath, "err", err)
+	}
+}
+
 func (a *App) OpenSession(id string) (string, error) {
 	s, ok := a.Store.Get(id)
 	if !ok {
 		return "", fmt.Errorf("unknown session %q", id)
 	}
+	a.repairNeedsInputHooks(s)
 	has, err := a.Tmux.HasSession(s.TmuxSession)
 	slog.Info("open session", "id", id, "tmux_session", s.TmuxSession, "worktree", s.WorktreePath, "tmux_has_session", has)
 	if err != nil {

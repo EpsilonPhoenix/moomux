@@ -30,6 +30,21 @@ var quipsWaiting = []string{
 	"patiently waiting",
 }
 
+var quipsNeedsInput = []string{
+	"need a word",
+	"stuck on a fence",
+	"c'mon, look over here",
+	"blocked, moo!",
+	"waiting on you specifically",
+	"can't go further without you",
+	"permission, please",
+	"hey, over here",
+	"decision needed",
+	"paused for you",
+	"your call to make",
+	"stalled, need input",
+}
+
 var quipsParked = []string{
 	"zzz...",
 	"taking a nap",

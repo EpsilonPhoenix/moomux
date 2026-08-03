@@ -54,6 +54,9 @@ var screens = map[string][]string{
 	"archived":               {"A"},
 	"all-sessions":           {"G"},
 	"help":                   {"?"},
+	// needs-input has no keys of its own; renderScreen feeds it a
+	// StatusTickMsg marking the first sample session watcher.NeedsInput.
+	"needs-input": {},
 	// Submits the new-project form with a path under ~/Documents that isn't
 	// a git repo, landing on the "skip git" choice screen with its macOS
 	// Files-and-Folders warning (see internal/tui/tcc.go). "$HOME" is
@@ -150,7 +153,17 @@ func (f *fakeBackend) SetSessionAgent(id, agent string) (session.Session, error)
 func (f *fakeBackend) SetSessionArchived(id string, archived bool) (session.Session, error) {
 	return session.Session{}, nil
 }
-func (f *fakeBackend) TmuxAliveAll() map[string]bool                         { return map[string]bool{} }
+
+// TmuxAliveAll reports every sample session as alive so effectiveState
+// doesn't force them all to "parked" — that would hide whatever State a
+// scenario sets via a StatusTickMsg (see the "needs-input" scenario).
+func (f *fakeBackend) TmuxAliveAll() map[string]bool {
+	alive := make(map[string]bool, len(f.sessions))
+	for _, s := range f.sessions {
+		alive[s.ID] = true
+	}
+	return alive
+}
 func (f *fakeBackend) Sessions() []session.Session                           { return f.sessions }
 func (f *fakeBackend) Projects() []string                                    { return nil }
 func (f *fakeBackend) AddProject(name string, p config.Project) error        { return gitwt.ErrNotGitRepo }
@@ -241,6 +254,13 @@ func renderScreen(screenName string, width, height int) (string, error) {
 	home, _ := os.UserHomeDir()
 
 	m.Update(tea.WindowSizeMsg{Width: width, Height: height})
+	if screenName == "needs-input" {
+		// Update, not drive(): the returned cmd re-arms listenStatus(statusCh),
+		// which blocks forever reading a channel nothing here ever sends on.
+		m.Update(tui.StatusTickMsg{Snap: watcher.Snapshot{
+			States: map[string]watcher.State{sessions[0].WorktreePath: watcher.NeedsInput},
+		}})
+	}
 	for _, k := range keys {
 		drive(m, keyMsgFor(strings.ReplaceAll(k, "$HOME", home)))
 	}

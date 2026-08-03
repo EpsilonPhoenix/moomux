@@ -134,7 +134,7 @@ make test     # go test ./... -race -count=1
 make test-e2e # go test -tags e2e ./e2e/... — real tmux sessions + git worktrees under a temp dir
 make install  # build + copy to $PREFIX/bin (default ~/.local/bin)
 make run      # build + run
-make clean    # remove the built binary
+make clean    # remove the built binary, and the copy make install left in $PREFIX/bin
 ```
 
 Requires Go, plus `tmux` and `git` (checked by `make install`/`make run` via `check-deps`).
@@ -144,6 +144,29 @@ Or build and run directly with `go` instead of `make`:
 ```bash
 go build -o moomux . && ./moomux
 ```
+
+### Local development
+
+If you installed moomux via Homebrew, `moomux` on your `$PATH` resolves to
+Homebrew's bin dir (`/opt/homebrew/bin` on Apple Silicon, `/usr/local/bin` on
+Intel Macs and Linuxbrew — run `brew --prefix` to check yours) — and that
+typically comes *before* `~/.local/bin` in `$PATH`, so `make install` alone
+won't make your local build the one that actually runs when you type
+`moomux`, or the one tmux/hooks invoke as a subprocess.
+
+To develop against your own build:
+
+1. Make sure `~/.local/bin` comes before Homebrew's bin dir in `$PATH` — e.g.
+   add `export PATH="$HOME/.local/bin:$PATH"` near the end of your shell
+   profile (after any Homebrew `shellenv` line), so it wins unconditionally.
+2. `make install` from your working copy.
+3. Open a new shell (or `source` your profile / `hash -r`) so the `$PATH`
+   change and shell command cache pick up the change, then confirm with
+   `which moomux` and `moomux --version` that it now resolves to your build.
+
+Run `make clean` to remove the installed dev build (`$PREFIX/bin/moomux`, in
+addition to the local `./moomux` binary) and fall back to the Homebrew/Go
+install again.
 
 ## Run
 
