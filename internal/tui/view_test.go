@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/erickgnclvs/moomux/internal/session"
-K	"github.com/erickgnclvs/moomux/internal/watcher"
+	"github.com/erickgnclvs/moomux/internal/watcher"
 )
 
 func layoutTestModel(sessionCount int) *Model {
