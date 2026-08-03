@@ -72,6 +72,129 @@ func TestNewSessionFormFlow(t *testing.T) {
 	}
 }
 
+func TestNewSessionFormSendsFirstPrompt(t *testing.T) {
+	be := &fakeBackend{}
+	m := newTestModel(be)
+
+	m.Update(keyRune("n"))
+	typeText(m, "myfeat")
+	for i := 0; i < 5; i++ {
+		press(m, tea.KeyTab) // name -> branch -> agent -> ticket -> PR -> prompt
+	}
+	typeText(m, "do the thing")
+
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(be.createCalls) != 1 {
+		t.Fatalf("createCalls = %v", be.createCalls)
+	}
+	if len(be.firstPromptCalls) != 1 || be.firstPromptCalls[0].prompt != "do the thing" {
+		t.Fatalf("firstPromptCalls = %v", be.firstPromptCalls)
+	}
+}
+
+// TestNewSessionFormSurvivesPostCreatePRTagFailure guards against a
+// SetSessionTags failure (PR field) discarding the fact that CreateSession
+// already succeeded — the worktree and tmux session exist regardless, so
+// the UI must still show the new session (via SessionCreatedMsg), just with
+// a hint about the tag failure, not report the whole creation as failed.
+func TestNewSessionFormSurvivesPostCreatePRTagFailure(t *testing.T) {
+	be := &fakeBackend{tagErr: errors.New("tag boom")}
+	m := newTestModel(be)
+
+	m.Update(keyRune("n"))
+	typeText(m, "myfeat")
+	for i := 0; i < 4; i++ {
+		press(m, tea.KeyTab) // name -> branch -> agent -> ticket -> PR
+	}
+	typeText(m, "https://github.com/x/y/pull/2")
+
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(be.createCalls) != 1 {
+		t.Fatalf("createCalls = %v", be.createCalls)
+	}
+	if m.mode != ModeList || !strings.Contains(m.flash, "created myfeat") {
+		t.Fatalf("post-create tag failure must not be reported as a failed creation: mode=%v flash=%q", m.mode, m.flash)
+	}
+	if !strings.Contains(m.flash, "tag boom") {
+		t.Fatalf("tag failure should still be surfaced as a hint: flash=%q", m.flash)
+	}
+	if len(m.sessions) != 1 {
+		t.Fatalf("session list was not refreshed with the created session: %v", m.sessions)
+	}
+}
+
+// TestNewSessionFormSurvivesPostCreateFirstPromptFailure is the same guard
+// for StartFirstPrompt.
+func TestNewSessionFormSurvivesPostCreateFirstPromptFailure(t *testing.T) {
+	be := &fakeBackend{firstPromptErr: errors.New("prompt boom")}
+	m := newTestModel(be)
+
+	m.Update(keyRune("n"))
+	typeText(m, "myfeat")
+	for i := 0; i < 5; i++ {
+		press(m, tea.KeyTab) // name -> branch -> agent -> ticket -> PR -> prompt
+	}
+	typeText(m, "do the thing")
+
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != ModeList || !strings.Contains(m.flash, "created myfeat") {
+		t.Fatalf("post-create prompt failure must not be reported as a failed creation: mode=%v flash=%q", m.mode, m.flash)
+	}
+	if !strings.Contains(m.flash, "prompt boom") {
+		t.Fatalf("prompt failure should still be surfaced as a hint: flash=%q", m.flash)
+	}
+}
+
+// TestNewSessionFormClearsPRAndPromptOnReopen guards against a PR or first-
+// prompt value typed into one session's form silently carrying over and
+// getting submitted the next time the form is opened.
+func TestNewSessionFormClearsPRAndPromptOnReopen(t *testing.T) {
+	be := &fakeBackend{}
+	m := newTestModel(be)
+
+	m.Update(keyRune("n"))
+	for i := 0; i < 4; i++ {
+		press(m, tea.KeyTab) // name -> branch -> agent -> ticket -> PR
+	}
+	typeText(m, "https://github.com/x/y/pull/2")
+	press(m, tea.KeyTab) // -> prompt
+	typeText(m, "leftover prompt")
+	press(m, tea.KeyEsc) // cancel without submitting
+
+	m.Update(keyRune("n")) // reopen
+	if v := m.prInput.Value(); v != "" {
+		t.Fatalf("prInput carried over stale value %q into the reopened form", v)
+	}
+	if v := m.promptInput.Value(); v != "" {
+		t.Fatalf("promptInput carried over stale value %q into the reopened form", v)
+	}
+}
+
+func TestNewSessionFormAppendsTicketAndPRToFirstPrompt(t *testing.T) {
+	be := &fakeBackend{}
+	m := newTestModel(be)
+
+	m.Update(keyRune("n"))
+	typeText(m, "myfeat")
+	for i := 0; i < 3; i++ {
+		press(m, tea.KeyTab) // name -> branch -> agent -> ticket
+	}
+	typeText(m, "https://ticket.example/1")
+	press(m, tea.KeyTab) // -> PR
+	typeText(m, "https://github.com/x/y/pull/2")
+	press(m, tea.KeyTab) // -> prompt
+	typeText(m, "do the thing")
+
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(be.tagCalls) != 1 || be.tagCalls[0].ticket != "https://ticket.example/1" || be.tagCalls[0].pr != "https://github.com/x/y/pull/2" {
+		t.Fatalf("tagCalls = %v", be.tagCalls)
+	}
+	want := "do the thing\n\nTicket: https://ticket.example/1\nPR: https://github.com/x/y/pull/2"
+	if len(be.firstPromptCalls) != 1 || be.firstPromptCalls[0].prompt != want {
+		t.Fatalf("firstPromptCalls = %v, want prompt %q", be.firstPromptCalls, want)
+	}
+}
+
 func TestNewSessionFormEmptySubmitIsNoop(t *testing.T) {
 	be := &fakeBackend{}
 	m := newTestModel(be)

@@ -25,6 +25,9 @@ type fakeBackend struct {
 	createErr   error
 	createHint  string
 
+	firstPromptCalls []sendPromptCall
+	firstPromptErr   error
+
 	deleteCalls []string
 	deleteErr   error
 
@@ -58,6 +61,7 @@ type fakeBackend struct {
 }
 
 type createCall struct{ project, name, agent, branch, ticket string }
+type sendPromptCall struct{ tmuxSession, prompt string }
 type tagCall struct{ id, ticket, pr string }
 type sessionAgentCall struct{ id, agent string }
 type archiveCall struct {
@@ -91,6 +95,10 @@ func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket
 	s := session.Session{ID: session.MakeID(project, label), Project: project, Name: label, Agent: agent, Ticket: ticket}
 	f.sessions = append(f.sessions, s)
 	return s, f.createHint, nil
+}
+func (f *fakeBackend) StartFirstPrompt(tmuxSession, prompt string) error {
+	f.firstPromptCalls = append(f.firstPromptCalls, sendPromptCall{tmuxSession, prompt})
+	return f.firstPromptErr
 }
 func (f *fakeBackend) OpenSession(id string) (string, error) {
 	f.openCalls = append(f.openCalls, id)

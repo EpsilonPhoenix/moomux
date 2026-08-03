@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -382,6 +383,10 @@ func (m *Model) openNewSessionForm() {
 	m.branchInput.Blur()
 	m.ticketInput.SetValue("")
 	m.ticketInput.Blur()
+	m.prInput.SetValue("")
+	m.prInput.Blur()
+	m.promptInput.SetValue("")
+	m.promptInput.Blur()
 	m.resetOverlayViewport()
 	m.resizeFormInputs()
 	m.newFormApplyProjectDefaults()
@@ -649,6 +654,8 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		name := m.nameInput.Value()
 		branch := m.branchInput.Value()
 		ticket := m.ticketInput.Value()
+		pr := m.prInput.Value()
+		firstPrompt := m.promptInput.Value()
 		if name == "" && branch == "" {
 			m.newFormErr = "enter a session name or an existing branch"
 			return m, nil
@@ -672,6 +679,27 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return ErrorMsg{Err: err}
 			}
+			// The session (worktree + tmux pane) already exists at this
+			// point — a PR-tag or first-prompt failure below must not
+			// discard that success and report it as if creation itself
+			// failed; it's surfaced as a hint on the same SessionCreatedMsg
+			// instead, same as CreateSession's own degraded-but-succeeded
+			// terminal-open failures.
+			if pr != "" {
+				if updated, tagErr := m.backend.SetSessionTags(s.ID, ticket, pr); tagErr != nil {
+					hint = joinHint(hint, fmt.Sprintf("couldn't set PR tag: %v", tagErr))
+				} else {
+					s = updated
+				}
+			}
+			if firstPrompt != "" {
+				if extra := newFormPromptExtras(ticket, pr); extra != "" {
+					firstPrompt += "\n\n" + extra
+				}
+				if err := m.backend.StartFirstPrompt(s.TmuxSession, firstPrompt); err != nil {
+					hint = joinHint(hint, fmt.Sprintf("couldn't send first prompt: %v", err))
+				}
+			}
 			return SessionCreatedMsg{Session: s, Hint: hint}
 		}
 	}
@@ -685,16 +713,50 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// selector row: no text input to type into
 	case 4:
 		m.ticketInput, cmd = m.ticketInput.Update(msg)
+	case 5:
+		m.prInput, cmd = m.prInput.Update(msg)
+	case 6:
+		m.promptInput, cmd = m.promptInput.Update(msg)
 	default:
 		m.nameInput, cmd = m.nameInput.Update(msg)
 	}
 	return m, cmd
 }
 
+// joinHint combines two non-empty hint strings for display; either may be
+// empty.
+func joinHint(a, b string) string {
+	switch {
+	case a == "":
+		return b
+	case b == "":
+		return a
+	default:
+		return a + " — " + b
+	}
+}
+
+// newFormPromptExtras builds a "Ticket: ...\nPR: ..." block from whichever
+// of ticket/pr are non-empty, so the agent's first task carries the same
+// context the session list shows as clickable icons. Empty if neither is
+// set.
+func newFormPromptExtras(ticket, pr string) string {
+	var lines []string
+	if ticket != "" {
+		lines = append(lines, "Ticket: "+ticket)
+	}
+	if pr != "" {
+		lines = append(lines, "PR: "+pr)
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (m *Model) newFormBlurAll() {
 	m.nameInput.Blur()
 	m.branchInput.Blur()
 	m.ticketInput.Blur()
+	m.prInput.Blur()
+	m.promptInput.Blur()
 }
 
 func (m *Model) newFormFocusInput() {
@@ -707,6 +769,10 @@ func (m *Model) newFormFocusInput() {
 		// selector row: nothing to focus
 	case 4:
 		m.ticketInput.Focus()
+	case 5:
+		m.prInput.Focus()
+	case 6:
+		m.promptInput.Focus()
 	default:
 		m.nameInput.Focus()
 	}

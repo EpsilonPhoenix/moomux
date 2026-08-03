@@ -161,6 +161,28 @@ func (c *Client) SendKeys(session, text string) error {
 	return err
 }
 
+// PressEnter sends a bare Enter keypress to session's active pane, with no
+// text — must be its own send-keys call (see SendLiteral's doc comment for
+// why bundling it with the text is unreliable).
+func (c *Client) PressEnter(session string) error {
+	_, err := c.Runner.Run("send-keys", "-t", exactWindow(session), "Enter")
+	return err
+}
+
+// SendLiteral types text into session's active pane with no trailing Enter
+// and no interpretation of text as tmux key names. Deliberately not bundled
+// with Enter in the same send-keys call: many terminal-raw-mode TUIs (Ink,
+// readline) detect "paste" by how a chunk of input arrives, and a whole
+// text+Enter burst delivered in one tmux command commonly gets swallowed as
+// pasted content instead of text-then-submit — the Enter never registers as
+// a keypress. Sending text and Enter as separate send-keys invocations (see
+// PressEnter), with a short gap between them, is the pattern that actually
+// submits.
+func (c *Client) SendLiteral(session, text string) error {
+	_, err := c.Runner.Run("send-keys", "-t", exactWindow(session), "-l", "--", text)
+	return err
+}
+
 // ConfigureTitleTracking ensures the tmux session keeps its window name stable
 // and continuously emits it as the terminal title. Safe to call on existing
 // sessions — idempotent tmux set-option calls never break anything.
@@ -183,6 +205,13 @@ func (c *Client) PaneCwd(name string) (string, error) {
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	return lines[0], nil
+}
+
+// CapturePane returns the visible text of session `name`'s active pane, used
+// to detect when an agent CLI has finished its startup render and is idle
+// waiting for input (see App.StartFirstPrompt).
+func (c *Client) CapturePane(name string) (string, error) {
+	return c.Runner.Run("capture-pane", "-p", "-t", exactWindow(name))
 }
 
 func (c *Client) KillSession(name string) error {
