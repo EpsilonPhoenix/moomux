@@ -414,6 +414,8 @@ func (m *Model) renderHeader() string {
 			eyes = "**"
 		case watcher.Waiting:
 			eyes = "oo"
+		case watcher.NeedsInput:
+			eyes = "!!"
 		default:
 			eyes = "--"
 		}
