@@ -311,6 +311,7 @@ func run() error {
 	multi := buildWatcher(home)
 	go multi.Run(ctx, statusCh)
 
+	tui.ApplySettings(cfg)
 	m := tui.New(cfg, a, statusCh, cancel)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {

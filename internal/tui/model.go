@@ -46,6 +46,9 @@ type Backend interface {
 	AddPlainProject(name string, p config.Project) error
 	UpdateProject(name string, p config.Project) error
 	RemoveProject(name string) error
+	// SetTheme persists the chosen theme name and appearance override
+	// ("light"/"dark"/"" for auto) to config.
+	SetTheme(theme, appearance string) error
 }
 
 type Mode int
@@ -62,6 +65,7 @@ const (
 	ModeEditSession
 	ModeEditProject
 	ModeProjectPicker
+	ModeThemePicker
 )
 
 var agentChoices = []string{"claude", "codex", "opencode"}
@@ -159,6 +163,12 @@ type Model struct {
 	editProjectName string
 	tagForm         tagForm
 	pickerCursor    int // index into m.projects while ModeProjectPicker is open
+	// themeCursor is an index into themeNames while ModeThemePicker is open.
+	// previewAppearance holds the appearance being live-previewed there
+	// ("", "light", or "dark") until Enter persists it or Esc reverts to
+	// m.cfg.Appearance — cfg itself isn't touched until the user confirms.
+	themeCursor       int
+	previewAppearance string
 	// projectDialogReturn is where ModeConfirmDeleteProject/ModeEditProject/
 	// ModeNewProject send the user back to (cancel, error, or success) —
 	// ModeList when P/D/E was pressed there, ModeProjectPicker when

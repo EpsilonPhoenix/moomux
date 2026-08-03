@@ -268,6 +268,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setFlash("info", "removed project "+msg.Name)
 		return m, nil
 
+	case ThemeSetMsg:
+		m.setFlash("info", "theme saved: "+msg.Theme+" / "+appearanceLabel(msg.Appearance))
+		return m, nil
+
 	case LinkOpenedMsg:
 		m.setFlash("info", "opened "+msg.URL)
 		return m, nil
@@ -346,6 +350,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateEditProject(msg)
 		case ModeProjectPicker:
 			return m.updateProjectPicker(msg)
+		case ModeThemePicker:
+			return m.updateThemePicker(msg)
 		default:
 			return m.updateList(msg)
 		}
@@ -562,6 +568,9 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pickerCursor = m.activeProj
 		m.mode = ModeProjectPicker
 		m.resetOverlayViewport()
+		return m, nil
+	case key.Matches(msg, m.keys.ThemePicker):
+		m.openThemePicker()
 		return m, nil
 	case key.Matches(msg, m.keys.DelProject):
 		if len(m.projects) == 0 {
@@ -1174,6 +1183,51 @@ func (m *Model) updateProjectPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.refreshSessions()
 		}
 		m.mode = ModeList
+	}
+	return m, nil
+}
+
+// openThemePicker opens ModeThemePicker, seeding the cursor and live-preview
+// appearance from the persisted config so Esc has something to revert to.
+func (m *Model) openThemePicker() {
+	m.themeCursor = themeIndex(m.cfg.Theme)
+	m.previewAppearance = m.cfg.Appearance
+	m.mode = ModeThemePicker
+	m.resetOverlayViewport()
+}
+
+// updateThemePicker handles keys while ModeThemePicker is open. Up/down and
+// 'a' apply their choice immediately (live preview); enter persists it, esc
+// reverts to the config's last-saved theme/appearance.
+func (m *Model) updateThemePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Cancel):
+		applyTheme(m.cfg.Theme)
+		applyAppearance(m.cfg.Appearance)
+		m.mode = ModeList
+		return m, nil
+	case key.Matches(msg, m.keys.Up):
+		m.themeCursor = (m.themeCursor - 1 + len(themeNames)) % len(themeNames)
+		applyTheme(themeNames[m.themeCursor])
+		return m, nil
+	case key.Matches(msg, m.keys.Down):
+		m.themeCursor = (m.themeCursor + 1) % len(themeNames)
+		applyTheme(themeNames[m.themeCursor])
+		return m, nil
+	case msg.String() == "a":
+		m.previewAppearance = nextAppearance(m.previewAppearance)
+		applyAppearance(m.previewAppearance)
+		return m, nil
+	case key.Matches(msg, m.keys.Enter):
+		theme := themeNames[m.themeCursor]
+		appearance := m.previewAppearance
+		m.mode = ModeList
+		return m, func() tea.Msg {
+			if err := m.backend.SetTheme(theme, appearance); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return ThemeSetMsg{Theme: theme, Appearance: appearance}
+		}
 	}
 	return m, nil
 }

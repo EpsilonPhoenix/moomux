@@ -195,8 +195,21 @@ func (m *Model) focusedOverlayLine(content string) int {
 		if m.pickerCursor < len(m.projects) {
 			return lineContaining(content, projectPickerRowMarker+m.projects[m.pickerCursor])
 		}
+	case ModeThemePicker:
+		return lineContaining(content, themePickerRowMarker+themeNames[m.themeCursor])
 	}
 	return -1
+}
+
+// themePickerFooter mirrors projectPickerFooter's width-tiered approach.
+func (m *Model) themePickerFooter() string {
+	full := "↑↓ theme  a appearance  enter save  esc cancel"
+	short := "esc cancel  enter save"
+	controls := full
+	if lipgloss.Width(controls) > m.overlayWidth(formHintWidth) {
+		controls = short
+	}
+	return muteStyle.Render(controls)
 }
 
 // renderOverlay constrains dialog content to the current terminal and gives
@@ -402,6 +415,9 @@ func (m *Model) View() string {
 			footer = line + "\n" + footer
 		}
 		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))
+	case ModeThemePicker:
+		content := m.compactOverlayContent(m.renderThemePicker())
+		return m.renderOverlay(content, m.themePickerFooter(), m.focusedOverlayLine(content))
 	}
 	return base
 }

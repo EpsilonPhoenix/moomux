@@ -38,6 +38,7 @@ type KeyMap struct {
 	Help           key.Binding
 	RemoteLinks    key.Binding
 	ProjectPicker  key.Binding
+	ThemePicker    key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -98,5 +99,6 @@ func DefaultKeyMap() KeyMap {
 		// key, and the picker has no session-level "n" shown alongside it to
 		// collide with.
 		ProjectPicker: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "pick project")),
+		ThemePicker:   key.NewBinding(key.WithKeys("T"), key.WithHelp("T", "theme")),
 	}
 }

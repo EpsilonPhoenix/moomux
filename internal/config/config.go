@@ -88,6 +88,12 @@ type Config struct {
 	// AutoTmuxAsked marks that the user has already been asked whether to
 	// enable AutoTmux, so the prompt only ever runs once.
 	AutoTmuxAsked bool `toml:"auto_tmux_asked,omitempty"`
+	// Theme selects the color palette ("default", "terminal", "gruvbox",
+	// "catppuccin"); empty (or unrecognized) means "default".
+	Theme string `toml:"theme,omitempty"`
+	// Appearance forces which half of every theme's light/dark color pairs
+	// renders ("light" or "dark"); empty means auto-detect from the terminal.
+	Appearance string `toml:"appearance,omitempty"`
 }
 
 func Load(path string) (*Config, error) {
@@ -130,6 +136,8 @@ func Reload(path string, cfg *Config) error {
 	cfg.TmuxSetupAsked = fresh.TmuxSetupAsked
 	cfg.AutoTmux = fresh.AutoTmux
 	cfg.AutoTmuxAsked = fresh.AutoTmuxAsked
+	cfg.Theme = fresh.Theme
+	cfg.Appearance = fresh.Appearance
 	return nil
 }
 

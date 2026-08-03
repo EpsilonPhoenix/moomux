@@ -89,3 +89,9 @@ type ProjectUpdatedMsg struct {
 	Name string
 	Err  error
 }
+
+// ThemeSetMsg is the result of an async SetTheme persist call.
+type ThemeSetMsg struct {
+	Theme      string
+	Appearance string
+}

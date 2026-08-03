@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Renders a moomux TUI screen to a PNG screenshot.
 #
-# Usage: scripts/screenshot.sh <screen> <output.png> [width] [height]
+# Usage: scripts/screenshot.sh <screen> <output.png> [width] [height] [theme] [appearance]
 #
 # <screen> is one of the scenarios uishot knows about: run
 # `go run ./cmd/uishot -screen=bogus` to print the current list.
@@ -19,10 +19,12 @@
 # default search path).
 set -euo pipefail
 
-screen="${1:?usage: screenshot.sh <screen> <output.png> [width] [height]}"
-out="${2:?usage: screenshot.sh <screen> <output.png> [width] [height]}"
+screen="${1:?usage: screenshot.sh <screen> <output.png> [width] [height] [theme] [appearance]}"
+out="${2:?usage: screenshot.sh <screen> <output.png> [width] [height] [theme] [appearance]}"
 cols="${3:-100}"
 rows="${4:-32}"
+theme="${5:-}"
+appearance="${6:-}"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 workdir="$(mktemp -d)"
@@ -41,7 +43,7 @@ bin="$workdir/uishot"
 go build -o "$bin" "$repo_root/cmd/uishot"
 
 raw="$workdir/raw.ansi"
-TERM=xterm-256color COLORTERM=truecolor python3 - "$bin" "-screen=$screen" "-width=$cols" "-height=$rows" >"$raw" <<'PY'
+TERM=xterm-256color COLORTERM=truecolor python3 - "$bin" "-screen=$screen" "-width=$cols" "-height=$rows" "-theme=$theme" "-appearance=$appearance" >"$raw" <<'PY'
 # Not pty.spawn: it also copies from stdin, and when stdin isn't a tty
 # (CI, headless agents) it never returns after the child exits — the
 # capture completes but the script hangs forever.
