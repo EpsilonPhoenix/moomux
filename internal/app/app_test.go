@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -39,6 +40,12 @@ type fakeTmuxRunner struct {
 	calls  [][]string
 	out    map[string]string
 	failOn map[string]bool
+	// seq, when set for a key, returns successive values on each call to
+	// that key (staying on the last one once exhausted) instead of out's
+	// fixed value — used to simulate pane content actually changing across
+	// polls (e.g. idle shell prompt -> agent startup -> agent idle).
+	seq    map[string][]string
+	seqIdx map[string]int
 }
 
 type exitErr struct{}
@@ -51,6 +58,17 @@ func (f *fakeTmuxRunner) Run(args ...string) (string, error) {
 	f.calls = append(f.calls, append([]string(nil), args...))
 	if f.failOn[key] {
 		return "", exitErr{}
+	}
+	if vals, ok := f.seq[key]; ok && len(vals) > 0 {
+		if f.seqIdx == nil {
+			f.seqIdx = map[string]int{}
+		}
+		i := f.seqIdx[key]
+		if i >= len(vals) {
+			i = len(vals) - 1
+		}
+		f.seqIdx[key] = i + 1
+		return vals[i], nil
 	}
 	return f.out[key], nil
 }
@@ -1353,6 +1371,58 @@ func TestCreateSessionDuplicateName(t *testing.T) {
 	}
 }
 
+// TestCreateSessionTrustsClaudeWorktree guards against the "Do you trust the
+// files in this folder?" dialog Claude Code shows on first launch in a
+// directory it hasn't seen — every moomux session runs in a brand-new
+// worktree, so without pre-trusting it, that dialog eats the agent's first
+// real input (including StartFirstPrompt's typed prompt) with nobody there
+// to click through it.
+func TestCreateSessionTrustsClaudeWorktree(t *testing.T) {
+	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	tm.out["list-panes -t =moomux-feat: -F #{pane_id}"] = "%0\n"
+	noBranch(git, "feat")
+
+	s, _, err := a.CreateSession("demo", "feat", "claude", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	home := os.Getenv("HOME")
+	data, err := os.ReadFile(filepath.Join(home, ".claude.json"))
+	if err != nil {
+		t.Fatalf("read .claude.json: %v", err)
+	}
+	var root map[string]any
+	if err := json.Unmarshal(data, &root); err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := root[s.WorktreePath].(map[string]any)
+	if !ok {
+		t.Fatalf("no trust entry for worktree %q: %v", s.WorktreePath, root)
+	}
+	if entry["hasTrustDialogAccepted"] != true {
+		t.Fatalf("hasTrustDialogAccepted = %v, want true", entry["hasTrustDialogAccepted"])
+	}
+}
+
+// TestCreateSessionDoesNotTrustNonClaudeAgent guards the flip side: writing
+// into ~/.claude.json for a codex/opencode session would be a no-op for that
+// agent but still an unnecessary write nobody asked for.
+func TestCreateSessionDoesNotTrustNonClaudeAgent(t *testing.T) {
+	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	tm.out["list-panes -t =moomux-feat: -F #{pane_id}"] = "%0\n"
+	noBranch(git, "feat")
+
+	if _, _, err := a.CreateSession("demo", "feat", "codex", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	home := os.Getenv("HOME")
+	if _, err := os.Stat(filepath.Join(home, ".claude.json")); !os.IsNotExist(err) {
+		t.Fatalf(".claude.json should not exist for a non-claude session, stat err = %v", err)
+	}
+}
+
 func TestDeleteSessionKeepsUserBranch(t *testing.T) {
 	a, git, _, _ := newTestApp(t, gitProject("/repo"))
 	wt := filepath.Join(a.WorktreeRoot, "demo", "feat")
@@ -1416,6 +1486,93 @@ func TestDeleteSessionOrphanedProjectKeepsRealFolder(t *testing.T) {
 	}
 	if _, ok := a.Store.Get("gone:x"); ok {
 		t.Fatal("store entry should still be deleted")
+	}
+}
+
+func TestStartFirstPromptWaitsForPaneThenSendsLiteralTextThenSeparateEnter(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, map[string]config.Project{})
+	// A transition from the pre-launch shell to the agent's idle screen —
+	// see waitForPaneReady's doc comment for why a constant value here
+	// wouldn't actually exercise the readiness wait (it would either look
+	// "stable" from the very first poll, or, with the fix in place, run out
+	// the full paneChangeTimeout waiting for a change that never comes).
+	tm.seq = map[string][]string{
+		"capture-pane -p -t =demo:x:": {"$ claude", "agent-idle", "agent-idle"},
+	}
+
+	if err := a.StartFirstPrompt("demo:x", "do the thing"); err != nil {
+		t.Fatal(err)
+	}
+
+	if !tm.called("capture-pane -p -t =demo:x:") {
+		t.Fatalf("did not poll pane readiness before sending: %v", tm.calls)
+	}
+	// Text and Enter must be two separate send-keys calls — bundling them
+	// into one is what a terminal-raw-mode TUI's paste detection swallows
+	// (see Client.SendLiteral's doc comment).
+	if tm.called("send-keys -t =demo:x: do the thing Enter") {
+		t.Fatalf("text and Enter must not be sent in the same call: %v", tm.calls)
+	}
+	if !tm.called("send-keys -t =demo:x: -l -- do the thing") {
+		t.Fatalf("did not type the prompt as a literal, Enter-less call: %v", tm.calls)
+	}
+	if !tm.called("send-keys -t =demo:x: Enter") {
+		t.Fatalf("did not send a separate Enter to actually start the work: %v", tm.calls)
+	}
+}
+
+// TestStartFirstPromptWaitsForActualPaneChangeBeforeStabilizing guards the
+// exact bug reported in practice: a pane still showing the idle shell prompt
+// right after the launch command was typed looks just as "stable" (same
+// content on two consecutive polls) as an idle agent input box does, so a
+// naive stability check fires immediately and types the prompt onto the
+// shell before the agent has even opened. waitForPaneReady must wait for the
+// pane to visibly change at least once before it starts checking for
+// stability.
+func TestStartFirstPromptWaitsForActualPaneChangeBeforeStabilizing(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, map[string]config.Project{})
+	tm.seq = map[string][]string{
+		"capture-pane -p -t =demo:x:": {
+			"$ claude", "$ claude", "$ claude", // idle shell, right after launch was typed
+			"claude ready>", "claude ready>", "claude ready>", // agent took over and is idle
+		},
+	}
+
+	if err := a.StartFirstPrompt("demo:x", "do the thing"); err != nil {
+		t.Fatal(err)
+	}
+
+	sendIdx := -1
+	captureBeforeSend := 0
+	for i, c := range tm.calls {
+		joined := strings.Join(c, " ")
+		if sendIdx == -1 && strings.HasPrefix(joined, "capture-pane") {
+			captureBeforeSend++
+		}
+		if strings.HasPrefix(joined, "send-keys -t =demo:x: -l --") {
+			sendIdx = i
+			break
+		}
+	}
+	if sendIdx == -1 {
+		t.Fatalf("never sent the prompt: %v", tm.calls)
+	}
+	// A naive "stable after 2 identical polls" check fires after just 2-3
+	// captures of the still-idle shell, before the agent ever rendered.
+	// Requiring more captures than that proves the pane's actual change was
+	// waited for first.
+	if captureBeforeSend < 4 {
+		t.Fatalf("sent after only %d capture-pane polls — looks like it fired on the pre-launch shell, not the agent: %v", captureBeforeSend, tm.calls)
+	}
+}
+
+func TestStartFirstPromptNoopOnEmptyPrompt(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, map[string]config.Project{})
+	if err := a.StartFirstPrompt("demo:x", ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(tm.calls) != 0 {
+		t.Fatalf("empty prompt should be a no-op: %v", tm.calls)
 	}
 }
 

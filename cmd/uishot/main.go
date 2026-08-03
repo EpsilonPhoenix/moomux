@@ -140,6 +140,7 @@ type fakeBackend struct {
 func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket string) (session.Session, string, error) {
 	return session.Session{}, "", nil
 }
+func (f *fakeBackend) StartFirstPrompt(tmuxSession, prompt string) error       { return nil }
 func (f *fakeBackend) OpenSession(id string) (string, error)                   { return "", nil }
 func (f *fakeBackend) DeleteSession(id string) error                           { return nil }
 func (f *fakeBackend) KillTmux(id string) error                                { return nil }

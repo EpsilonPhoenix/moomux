@@ -294,6 +294,13 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 			hooksHint = codexHooksHint(agent)
 		}
 	}
+	if agent == "claude" {
+		if home, err := os.UserHomeDir(); err != nil {
+			slog.Warn("claude trust write failed", "err", err)
+		} else if err := claudehook.TrustDirectory(home, wt); err != nil {
+			slog.Warn("claude trust write failed", "path", wt, "err", err)
+		}
+	}
 	cmd := agentCmd(agent)
 	agentPort := 0
 	if agent == "opencode" {
@@ -354,6 +361,90 @@ func (a *App) SendPrompt(tmuxSession, prompt string) error {
 		return nil
 	}
 	return a.Tmux.SendKeys(tmuxSession, prompt)
+}
+
+// paneStablePoll/paneStableChecks/paneReadyTimeout tune StartFirstPrompt's
+// readiness wait: an agent CLI's startup render (splash, model warmup, hook
+// setup) takes a variable amount of time, and typing into it before it's
+// idle at its input box means the keystrokes land on a screen that never
+// reads them — visible as text landing on the plain shell prompt, before the
+// agent has even opened. Waiting for two consecutive identical captures is a
+// generic proxy for "done redrawing, waiting on input" that doesn't need to
+// know anything about the specific agent CLI's UI — but the idle shell
+// prompt right after the launch command was typed looks just as "stable" as
+// an idle agent input box does, so waitForPaneReady first waits for the pane
+// to change at all (proving the agent process actually took over the
+// terminal) before it starts checking for stability, using the whole
+// readiness budget for that wait rather than a shorter carve-out of it.
+const (
+	paneStablePoll   = 300 * time.Millisecond
+	paneStableChecks = 2
+	paneReadyTimeout = 15 * time.Second
+)
+
+// waitForPaneReady blocks until tmuxSession's pane content has visibly
+// changed from its pre-launch state and then stops changing across
+// paneStableChecks consecutive polls, or paneReadyTimeout elapses overall —
+// whichever comes first. Timing out during either phase is not an error: the
+// caller proceeds best-effort regardless, same as the fixed-delay behavior
+// this replaces.
+func (a *App) waitForPaneReady(tmuxSession string) {
+	deadline := time.Now().Add(paneReadyTimeout)
+	before, _ := a.Tmux.CapturePane(tmuxSession)
+
+	last := before
+	changed := false
+	for !changed && time.Now().Before(deadline) {
+		time.Sleep(paneStablePoll)
+		if cur, err := a.Tmux.CapturePane(tmuxSession); err == nil {
+			changed = cur != before
+			last = cur
+		}
+	}
+	if !changed {
+		// Never saw anything but the pre-launch state within the whole
+		// budget — proceeding to check "stability" against it would just
+		// immediately declare it stable, defeating the point of this wait.
+		return
+	}
+
+	stable := 0
+	for {
+		cur, err := a.Tmux.CapturePane(tmuxSession)
+		if err == nil && cur == last && cur != "" {
+			stable++
+			if stable >= paneStableChecks {
+				return
+			}
+		} else {
+			stable = 0
+		}
+		last = cur
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(paneStablePoll)
+	}
+}
+
+// firstPromptSubmitDelay is the gap between typing the prompt and pressing
+// Enter — see Client.SendLiteral's doc comment for why they must be two
+// separate send-keys calls, not one.
+const firstPromptSubmitDelay = 300 * time.Millisecond
+
+// StartFirstPrompt waits for a freshly created session's agent pane to
+// finish starting up, types prompt into it, and separately presses Enter to
+// start the agent working on it. No-op if prompt is empty.
+func (a *App) StartFirstPrompt(tmuxSession, prompt string) error {
+	if prompt == "" {
+		return nil
+	}
+	a.waitForPaneReady(tmuxSession)
+	if err := a.Tmux.SendLiteral(tmuxSession, prompt); err != nil {
+		return err
+	}
+	time.Sleep(firstPromptSubmitDelay)
+	return a.Tmux.PressEnter(tmuxSession)
 }
 
 // MoveSession shifts the session with the given id by delta positions (-1

@@ -26,6 +26,10 @@ type Backend interface {
 	// (e.g. "run: tmux attach -t ...") to show alongside success — it is
 	// not an error.
 	CreateSession(project, name, agent, existingBranch, ticket string) (s session.Session, hint string, err error)
+	// StartFirstPrompt waits for a freshly created session's agent pane to
+	// be ready, then types prompt into it and starts the agent working on
+	// it. No-op if prompt is empty.
+	StartFirstPrompt(tmuxSession, prompt string) error
 	OpenSession(id string) (hint string, err error)
 	DeleteSession(id string) error
 	KillTmux(id string) error
@@ -154,7 +158,9 @@ type Model struct {
 	nameInput       textinput.Model
 	branchInput     textinput.Model
 	ticketInput     textinput.Model
-	newFormFocus    int // 0=project selector, 1=nameInput, 2=branchInput, 3=agent selector, 4=ticketInput
+	prInput         textinput.Model
+	promptInput     textinput.Model
+	newFormFocus    int // 0=project selector, 1=nameInput, 2=branchInput, 3=agent selector, 4=ticketInput, 5=prInput, 6=promptInput
 	newFormErr      string
 	newFormAgentIdx int // agent selector in the new-session form; -1 means "not chosen yet"
 	newFormProjIdx  int // project selector in the new-session form; index into m.projects
@@ -272,6 +278,16 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 	tki.CharLimit = 256
 	tki.Width = 40
 
+	pri := textinput.New()
+	pri.Placeholder = "PR url (optional)"
+	pri.CharLimit = 256
+	pri.Width = 40
+
+	pi := textinput.New()
+	pi.Placeholder = "first prompt (optional)"
+	pi.CharLimit = 4096
+	pi.Width = 40
+
 	m := &Model{
 		cfg:             cfg,
 		backend:         backend,
@@ -285,6 +301,8 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 		nameInput:       ti,
 		branchInput:     bi,
 		ticketInput:     tki,
+		prInput:         pri,
+		promptInput:     pi,
 		overlayViewport: viewport.New(1, 1),
 		overlayMode:     ModeList,
 		overlayFocus:    -1,

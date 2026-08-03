@@ -128,8 +128,8 @@ func (m *Model) renderFormHint(text string) string {
 // new-session form is currently focused, so the jargon (worktree, base
 // branch) doesn't have to be memorized up front.
 // newFormFieldCount is the focus cycle length: project selector, name,
-// branch, agent selector, ticket — matching the rendered order.
-const newFormFieldCount = 5
+// branch, agent selector, ticket, PR, prompt — matching the rendered order.
+const newFormFieldCount = 7
 
 // newFormAgentFocus is the newFormFocus value for the agent selector row.
 const newFormAgentFocus = 3
@@ -140,6 +140,8 @@ var newFormFieldHints = []string{
 	2: "an existing branch to resume, or a new one to branch off the project's base branch",
 	3: "which agent CLI runs in the session's pane — ←→ to choose",
 	4: "optional — shown as a clickable ticket icon next to the session",
+	5: "optional — shown as a clickable PR icon next to the session",
+	6: "optional — typed into the agent's pane as its first task once the session starts",
 }
 
 func (m *Model) renderNewForm() string {
@@ -157,6 +159,10 @@ func (m *Model) renderNewForm() string {
 	b.WriteString(m.renderNewFormAgentSelector())
 	b.WriteString("\n\n")
 	b.WriteString(m.ticketInput.View())
+	b.WriteString("\n\n")
+	b.WriteString(m.prInput.View())
+	b.WriteString("\n\n")
+	b.WriteString(m.promptInput.View())
 	return b.String()
 }
 
