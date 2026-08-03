@@ -14,7 +14,7 @@ import (
 func TestRenderScreenCoversAllScenarios(t *testing.T) {
 	for name := range screens {
 		t.Run(name, func(t *testing.T) {
-			out, err := renderScreen(name, 100, 32)
+			out, err := renderScreen(name, 100, 32, "", "")
 			if err != nil {
 				t.Fatalf("renderScreen(%q): %v", name, err)
 			}
@@ -26,7 +26,7 @@ func TestRenderScreenCoversAllScenarios(t *testing.T) {
 }
 
 func TestRenderScreenUnknownScreen(t *testing.T) {
-	if _, err := renderScreen("does-not-exist", 100, 32); err == nil {
+	if _, err := renderScreen("does-not-exist", 100, 32, "", ""); err == nil {
 		t.Fatal("expected error for unknown screen, got nil")
 	}
 }

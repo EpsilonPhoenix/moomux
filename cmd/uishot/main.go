@@ -79,6 +79,7 @@ var screens = map[string][]string{
 	// reach (demo always has sessions, so it can never pass the delete
 	// guard), hence the dedicated single-project config below.
 	"project-picker-emptied": {"/", "d", "y"},
+	"theme-picker":           {"T"},
 }
 
 var namedKeys = map[string]tea.KeyType{
@@ -179,6 +180,13 @@ func (f *fakeBackend) RemoveProject(name string) error {
 	}
 	return nil
 }
+func (f *fakeBackend) SetTheme(theme, appearance string) error {
+	if f.cfg != nil {
+		f.cfg.Theme = theme
+		f.cfg.Appearance = appearance
+	}
+	return nil
+}
 
 func sampleSessions() []session.Session {
 	now := time.Now().UTC()
@@ -223,7 +231,7 @@ func sampleSessions() []session.Session {
 // registered for screenName against canned sample data, returning its final
 // rendered view. It's the piece scripts/screenshot.sh's pty/HTML/Chromium
 // pipeline wraps, and the piece that's practical to cover with a Go test.
-func renderScreen(screenName string, width, height int) (string, error) {
+func renderScreen(screenName string, width, height int, theme, appearance string) (string, error) {
 	keys, ok := screens[screenName]
 	if !ok {
 		return "", fmt.Errorf("unknown screen %q (want one of: %s)", screenName, screenNames())
@@ -250,8 +258,11 @@ func renderScreen(screenName string, width, height int) (string, error) {
 		}}
 		sessions = nil
 	}
+	cfg.Theme = theme
+	cfg.Appearance = appearance
 	be := &fakeBackend{sessions: sessions, cfg: cfg}
 	statusCh := make(chan watcher.Snapshot)
+	tui.ApplySettings(cfg)
 	m := tui.New(cfg, be, statusCh, func() {})
 
 	home, _ := os.UserHomeDir()
@@ -275,9 +286,11 @@ func main() {
 	screen := flag.String("screen", "list", fmt.Sprintf("screen to render: %s", screenNames()))
 	width := flag.Int("width", 100, "terminal width")
 	height := flag.Int("height", 32, "terminal height")
+	theme := flag.String("theme", "", "theme name (default, terminal, gruvbox, catppuccin)")
+	appearance := flag.String("appearance", "", "appearance override (light, dark; empty = auto)")
 	flag.Parse()
 
-	out, err := renderScreen(*screen, *width, *height)
+	out, err := renderScreen(*screen, *width, *height, *theme, *appearance)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "uishot: %s\n", err)
 		os.Exit(1)

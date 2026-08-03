@@ -847,6 +847,23 @@ func (a *App) UpdateProject(name string, updated config.Project) error {
 	return nil
 }
 
+// SetTheme persists the chosen theme name and appearance override to config,
+// following the same reload -> mutate -> save idiom as UpdateProject.
+func (a *App) SetTheme(theme, appearance string) error {
+	if err := config.Reload(a.CfgPath, a.Cfg); err != nil {
+		return fmt.Errorf("reload config: %w", err)
+	}
+	prevTheme, prevAppearance := a.Cfg.Theme, a.Cfg.Appearance
+	a.Cfg.Theme = theme
+	a.Cfg.Appearance = appearance
+	if err := config.Save(a.CfgPath, a.Cfg); err != nil {
+		a.Cfg.Theme = prevTheme
+		a.Cfg.Appearance = prevAppearance
+		return fmt.Errorf("save config: %w", err)
+	}
+	return nil
+}
+
 func (a *App) RemoveProject(name string) error {
 	if err := config.Reload(a.CfgPath, a.Cfg); err != nil {
 		return fmt.Errorf("reload config: %w", err)

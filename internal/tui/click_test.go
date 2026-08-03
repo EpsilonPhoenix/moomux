@@ -58,7 +58,12 @@ type fakeBackend struct {
 
 	removeProjectCalls []string
 	removeProjectErr   error
+
+	setThemeCalls []setThemeCall
+	setThemeErr   error
 }
+
+type setThemeCall struct{ theme, appearance string }
 
 type createCall struct{ project, name, agent, branch, ticket string }
 type sendPromptCall struct{ tmuxSession, prompt string }
@@ -182,6 +187,11 @@ func (f *fakeBackend) UpdateProject(name string, p config.Project) error {
 func (f *fakeBackend) RemoveProject(name string) error {
 	f.removeProjectCalls = append(f.removeProjectCalls, name)
 	return f.removeProjectErr
+}
+
+func (f *fakeBackend) SetTheme(theme, appearance string) error {
+	f.setThemeCalls = append(f.setThemeCalls, setThemeCall{theme, appearance})
+	return f.setThemeErr
 }
 
 // TestLinkHitsResolveClicks renders a full frame and asserts that clicking

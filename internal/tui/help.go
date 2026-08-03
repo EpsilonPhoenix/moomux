@@ -85,6 +85,7 @@ func (m *Model) helpGroups() []helpGroup {
 				{"q", "quit"},
 				{"r", "refresh"},
 				{"G", allSessionsDesc},
+				{"T", "themes"},
 			},
 		},
 	}
