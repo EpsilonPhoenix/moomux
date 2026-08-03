@@ -53,6 +53,7 @@ var screens = map[string][]string{
 	"delete-project-blocked": {"D"},
 	"archived":               {"A"},
 	"all-sessions":           {"G"},
+	"all-archived":           {"G", "A"},
 	"help":                   {"?"},
 	// needs-input has no keys of its own; renderScreen feeds it a
 	// StatusTickMsg marking the first sample session watcher.NeedsInput.
