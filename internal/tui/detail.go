@@ -27,8 +27,8 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 	switch st {
 	case watcher.Working:
 		dot, label = dotWorking, "working"
-	case watcher.Waiting:
-		dot, label = dotWaiting, "waiting"
+	case watcher.Done:
+		dot, label = dotDone, "done"
 	case watcher.NeedsInput:
 		dot, label = dotNeedsInput, "needs input"
 	}
@@ -85,8 +85,8 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 	switch st {
 	case watcher.Working:
 		cowMsg = pickQuip(s.ID, quipsWorking)
-	case watcher.Waiting:
-		cowMsg = pickQuip(s.ID, quipsWaiting)
+	case watcher.Done:
+		cowMsg = pickQuip(s.ID, quipsDone)
 	case watcher.NeedsInput:
 		cowMsg = pickQuip(s.ID, quipsNeedsInput)
 	default:
@@ -134,7 +134,7 @@ func cowsay(msg string, maxWidth int, st watcher.State) string {
 	switch st {
 	case watcher.Working:
 		eyes = "**"
-	case watcher.Waiting:
+	case watcher.Done:
 		eyes = "oo"
 	case watcher.NeedsInput:
 		eyes = "!!"

@@ -412,7 +412,7 @@ func (m *Model) renderHeader() string {
 		switch m.effectiveState(m.sessions[m.cursor]) {
 		case watcher.Working:
 			eyes = "**"
-		case watcher.Waiting:
+		case watcher.Done:
 			eyes = "oo"
 		case watcher.NeedsInput:
 			eyes = "!!"

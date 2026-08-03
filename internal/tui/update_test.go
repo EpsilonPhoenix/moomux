@@ -1040,13 +1040,13 @@ func TestStatusTickPrunesRemovedSessionStates(t *testing.T) {
 	// Session for /wt/removed no longer exists in the backend (deleted).
 	be.sessions = []session.Session{{ID: "demo:a", Project: "demo", Name: "a", WorktreePath: "/wt/a"}}
 	m.Update(StatusTickMsg{Snap: watcher.Snapshot{
-		States: map[string]watcher.State{"/wt/a": watcher.Waiting},
+		States: map[string]watcher.State{"/wt/a": watcher.Done},
 	}})
 
 	if _, ok := m.states["/wt/removed"]; ok {
 		t.Fatalf("states = %v, want /wt/removed pruned after its session was removed", m.states)
 	}
-	if m.states["/wt/a"] != watcher.Waiting {
+	if m.states["/wt/a"] != watcher.Done {
 		t.Fatalf("states[/wt/a] = %v, want still tracked", m.states["/wt/a"])
 	}
 }

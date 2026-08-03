@@ -68,7 +68,7 @@ func TestSQLiteWatcherWorking(t *testing.T) {
 	}
 }
 
-func TestSQLiteWatcherWaiting(t *testing.T) {
+func TestSQLiteWatcherDone(t *testing.T) {
 	if !hasSQLite3() {
 		t.Skip("sqlite3 CLI not available")
 	}
@@ -93,8 +93,8 @@ func TestSQLiteWatcherWaiting(t *testing.T) {
 
 	select {
 	case snap := <-ch:
-		if snap.States["/tmp/proj"] != Waiting {
-			t.Fatalf("expected Waiting, got %v", snap.States["/tmp/proj"])
+		if snap.States["/tmp/proj"] != Done {
+			t.Fatalf("expected Done, got %v", snap.States["/tmp/proj"])
 		}
 	case <-ctx.Done():
 		t.Fatal("timed out waiting for snapshot")
