@@ -7,16 +7,38 @@ import (
 	"path/filepath"
 )
 
-// EnsureWorktreeHooks merges the Notification/PreToolUse/UserPromptSubmit
-// hooks that report "needs input" into the worktree's .claude/settings.json,
+// EnsureHooksInstalled merges the Notification/PreToolUse/UserPromptSubmit
+// hooks that report "needs input" into the user's global ~/.claude/settings.json,
 // preserving any hooks already configured there. Safe to call more than
 // once: it won't add a duplicate entry for a hook it already installed.
 // changed reports whether this call actually wrote the file (new install or
-// content change) as opposed to a no-op — callers can use that to decide
-// whether anything needs telling the user about (e.g. Claude re-prompting to
-// trust changed project hooks).
-func EnsureWorktreeHooks(worktreePath string) (changed bool, err error) {
-	path := filepath.Join(worktreePath, ".claude", "settings.json")
+// content change) as opposed to a no-op.
+//
+// This is global rather than per-worktree deliberately, mirroring
+// codexhook.EnsureHooks: Claude Code requires workspace-trust approval
+// before it will run hooks defined in a *project-local* .claude/settings.json
+// — trust is scoped per directory, so a per-worktree file would mean
+// re-approving on every new worktree. Hooks in the global, user-level
+// settings.json carry no such prompt (they're the user's own account-level
+// config, not repo-controlled), so installing there once covers every
+// worktree with no trust dialog at all — unlike Codex, there's no
+// equivalent re-approval step needed after this changes, so callers don't
+// need to show a hint the way they do for codexhook.EnsureHooks.
+//
+// Deliberately does NOT install a Stop hook. Claude Code has no dedicated
+// hook for "the agent asked a plain-text question via AskUserQuestion and is
+// waiting on a reply" (see anthropics/claude-code#59908, open as of this
+// writing) — Stop would close that gap, but it fires unconditionally at the
+// end of every turn, not just ones ending in a question. Since NeedsInput
+// outranks Done in scanDir's max-merge (see internal/watcher/watcher.go),
+// that would make Done unreachable for Claude sessions — every finished
+// turn would show needs-input until the next message, which is exactly the
+// "Waiting never carried any stuck meaning" distinction commit d9593ed
+// established between Done and NeedsInput. codexhook.EnsureHooks has the
+// identical gap and the identical reason for leaving it unfixed. Left as a
+// known gap rather than reintroducing that.
+func EnsureHooksInstalled(home string) (changed bool, err error) {
+	path := filepath.Join(home, ".claude", "settings.json")
 
 	settings := map[string]any{}
 	existing, err := os.ReadFile(path)
@@ -44,8 +66,8 @@ func EnsureWorktreeHooks(worktreePath string) (changed bool, err error) {
 	data = append(data, '\n')
 	if bytes.Equal(data, existing) {
 		// This runs on every session open (see App.repairNeedsInputHooks), not
-		// just once at creation — often against a worktree whose Claude Code
-		// process is live and reading this same file. Skipping a no-op write
+		// just once at creation — often while some other Claude Code session
+		// is live and reading this same global file. Skipping a no-op write
 		// avoids most opportunities for it to observe a half-written file.
 		return false, nil
 	}
@@ -60,8 +82,16 @@ func EnsureWorktreeHooks(worktreePath string) (changed bool, err error) {
 
 // writeFileAtomic writes data via a temp file + rename in path's directory,
 // so a concurrent reader (Claude Code reloading its own hook config) never
-// observes a partially-written file.
+// observes a partially-written file. Preserves the existing file's
+// permission bits rather than hardcoding one — settings.json can carry
+// sensitive env values, and a user who's locked it down to 0600 shouldn't
+// have that silently loosened back to 0644 the next time this runs. A
+// brand-new file defaults to 0600 rather than the more permissive 0644.
 func writeFileAtomic(path string, data []byte) error {
+	mode := os.FileMode(0o600)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".settings-*.json.tmp")
 	if err != nil {
 		return err
@@ -74,7 +104,7 @@ func writeFileAtomic(path string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+	if err := os.Chmod(tmp.Name(), mode); err != nil {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)

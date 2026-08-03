@@ -103,6 +103,11 @@ func noBranch(fr *fakeGitRunner, branch string) {
 func newTestApp(t *testing.T, projects map[string]config.Project) (*App, *fakeGitRunner, *fakeTmuxRunner, *fakeTerminal) {
 	t.Helper()
 	dir := t.TempDir()
+	// Both claudehook and codexhook's needs-input installers write into the
+	// real os.UserHomeDir() by design (global install — see their doc
+	// comments). Sandbox HOME so no test run touches the developer's actual
+	// ~/.claude/settings.json or ~/.codex/hooks.json.
+	t.Setenv("HOME", t.TempDir())
 	git := &fakeGitRunner{failOn: map[string]bool{}, out: map[string]string{}}
 	tm := &fakeTmuxRunner{out: map[string]string{}, failOn: map[string]bool{}}
 	term := &fakeTerminal{}
@@ -290,18 +295,21 @@ func TestCreateSessionWorktree(t *testing.T) {
 }
 
 func TestCreateSessionInstallsClaudeHooks(t *testing.T) {
+	// Claude hooks install globally (see claudehook.EnsureHooksInstalled's
+	// doc comment), not per-worktree — newTestApp already sandboxes HOME so
+	// this doesn't touch the real developer's ~/.claude/settings.json.
 	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	home, _ := os.UserHomeDir()
 	tn := TmuxSessionName("demo:feat", "feat")
 	tm.out["list-panes -t ="+tn+": -F #{pane_id}"] = "%0\n"
 	noBranch(git, "feat")
 
-	s, _, err := a.CreateSession("demo", "feat", "claude", "", "")
-	if err != nil {
+	if _, _, err := a.CreateSession("demo", "feat", "claude", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(s.WorktreePath, ".claude", "settings.json"))
+	data, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
 	if err != nil {
-		t.Fatalf("expected .claude/settings.json to be written: %v", err)
+		t.Fatalf("expected ~/.claude/settings.json to be written: %v", err)
 	}
 	if !strings.Contains(string(data), "moomux hook claude set") || !strings.Contains(string(data), "moomux hook claude clear") {
 		t.Fatalf("settings.json missing moomux hooks: %s", data)
@@ -310,30 +318,29 @@ func TestCreateSessionInstallsClaudeHooks(t *testing.T) {
 
 func TestCreateSessionSkipsClaudeHooksForOtherAgents(t *testing.T) {
 	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	home, _ := os.UserHomeDir()
 	tn := TmuxSessionName("demo:feat", "feat")
 	tm.out["list-panes -t ="+tn+": -F #{pane_id}"] = "%0\n"
 	noBranch(git, "feat")
 
-	// opencode has no needs-input installer at all, unlike codex — picking it
-	// here keeps this test's assertion (no .claude/settings.json) meaningful
-	// without also asserting anything about codex's own hooks file.
-	s, _, err := a.CreateSession("demo", "feat", "opencode", "", "")
-	if err != nil {
+	// opencode has no needs-input installer at all, unlike claude/codex —
+	// picking it here keeps this test's assertion (no settings.json)
+	// meaningful without also asserting anything about claude's or codex's
+	// own hooks file.
+	if _, _, err := a.CreateSession("demo", "feat", "opencode", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(s.WorktreePath, ".claude", "settings.json")); !os.IsNotExist(err) {
-		t.Fatalf("expected no .claude/settings.json for a non-claude agent, stat err = %v", err)
+	if _, err := os.Stat(filepath.Join(home, ".claude", "settings.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected no ~/.claude/settings.json for a non-claude agent, stat err = %v", err)
 	}
 }
 
 func TestCreateSessionInstallsCodexHooks(t *testing.T) {
 	// Codex hooks install globally (see codexhook.EnsureHooks's doc comment),
-	// not per-worktree — point $HOME at a scratch dir so this doesn't touch
-	// the real developer's ~/.codex/hooks.json.
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
+	// not per-worktree — newTestApp already sandboxes HOME so this doesn't
+	// touch the real developer's ~/.codex/hooks.json.
 	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	home, _ := os.UserHomeDir()
 	tn := TmuxSessionName("demo:feat", "feat")
 	tm.out["list-panes -t ="+tn+": -F #{pane_id}"] = "%0\n"
 	noBranch(git, "feat")
@@ -597,22 +604,20 @@ func TestCreateSessionErrors(t *testing.T) {
 }
 
 func TestOpenSessionAlive(t *testing.T) {
+	a, _, tm, term := newTestApp(t, gitProject("/repo"))
 	// codexhook.EnsureHooks (invoked via repairNeedsInputHooks, since this
-	// session's agent is codex) installs into the real $HOME by design (see
-	// its doc comment) — point it at a scratch dir so this doesn't touch the
-	// developer's actual ~/.codex/hooks.json.
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	// session's agent is codex) installs into the real os.UserHomeDir() by
+	// design (see its doc comment) — newTestApp already sandboxes HOME.
 	// Pre-install codex's hooks so repairNeedsInputHooks's call is a no-op
 	// (changed=false): this test is about alive-session reuse behavior, not
 	// about the hooks-hint text (covered by TestOpenSessionRepairsMissingCodexHooks),
 	// so this keeps its hint assertion focused on what OpenSession actually
 	// returned for terminal reuse.
+	home, _ := os.UserHomeDir()
 	if _, err := codexhook.EnsureHooks(home); err != nil {
 		t.Fatal(err)
 	}
 
-	a, _, tm, term := newTestApp(t, gitProject("/repo"))
 	term.hint = "run: tmux attach -t moomux-feat"
 	_ = a.Store.Put(session.Session{
 		ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat",
@@ -700,9 +705,10 @@ func TestOpenSessionDeadAllocatesOpenCodePort(t *testing.T) {
 
 func TestOpenSessionCwdMismatchRecreates(t *testing.T) {
 	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
-	// A real, writable path: this session's agent defaults to claude, so
-	// OpenSession's needs-input hook repair (see repairNeedsInputHooks) will
-	// actually write a .claude/settings.json under it.
+	// This session's agent defaults to claude, so OpenSession's needs-input
+	// hook repair (see repairNeedsInputHooks) will run and write to the
+	// sandboxed HOME's ~/.claude/settings.json (see newTestApp) — harmless
+	// here since this test only cares about tmux recreation.
 	wt := filepath.Join(t.TempDir(), "feat")
 	_ = a.Store.Put(session.Session{ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat", WorktreePath: wt})
 	tn := TmuxSessionName("demo:feat", "feat")
@@ -739,7 +745,11 @@ func TestOpenSessionDeadRecreatesWithAgent(t *testing.T) {
 }
 
 func TestOpenSessionRepairsMissingClaudeHooks(t *testing.T) {
+	// Claude hooks install globally (see claudehook.EnsureHooksInstalled's
+	// doc comment), not per-worktree — newTestApp already sandboxes HOME so
+	// this doesn't touch the real developer's ~/.claude/settings.json.
 	a, _, tm, term := newTestApp(t, gitProject("/repo"))
+	home, _ := os.UserHomeDir()
 	term.hint = "run: tmux attach -t moomux-feat"
 	wt := filepath.Join(t.TempDir(), "feat")
 	_ = a.Store.Put(session.Session{
@@ -748,13 +758,13 @@ func TestOpenSessionRepairsMissingClaudeHooks(t *testing.T) {
 	})
 	tm.out["list-panes -t =moomux-feat: -F #{pane_current_path}"] = wt + "\n"
 
-	// Worktree predates the needs-input feature: no .claude/settings.json yet.
+	// Session predates the needs-input feature: no ~/.claude/settings.json yet.
 	if _, err := a.OpenSession("demo:feat"); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(wt, ".claude", "settings.json"))
+	data, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
 	if err != nil {
-		t.Fatalf("expected OpenSession to backfill .claude/settings.json: %v", err)
+		t.Fatalf("expected OpenSession to backfill ~/.claude/settings.json: %v", err)
 	}
 	if !strings.Contains(string(data), "moomux hook claude set") {
 		t.Fatalf("settings.json missing moomux hooks: %s", data)
@@ -763,12 +773,10 @@ func TestOpenSessionRepairsMissingClaudeHooks(t *testing.T) {
 
 func TestOpenSessionRepairsMissingCodexHooks(t *testing.T) {
 	// Codex hooks install globally (see codexhook.EnsureHooks's doc comment),
-	// not per-worktree — point $HOME at a scratch dir so this doesn't touch
-	// the real developer's ~/.codex/hooks.json.
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
+	// not per-worktree — newTestApp already sandboxes HOME so this doesn't
+	// touch the real developer's ~/.codex/hooks.json.
 	a, _, tm, term := newTestApp(t, gitProject("/repo"))
+	home, _ := os.UserHomeDir()
 	term.hint = "run: tmux attach -t moomux-feat"
 	wt := filepath.Join(t.TempDir(), "feat")
 	_ = a.Store.Put(session.Session{
@@ -792,6 +800,7 @@ func TestOpenSessionRepairsMissingCodexHooks(t *testing.T) {
 
 func TestOpenSessionSkipsHookRepairForOtherAgents(t *testing.T) {
 	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
+	home, _ := os.UserHomeDir()
 	wt := filepath.Join(t.TempDir(), "oc")
 	_ = a.Store.Put(session.Session{
 		ID: "demo:oc", Project: "demo", Name: "oc", TmuxSession: "moomux-oc",
@@ -802,8 +811,8 @@ func TestOpenSessionSkipsHookRepairForOtherAgents(t *testing.T) {
 	if _, err := a.OpenSession("demo:oc"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(wt, ".claude", "settings.json")); !os.IsNotExist(err) {
-		t.Fatalf("expected no .claude/settings.json for a non-claude agent, stat err = %v", err)
+	if _, err := os.Stat(filepath.Join(home, ".claude", "settings.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected no ~/.claude/settings.json for a non-claude agent, stat err = %v", err)
 	}
 }
 

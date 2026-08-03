@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-// EnsureHooks merges the PermissionRequest/Stop/PreToolUse/UserPromptSubmit
+// EnsureHooks merges the PermissionRequest/PreToolUse/UserPromptSubmit
 // hooks that report "needs input" into the user's global ~/.codex/hooks.json,
 // preserving any hooks already configured there (e.g. from other tools).
 // Safe to call more than once: it won't add a duplicate entry for a hook it
@@ -17,13 +17,18 @@ import (
 // requires reviewing new or changed hook entries before they run).
 //
 // PermissionRequest ("about to ask for approval") covers the escalation
-// case; Stop ("when a turn ends") is the general "the agent is now waiting
-// on you" signal beyond just approvals — verified live: sending Codex a
-// command needing network approval fired PermissionRequest and produced a
-// real needs-input marker; there is no separate hook event for "the agent
-// asked a plain-text question" (Codex's request_user_input mechanism is
-// app-server/IDE-protocol only, not part of the hooks.json system), so Stop
-// is the closest available generalization of "waiting on you."
+// case — verified live: sending Codex a command needing network approval
+// fired PermissionRequest and produced a real needs-input marker. There is
+// no separate hook event for "the agent asked a plain-text question"
+// (Codex's request_user_input mechanism is app-server/IDE-protocol only,
+// not part of the hooks.json system), and this deliberately does NOT
+// install a Stop hook to work around that gap: Stop fires unconditionally
+// at the end of every turn, not just ones ending in a question, and
+// internal/watcher's max-merge (NeedsInput outranks Done) would make Done
+// unreachable for Codex sessions — every finished turn would show
+// needs-input until the next message. Tried and reverted the identical
+// mistake on claudehook's side first (see its doc comment) before removing
+// this. Left as a known gap rather than reintroducing that.
 //
 // This is global rather than per-worktree deliberately: Codex requires
 // explicitly trusting a hook file via `/hooks` before it runs (its trust
@@ -54,7 +59,6 @@ func EnsureHooks(home string) (changed bool, err error) {
 		hooks = map[string]any{}
 	}
 	addHook(hooks, "PermissionRequest", "moomux hook codex set")
-	addHook(hooks, "Stop", "moomux hook codex set")
 	addHook(hooks, "PreToolUse", "moomux hook codex clear")
 	addHook(hooks, "UserPromptSubmit", "moomux hook codex clear")
 	settings["hooks"] = hooks

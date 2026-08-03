@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-func readSettings(t *testing.T, worktreePath string) map[string]any {
+func readSettings(t *testing.T, home string) map[string]any {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(worktreePath, ".claude", "settings.json"))
+	data, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
 	if err != nil {
 		t.Fatalf("read settings.json: %v", err)
 	}
@@ -44,16 +44,16 @@ func hookCommands(t *testing.T, settings map[string]any, event string) []string 
 	return cmds
 }
 
-func TestEnsureWorktreeHooksCreatesSettings(t *testing.T) {
-	wt := t.TempDir()
-	changed, err := EnsureWorktreeHooks(wt)
+func TestEnsureHooksInstalledCreatesSettings(t *testing.T) {
+	home := t.TempDir()
+	changed, err := EnsureHooksInstalled(home)
 	if err != nil {
-		t.Fatalf("EnsureWorktreeHooks: %v", err)
+		t.Fatalf("EnsureHooksInstalled: %v", err)
 	}
 	if !changed {
 		t.Fatal("expected changed=true for a brand-new install")
 	}
-	settings := readSettings(t, wt)
+	settings := readSettings(t, home)
 	if got := hookCommands(t, settings, "Notification"); len(got) != 1 || got[0] != "moomux hook claude set" {
 		t.Fatalf("Notification hooks = %v", got)
 	}
@@ -65,34 +65,34 @@ func TestEnsureWorktreeHooksCreatesSettings(t *testing.T) {
 	}
 }
 
-func TestEnsureWorktreeHooksIsIdempotent(t *testing.T) {
-	wt := t.TempDir()
-	if _, err := EnsureWorktreeHooks(wt); err != nil {
-		t.Fatalf("first EnsureWorktreeHooks: %v", err)
+func TestEnsureHooksInstalledIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+	if _, err := EnsureHooksInstalled(home); err != nil {
+		t.Fatalf("first EnsureHooksInstalled: %v", err)
 	}
-	changed, err := EnsureWorktreeHooks(wt)
+	changed, err := EnsureHooksInstalled(home)
 	if err != nil {
-		t.Fatalf("second EnsureWorktreeHooks: %v", err)
+		t.Fatalf("second EnsureHooksInstalled: %v", err)
 	}
 	if changed {
 		t.Fatal("expected changed=false when hooks are already installed")
 	}
-	settings := readSettings(t, wt)
+	settings := readSettings(t, home)
 	if got := hookCommands(t, settings, "Notification"); len(got) != 1 {
 		t.Fatalf("expected no duplicate Notification hook, got %v", got)
 	}
 }
 
 // This runs on every OpenSession (see App.repairNeedsInputHooks), often
-// against a worktree whose Claude Code process is live and reading this same
+// while some other Claude Code session is live and reading this same global
 // file — a redundant write is a needless window for it to observe a
 // half-written settings.json, so a no-op call must not touch the file.
-func TestEnsureWorktreeHooksSkipsNoopWrite(t *testing.T) {
-	wt := t.TempDir()
-	if _, err := EnsureWorktreeHooks(wt); err != nil {
-		t.Fatalf("first EnsureWorktreeHooks: %v", err)
+func TestEnsureHooksInstalledSkipsNoopWrite(t *testing.T) {
+	home := t.TempDir()
+	if _, err := EnsureHooksInstalled(home); err != nil {
+		t.Fatalf("first EnsureHooksInstalled: %v", err)
 	}
-	path := filepath.Join(wt, ".claude", "settings.json")
+	path := filepath.Join(home, ".claude", "settings.json")
 	before, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
@@ -105,9 +105,9 @@ func TestEnsureWorktreeHooksSkipsNoopWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	changed, err := EnsureWorktreeHooks(wt)
+	changed, err := EnsureHooksInstalled(home)
 	if err != nil {
-		t.Fatalf("second EnsureWorktreeHooks: %v", err)
+		t.Fatalf("second EnsureHooksInstalled: %v", err)
 	}
 	if changed {
 		t.Fatal("expected changed=false for a no-op call")
@@ -121,9 +121,9 @@ func TestEnsureWorktreeHooksSkipsNoopWrite(t *testing.T) {
 	}
 }
 
-func TestEnsureWorktreeHooksPreservesExistingConfig(t *testing.T) {
-	wt := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(wt, ".claude"), 0o755); err != nil {
+func TestEnsureHooksInstalledPreservesExistingConfig(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	existing := `{
@@ -132,14 +132,14 @@ func TestEnsureWorktreeHooksPreservesExistingConfig(t *testing.T) {
 			"Stop": [{"hooks": [{"type": "command", "command": "echo done"}]}]
 		}
 	}`
-	if err := os.WriteFile(filepath.Join(wt, ".claude", "settings.json"), []byte(existing), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte(existing), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := EnsureWorktreeHooks(wt); err != nil {
-		t.Fatalf("EnsureWorktreeHooks: %v", err)
+	if _, err := EnsureHooksInstalled(home); err != nil {
+		t.Fatalf("EnsureHooksInstalled: %v", err)
 	}
-	settings := readSettings(t, wt)
+	settings := readSettings(t, home)
 	if settings["otherSetting"] != true {
 		t.Fatalf("expected unrelated setting to survive, got %v", settings["otherSetting"])
 	}
@@ -148,5 +148,80 @@ func TestEnsureWorktreeHooksPreservesExistingConfig(t *testing.T) {
 	}
 	if got := hookCommands(t, settings, "Notification"); len(got) != 1 || got[0] != "moomux hook claude set" {
 		t.Fatalf("Notification hooks = %v", got)
+	}
+}
+
+// TestEnsureHooksInstalledReportsChangedWhenANewEventIsAdded mirrors
+// codexhook's test of the same name: guards the scenario that motivated the
+// changed return value — an older moomux build installed a subset of these
+// hooks, and a newer build adds one more. changed must report true for that
+// case, not just for "file didn't exist before."
+func TestEnsureHooksInstalledReportsChangedWhenANewEventIsAdded(t *testing.T) {
+	home := t.TempDir()
+	partial := `{
+		"hooks": {
+			"Notification": [{"matcher": "permission_prompt|idle_prompt|agent_needs_input", "hooks": [{"type": "command", "command": "moomux hook claude set"}]}],
+			"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "moomux hook claude clear"}]}]
+		}
+	}`
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte(partial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	changed, err := EnsureHooksInstalled(home)
+	if err != nil {
+		t.Fatalf("EnsureHooksInstalled: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected changed=true when UserPromptSubmit is newly added to an already-partially-installed file")
+	}
+	settings := readSettings(t, home)
+	if got := hookCommands(t, settings, "UserPromptSubmit"); len(got) != 1 || got[0] != "moomux hook claude clear" {
+		t.Fatalf("UserPromptSubmit hooks = %v", got)
+	}
+}
+
+// TestEnsureHooksInstalledPreservesFilePermissions guards against silently
+// loosening a settings.json a user has deliberately locked down (it can
+// carry sensitive env values) back to a more permissive mode on rewrite.
+func TestEnsureHooksInstalledPreservesFilePermissions(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"otherSetting": true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := EnsureHooksInstalled(home); err != nil {
+		t.Fatalf("EnsureHooksInstalled: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("expected existing 0600 permissions to survive, got %o", got)
+	}
+}
+
+// TestEnsureHooksInstalledDefaultsNewFileToRestrictivePermissions guards the
+// other half of the same fix: a brand-new settings.json shouldn't default to
+// the more permissive 0644 either, since it can carry sensitive env values.
+func TestEnsureHooksInstalledDefaultsNewFileToRestrictivePermissions(t *testing.T) {
+	home := t.TempDir()
+	if _, err := EnsureHooksInstalled(home); err != nil {
+		t.Fatalf("EnsureHooksInstalled: %v", err)
+	}
+	info, err := os.Stat(filepath.Join(home, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("expected new file to default to 0600, got %o", got)
 	}
 }
