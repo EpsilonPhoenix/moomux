@@ -3,15 +3,16 @@ package tui
 import "github.com/charmbracelet/lipgloss"
 
 var (
-	colFg      = lipgloss.AdaptiveColor{Light: "#1a1a1a", Dark: "#e6e6e6"}
-	colMute    = lipgloss.AdaptiveColor{Light: "#5b5b66", Dark: "#7a7a85"}
-	colAccent  = lipgloss.AdaptiveColor{Light: "#2952cc", Dark: "#7aa2f7"}
-	colWorking = lipgloss.AdaptiveColor{Light: "#4b7a1f", Dark: "#9ece6a"}
-	colWaiting = lipgloss.AdaptiveColor{Light: "#946f1a", Dark: "#e0af68"}
-	colParked  = lipgloss.AdaptiveColor{Light: "#7d7d85", Dark: "#565a6e"}
-	colDanger  = lipgloss.AdaptiveColor{Light: "#c0293f", Dark: "#f7768e"}
-	colBorder  = lipgloss.AdaptiveColor{Light: "#9a9aa5", Dark: "#2d2f3a"}
-	colSelBg   = lipgloss.AdaptiveColor{Light: "#a9bdf0", Dark: "#2f395e"}
+	colFg         = lipgloss.AdaptiveColor{Light: "#1a1a1a", Dark: "#e6e6e6"}
+	colMute       = lipgloss.AdaptiveColor{Light: "#5b5b66", Dark: "#7a7a85"}
+	colAccent     = lipgloss.AdaptiveColor{Light: "#2952cc", Dark: "#7aa2f7"}
+	colWorking    = lipgloss.AdaptiveColor{Light: "#4b7a1f", Dark: "#9ece6a"}
+	colWaiting    = lipgloss.AdaptiveColor{Light: "#946f1a", Dark: "#e0af68"}
+	colNeedsInput = lipgloss.AdaptiveColor{Light: "#9c3ba1", Dark: "#bb70d2"}
+	colParked     = lipgloss.AdaptiveColor{Light: "#7d7d85", Dark: "#565a6e"}
+	colDanger     = lipgloss.AdaptiveColor{Light: "#c0293f", Dark: "#f7768e"}
+	colBorder     = lipgloss.AdaptiveColor{Light: "#9a9aa5", Dark: "#2d2f3a"}
+	colSelBg      = lipgloss.AdaptiveColor{Light: "#a9bdf0", Dark: "#2f395e"}
 
 	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
 	cowStyle    = lipgloss.NewStyle().Foreground(colMute)
@@ -32,12 +33,14 @@ var (
 	infoFlashStyle  = lipgloss.NewStyle().Foreground(colFg).Bold(true)
 	errorFlashStyle = lipgloss.NewStyle().Foreground(colDanger).Bold(true)
 
-	dotWorkingStyle = lipgloss.NewStyle().Foreground(colWorking)
-	dotWaitingStyle = lipgloss.NewStyle().Foreground(colWaiting)
-	dotParkedStyle  = lipgloss.NewStyle().Foreground(colParked)
-	dotWorking      = dotWorkingStyle.Render("⬤")
-	dotWaiting      = dotWaitingStyle.Render("⬤")
-	dotParked       = dotParkedStyle.Render("⬤")
+	dotWorkingStyle    = lipgloss.NewStyle().Foreground(colWorking)
+	dotWaitingStyle    = lipgloss.NewStyle().Foreground(colWaiting)
+	dotNeedsInputStyle = lipgloss.NewStyle().Foreground(colNeedsInput)
+	dotParkedStyle     = lipgloss.NewStyle().Foreground(colParked)
+	dotWorking         = dotWorkingStyle.Render("⬤")
+	dotWaiting         = dotWaitingStyle.Render("⬤")
+	dotNeedsInput      = dotNeedsInputStyle.Render("⬤")
+	dotParked          = dotParkedStyle.Render("⬤")
 
 	iconTicketStyle = lipgloss.NewStyle().Foreground(colMute)
 	iconPRStyle     = lipgloss.NewStyle().Foreground(colMute)

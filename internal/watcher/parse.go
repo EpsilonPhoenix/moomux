@@ -46,6 +46,8 @@ func classify(rs rawSession) State {
 		return Waiting
 	}
 	switch {
+	case rs.Status == "needs-input":
+		return NeedsInput
 	case rs.Status == "busy", rs.Status == "working", rs.State == "busy":
 		return Working
 	case rs.Status == "idle", rs.Status == "waiting", rs.State == "idle":

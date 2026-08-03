@@ -18,6 +18,10 @@ const (
 	Parked
 	Waiting
 	Working
+	// NeedsInput means the agent is blocked on the user: a permission
+	// prompt, an idle-prompt timeout, or similar. Ranked above Working so a
+	// stale "busy" write from the agent's own status file never hides it.
+	NeedsInput
 )
 
 func (s State) String() string {
@@ -28,6 +32,8 @@ func (s State) String() string {
 		return "waiting"
 	case Working:
 		return "working"
+	case NeedsInput:
+		return "needs-input"
 	}
 	return "unknown"
 }

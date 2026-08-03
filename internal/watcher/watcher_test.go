@@ -121,6 +121,43 @@ func TestStateString(t *testing.T) {
 	}
 }
 
+func TestClassifyNeedsInput(t *testing.T) {
+	if got := classify(rawSession{Status: "needs-input"}); got != NeedsInput {
+		t.Fatalf("status needs-input: got %v", got)
+	}
+}
+
+func TestWatcherTickNeedsInputWinsOverStaleBusy(t *testing.T) {
+	// The claudehook marker file and Claude's own <pid>.json can disagree
+	// within the same tick (e.g. a Notification hook fired but the native
+	// status file hasn't caught up yet) — NeedsInput must win so a stale
+	// "busy" write never hides it.
+	dir := t.TempDir()
+	writeJSON(t, filepath.Join(dir, "pid.json"), map[string]any{
+		"cwd":    "/tmp/wt-a",
+		"status": "busy",
+	})
+	writeJSON(t, filepath.Join(dir, "sess.notify.json"), map[string]any{
+		"cwd":    "/tmp/wt-a",
+		"status": "needs-input",
+	})
+
+	w := &DirWatcher{Dir: dir, Interval: 10 * time.Millisecond}
+	ch := make(chan Snapshot, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	go w.Run(ctx, ch)
+
+	select {
+	case snap := <-ch:
+		if got := snap.States["/tmp/wt-a"]; got != NeedsInput {
+			t.Fatalf("got %v, want NeedsInput", got)
+		}
+	case <-ctx.Done():
+		t.Fatal("no snapshot received")
+	}
+}
+
 func TestClassifyUnrecognizedIsUnknown(t *testing.T) {
 	// A status we don't recognize is not evidence of idleness; Unknown loses
 	// the max-merge against any real signal instead of masquerading as Waiting.
