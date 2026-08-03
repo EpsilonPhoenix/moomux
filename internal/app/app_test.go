@@ -73,6 +73,26 @@ func (f *fakeTerminal) OpenSession(tmuxSession, title string) (string, error) {
 	return f.hint, f.err
 }
 
+// fakeTabTerminal implements terminal.TabReopener, mimicking iTerm2: it
+// records the tabID it was asked to reopen and always claims to find it
+// (or, if newTabID is set, reports it as freshly created instead).
+type fakeTabTerminal struct {
+	gotTabID string
+	newTabID string
+}
+
+func (f *fakeTabTerminal) OpenSession(tmuxSession, title string) (string, error) {
+	return "", nil
+}
+
+func (f *fakeTabTerminal) OpenTab(tabID, tmuxSession, title string) (string, string, error) {
+	f.gotTabID = tabID
+	if f.newTabID != "" {
+		return f.newTabID, "", nil
+	}
+	return tabID, "", nil
+}
+
 // noBranch marks the rev-parse existence check for branch as failing, i.e.
 // "branch does not exist yet" — the normal case when creating a session.
 func noBranch(fr *fakeGitRunner, branch string) {
@@ -535,6 +555,47 @@ func TestOpenSessionAlive(t *testing.T) {
 	}
 	if len(term.calls) != 1 {
 		t.Fatalf("terminal calls = %v", term.calls)
+	}
+}
+
+func TestOpenSessionReusesStoredItermTab(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
+	fakeTab := &fakeTabTerminal{}
+	a.Terminal = fakeTab
+	_ = a.Store.Put(session.Session{
+		ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat",
+		WorktreePath: "/wt/feat", TermTabID: "tab-42",
+	})
+	tm.out["list-panes -t =moomux-feat: -F #{pane_current_path}"] = "/wt/feat\n"
+
+	if _, err := a.OpenSession("demo:feat"); err != nil {
+		t.Fatal(err)
+	}
+	if fakeTab.gotTabID != "tab-42" {
+		t.Fatalf("want stored tab id passed through, got %q", fakeTab.gotTabID)
+	}
+	s, _ := a.Store.Get("demo:feat")
+	if s.TermTabID != "tab-42" {
+		t.Fatalf("want tab id unchanged in store, got %q", s.TermTabID)
+	}
+}
+
+func TestOpenSessionStoresNewItermTabWhenOldOneGone(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
+	fakeTab := &fakeTabTerminal{newTabID: "tab-99"}
+	a.Terminal = fakeTab
+	_ = a.Store.Put(session.Session{
+		ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat",
+		WorktreePath: "/wt/feat", TermTabID: "tab-42",
+	})
+	tm.out["list-panes -t =moomux-feat: -F #{pane_current_path}"] = "/wt/feat\n"
+
+	if _, err := a.OpenSession("demo:feat"); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := a.Store.Get("demo:feat")
+	if s.TermTabID != "tab-99" {
+		t.Fatalf("want new tab id persisted, got %q", s.TermTabID)
 	}
 }
 

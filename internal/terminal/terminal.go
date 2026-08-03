@@ -15,6 +15,28 @@ type TerminalOpener interface {
 	OpenSession(tmuxSession, title string) (hint string, err error)
 }
 
+// TabReopener is an optional capability: implement it on a TerminalOpener
+// whose terminal has an addressable tab/window concept and exposes a way to
+// bring a specific one back to the front (currently just iTerm2, via
+// AppleScript; kitty's `kitten @ focus-tab --match id:N` and wezterm's
+// `wezterm cli activate-pane --pane-id N` are candidates once someone
+// wants it). Callers (see app.go's openTerminal) type-assert for this
+// interface rather than calling it directly, so terminals without the
+// capability are unaffected.
+//
+// OpenTab brings tabID back to the front instead of always creating a new
+// tab; if tabID is empty or no longer exists, it falls back to opening a
+// fresh tab/window and returns its id so the caller can remember it for
+// next time. tabID is an opaque per-implementation handle, not necessarily
+// a literal "tab id" — iTerm2's AppleScript tab objects have no id
+// property, so itermClient uses the id of the tab's session instead (see
+// its OpenTab doc comment). Future implementers should pick whatever
+// stable handle their terminal actually exposes, not assume "tab id" means
+// a tab-scoped identifier.
+type TabReopener interface {
+	OpenTab(tabID, tmuxSession, title string) (newTabID, hint string, err error)
+}
+
 // Detect returns the best TerminalOpener for the current environment by
 // inspecting well-known environment variables.
 func Detect() TerminalOpener {
