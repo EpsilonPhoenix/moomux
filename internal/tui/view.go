@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/erickgnclvs/moomux/internal/watcher"
 )
 
 // narrowWidthBreak is the terminal width below which the list and detail
@@ -392,7 +394,18 @@ func (m *Model) View() string {
 }
 
 func (m *Model) renderHeader() string {
-	cow := cowStyle.Render("  ^__^\n  (oo)\\_\n  (__)\\ )")
+	eyes := "oo"
+	if len(m.sessions) > 0 && m.cursor < len(m.sessions) {
+		switch m.effectiveState(m.sessions[m.cursor]) {
+		case watcher.Working:
+			eyes = "**"
+		case watcher.Waiting:
+			eyes = "oo"
+		default:
+			eyes = "--"
+		}
+	}
+	cow := cowStyle.Render("  ^__^\n  (" + eyes + ")\\_\n  (__)\\ )")
 	left := cow
 	if m.width >= narrowWidthBreak {
 		wordmark := titleStyle.Render("moomux")
