@@ -503,6 +503,16 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case key.Matches(msg, m.keys.New):
+		if m.busy {
+			// A session create is already in flight; opening another form here
+			// would let its submit fire a second, concurrent osascript call
+			// into iTerm2 before the first tab/window has settled — iTerm2
+			// resolves "current window"/"current tab" racily while it's still
+			// launching, so the second AppleScript can land its "tmux attach"
+			// in the tab the first one just created instead of a new one (see
+			// terminal/iterm.go's createTab).
+			return m.flashError(fmt.Errorf("still creating the previous session — wait for it to finish"))
+		}
 		if len(m.projects) == 0 {
 			return m.flashError(fmt.Errorf("no projects configured — press / then n to add one"))
 		}
