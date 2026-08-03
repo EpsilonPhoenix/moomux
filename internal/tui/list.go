@@ -34,6 +34,9 @@ func (m *Model) renderList(width, height int) (string, []linkHit) {
 		empty = "  no projects yet — press / then n to add one"
 	} else if m.showArchived {
 		title = "ARCHIVED"
+		if m.allSessions {
+			title = "ALL ARCHIVED"
+		}
 		empty = "  no archived sessions"
 	} else if !m.allSessions {
 		if n := m.archivedCount(); n > 0 {
