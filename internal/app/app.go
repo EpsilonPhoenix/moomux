@@ -273,7 +273,7 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 		return session.Session{}, "", fmt.Errorf("tmux new-session: %w", err)
 	}
 	slog.Info("tmux session created", "name", tmuxName)
-	hint, err := a.Terminal.OpenSession(tmuxName, name)
+	tabID, hint, err := a.openTerminal("", tmuxName, name)
 	if err != nil {
 		// The worktree and tmux session already exist at this point;
 		// failing would strand them outside the store. Degrade to a
@@ -295,6 +295,7 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 		Agent:        agent,
 		AgentPort:    agentPort,
 		Ticket:       ticket,
+		TermTabID:    tabID,
 	}
 	if err := a.Store.Put(s); err != nil {
 		slog.Error("store put failed", "id", s.ID, "err", err)
@@ -432,14 +433,32 @@ func (a *App) OpenSession(id string) (string, error) {
 		}
 	}
 	a.Tmux.ConfigureTitleTracking(s.TmuxSession, s.Name)
-	hint, err := a.Terminal.OpenSession(s.TmuxSession, s.Name)
+	tabID, hint, err := a.openTerminal(s.TermTabID, s.TmuxSession, s.Name)
 	if err != nil {
 		// The tmux session is up regardless; give the user a way in.
 		slog.Error("Terminal.OpenSession failed", "id", id, "tmux_session", s.TmuxSession, "name", s.Name, "err", err)
 		hint = fmt.Sprintf("couldn't open a terminal (%v) — attach yourself: tmux attach -t %s", err, s.TmuxSession)
 	}
+	if tabID != s.TermTabID {
+		s.TermTabID = tabID
+		if err := a.Store.Put(s); err != nil {
+			slog.Error("store iterm tab id failed", "id", id, "err", err)
+		}
+	}
 	slog.Info("session opened", "id", id)
 	return hint, nil
+}
+
+// openTerminal opens tmuxSession in a terminal, reusing tabID if the
+// terminal supports jumping back to a specific tab (currently just
+// iTerm2). Returns the tab id to remember for next time — empty for
+// terminals without tab addressing.
+func (a *App) openTerminal(tabID, tmuxSession, name string) (newTabID, hint string, err error) {
+	if reopener, ok := a.Terminal.(terminal.TabReopener); ok {
+		return reopener.OpenTab(tabID, tmuxSession, name)
+	}
+	hint, err = a.Terminal.OpenSession(tmuxSession, name)
+	return "", hint, err
 }
 
 // TmuxAliveAll returns id→alive for every stored session using a single
@@ -632,7 +651,6 @@ func pathWithin(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
-
 
 func (a *App) DeleteSession(id string) error {
 	s, ok := a.Store.Get(id)

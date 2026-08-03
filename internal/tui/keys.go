@@ -26,10 +26,8 @@ type KeyMap struct {
 	Quit           key.Binding
 	Cancel         key.Binding
 	Confirm        key.Binding
-	NewProject     key.Binding
 	DelProject     key.Binding
 	EditSession    key.Binding
-	EditProject    key.Binding
 	Tag            key.Binding
 	Enter          key.Binding
 	Left           key.Binding
@@ -39,6 +37,7 @@ type KeyMap struct {
 	FormDown       key.Binding
 	Help           key.Binding
 	RemoteLinks    key.Binding
+	ProjectPicker  key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -77,10 +76,8 @@ func DefaultKeyMap() KeyMap {
 		Quit:           key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 		Cancel:         key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
 		Confirm:        key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "confirm")),
-		NewProject:     key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "add project")),
 		DelProject:     key.NewBinding(key.WithKeys("D"), key.WithHelp("D", "remove project")),
 		EditSession:    key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit session")),
-		EditProject:    key.NewBinding(key.WithKeys("E"), key.WithHelp("E", "edit project")),
 		Tag:            key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "tag")),
 		Enter:          key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "submit")),
 		Left:           key.NewBinding(key.WithKeys("left"), key.WithHelp("←", "left")),
@@ -91,5 +88,15 @@ func DefaultKeyMap() KeyMap {
 		FormDown:    key.NewBinding(key.WithKeys("down"), key.WithHelp("↓", "down")),
 		Help:        key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 		RemoteLinks: key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "toggle ticket/PR link copy")),
+		// Jumps straight to any project by name instead of stepping through
+		// tabs one at a time with Tab/]/[ — the only way to reach a project
+		// that isn't currently active without cycling past every one in between.
+		// Adding/editing a project only happens from here now — there's no
+		// main-list equivalent (see DelProject, which is the one project
+		// action that still works from the main list too). Add-project inside
+		// the picker reuses New ("n") rather than a separate binding — same
+		// key, and the picker has no session-level "n" shown alongside it to
+		// collide with.
+		ProjectPicker: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "pick project")),
 	}
 }

@@ -71,9 +71,11 @@ func (m *Model) helpGroups() []helpGroup {
 		{
 			title: "Projects",
 			entries: []helpEntry{
-				{"P", "add project"},
-				{"E", "edit project"},
+				{"/", "pick project"},
 				{"D", "remove project"},
+				// Adding/editing a project only happens inside the picker —
+				// there's no main-list P/E anymore.
+				{"n/e/d", "add/edit/remove (picker)"},
 			},
 		},
 		{

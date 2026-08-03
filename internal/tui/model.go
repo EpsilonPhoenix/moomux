@@ -61,6 +61,7 @@ const (
 	ModeHelp
 	ModeEditSession
 	ModeEditProject
+	ModeProjectPicker
 )
 
 var agentChoices = []string{"claude", "codex", "opencode"}
@@ -157,11 +158,19 @@ type Model struct {
 	sessionForm     sessionForm
 	editProjectName string
 	tagForm         tagForm
-	pending         pendingProject
-	flash           string
-	flashKind       string // "info" or "error"
-	flashTime       time.Time
-	busy            bool // true while a background op (e.g. session create) is in flight; suppresses flash expiry
+	pickerCursor    int // index into m.projects while ModeProjectPicker is open
+	// projectDialogReturn is where ModeConfirmDeleteProject/ModeEditProject/
+	// ModeNewProject send the user back to (cancel, error, or success) —
+	// ModeList when P/D/E was pressed there, ModeProjectPicker when
+	// p/d/e was pressed in the picker. Also read by finishProjectAdded to
+	// decide whether a successful add returns to the picker or opens the
+	// new-session form.
+	projectDialogReturn Mode
+	pending             pendingProject
+	flash               string
+	flashKind           string // "info" or "error"
+	flashTime           time.Time
+	busy                bool // true while a background op (e.g. session create) is in flight; suppresses flash expiry
 	// forceCopyLinks overrides browser.Remote()'s auto-detection, forcing
 	// ticket/PR clicks to copy instead of open. Auto-detection has no
 	// signal at all for transports like mosh that don't set SSH_TTY/
@@ -343,6 +352,9 @@ func (m *Model) refreshProjects() {
 	if m.activeProj >= len(m.projects) {
 		m.activeProj = 0
 	}
+	if m.pickerCursor >= len(m.projects) {
+		m.pickerCursor = 0
+	}
 }
 
 // newProjectForm builds the add-project form, pre-filling name/repo from the
@@ -413,7 +425,13 @@ func (m *Model) projectSessionCount() int {
 	if len(m.projects) == 0 {
 		return 0
 	}
-	proj := m.projects[m.activeProj]
+	return m.projectSessionCountFor(m.projects[m.activeProj])
+}
+
+// projectSessionCountFor is projectSessionCount for an arbitrary project
+// name, used by the project picker to check a highlighted project that may
+// not be the active one.
+func (m *Model) projectSessionCountFor(proj string) int {
 	n := 0
 	for _, s := range m.backend.Sessions() {
 		if s.Project == proj {

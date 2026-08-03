@@ -21,13 +21,14 @@ type Session struct {
 	WorktreePath string    `json:"worktree_path"`
 	TmuxSession  string    `json:"tmux_session"`
 	CreatedAt    time.Time `json:"created_at"`
-	Agent        string    `json:"agent,omitempty"`      // "claude", "codex", "opencode"; empty = "claude"
-	AgentPort    int       `json:"agent_port,omitempty"` // HTTP port for OpenCode API; 0 = not applicable
-	Ticket       string    `json:"ticket,omitempty"`     // ticket URL (e.g. Asana, Jira, Linear)
-	PR           string    `json:"pr,omitempty"`         // pull request URL (e.g. GitHub, GitLab)
-	Order        int64     `json:"order,omitempty"`      // manual sort position within a project; 0 = unset, falls back to CreatedAt
-	Archived     bool      `json:"archived,omitempty"`   // hidden from the default list, but not deleted
-	NewBranch    bool      `json:"new_branch,omitempty"` // true if moomux created Branch fresh (vs. checking out an existing one); safe to delete on session delete
+	Agent        string    `json:"agent,omitempty"`       // "claude", "codex", "opencode"; empty = "claude"
+	AgentPort    int       `json:"agent_port,omitempty"`  // HTTP port for OpenCode API; 0 = not applicable
+	Ticket       string    `json:"ticket,omitempty"`      // ticket URL (e.g. Asana, Jira, Linear)
+	PR           string    `json:"pr,omitempty"`          // pull request URL (e.g. GitHub, GitLab)
+	Order        int64     `json:"order,omitempty"`       // manual sort position within a project; 0 = unset, falls back to CreatedAt
+	Archived     bool      `json:"archived,omitempty"`    // hidden from the default list, but not deleted
+	NewBranch    bool      `json:"new_branch,omitempty"`  // true if moomux created Branch fresh (vs. checking out an existing one); safe to delete on session delete
+	TermTabID    string    `json:"term_tab_id,omitempty"` // terminal-specific tab/window id this session was last opened in (currently only iTerm2 sets it); lets reopen jump back to it instead of creating a new tab
 }
 
 // AgentName returns the effective agent name, defaulting to "claude" for legacy sessions.

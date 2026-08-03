@@ -216,7 +216,8 @@ func TestNewProjectFlow(t *testing.T) {
 	be := &fakeBackend{}
 	m := newTestModel(be)
 
-	m.Update(keyRune("P"))
+	m.Update(slashKey())
+	m.Update(keyRune("n"))
 	if m.mode != ModeNewProject {
 		t.Fatalf("mode = %v", m.mode)
 	}
@@ -253,7 +254,7 @@ func TestNewProjectFlow(t *testing.T) {
 	if got.name != "newproj" || got.p != want {
 		t.Fatalf("call = %+v", got)
 	}
-	if m.mode != ModeNewForm || !strings.Contains(m.flash, "added project newproj") {
+	if m.mode != ModeProjectPicker || !strings.Contains(m.flash, "added project newproj") {
 		t.Fatalf("mode=%v flash=%q", m.mode, m.flash)
 	}
 }
@@ -265,7 +266,8 @@ func TestNewProjectFlow(t *testing.T) {
 func TestNewProjectEmojiSelectorDefaultsToAutoAndCycles(t *testing.T) {
 	be := &fakeBackend{}
 	m := newTestModel(be)
-	m.Update(keyRune("P"))
+	m.Update(slashKey())
+	m.Update(keyRune("n"))
 	m.projForm.inputs[0].SetValue("newproj")
 	m.projForm.inputs[1].SetValue("/tmp/newproj")
 
@@ -276,7 +278,8 @@ func TestNewProjectEmojiSelectorDefaultsToAutoAndCycles(t *testing.T) {
 
 	be.addProjectCalls = nil
 	m.mode = ModeList
-	m.Update(keyRune("P"))
+	m.Update(slashKey())
+	m.Update(keyRune("n"))
 	m.projForm.inputs[0].SetValue("newproj2")
 	m.projForm.inputs[1].SetValue("/tmp/newproj2")
 	m.projForm.focus = projFormInputCount
@@ -353,7 +356,8 @@ func TestEditProjectFlow(t *testing.T) {
 	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
 	m.width, m.height = 100, 32
 
-	m.Update(keyRune("E"))
+	m.Update(slashKey())
+	m.Update(keyRune("e"))
 	if m.mode != ModeEditProject {
 		t.Fatalf("mode = %v", m.mode)
 	}
@@ -384,7 +388,7 @@ func TestEditProjectFlow(t *testing.T) {
 		got.p.Agent != "opencode" || !got.p.NoWorktree {
 		t.Fatalf("call = %+v", got)
 	}
-	if m.mode != ModeList || !strings.Contains(m.flash, "updated project demo") {
+	if m.mode != ModeProjectPicker || !strings.Contains(m.flash, "updated project demo") {
 		t.Fatalf("mode=%v flash=%q", m.mode, m.flash)
 	}
 }
@@ -392,13 +396,14 @@ func TestEditProjectFlow(t *testing.T) {
 func TestEditProjectCancelAndError(t *testing.T) {
 	be := &fakeBackend{updateProjectErr: errors.New("not a git repo")}
 	m := newTestModel(be)
-	m.Update(keyRune("E"))
+	m.Update(slashKey())
+	m.Update(keyRune("e"))
 	press(m, tea.KeyEsc)
-	if m.mode != ModeList || len(be.updateProjectCalls) != 0 {
+	if m.mode != ModeProjectPicker || len(be.updateProjectCalls) != 0 {
 		t.Fatalf("mode=%v calls=%v", m.mode, be.updateProjectCalls)
 	}
 
-	m.Update(keyRune("E"))
+	m.Update(keyRune("e")) // still in the picker after the cancel above
 	m.Update(tea.WindowSizeMsg{Width: 50, Height: 12})
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.mode != ModeEditProject || !strings.Contains(m.projForm.err, "not a git repo") {
@@ -417,7 +422,8 @@ func TestEditPlainProjectShowsOnlyRepoAndAgent(t *testing.T) {
 	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
 	m.width, m.height = 80, 24
 
-	m.Update(keyRune("E"))
+	m.Update(slashKey())
+	m.Update(keyRune("e"))
 	view := m.View()
 	for _, hidden := range []string{"base branch:", "branch prefix:", "worktrees:"} {
 		if strings.Contains(view, hidden) {
@@ -455,7 +461,8 @@ func TestEditProjectPreservesOutOfPaletteEmoji(t *testing.T) {
 	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
 	m.width, m.height = 80, 24
 
-	m.Update(keyRune("E"))
+	m.Update(slashKey())
+	m.Update(keyRune("e"))
 	m.projForm.inputs[1].SetValue("/tmp/notes2") // touch an unrelated field
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
 
@@ -470,7 +477,8 @@ func TestEditProjectPreservesOutOfPaletteEmoji(t *testing.T) {
 func TestNewProjectTabCyclesFocus(t *testing.T) {
 	be := &fakeBackend{}
 	m := newTestModel(be)
-	m.Update(keyRune("P"))
+	m.Update(slashKey())
+	m.Update(keyRune("n"))
 	total := projFormInputCount + 3
 	for i := 1; i < total; i++ {
 		press(m, tea.KeyTab)
@@ -487,7 +495,7 @@ func TestNewProjectTabCyclesFocus(t *testing.T) {
 		t.Fatalf("focus = %d", m.projForm.focus)
 	}
 	press(m, tea.KeyEsc)
-	if m.mode != ModeList {
+	if m.mode != ModeProjectPicker {
 		t.Fatalf("mode = %v", m.mode)
 	}
 }
@@ -495,7 +503,8 @@ func TestNewProjectTabCyclesFocus(t *testing.T) {
 func TestNewProjectNotGitRepoOffersInit(t *testing.T) {
 	be := &fakeBackend{addProjectErr: gitwt.ErrNotGitRepo}
 	m := newTestModel(be)
-	m.Update(keyRune("P"))
+	m.Update(slashKey())
+	m.Update(keyRune("n"))
 	m.projForm.inputs[0].SetValue("newproj")
 	m.projForm.inputs[1].SetValue("/tmp/newproj")
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -511,7 +520,7 @@ func TestNewProjectNotGitRepoOffersInit(t *testing.T) {
 	if len(be.initProjectCalls) != 1 || be.initProjectCalls[0].name != "newproj" {
 		t.Fatalf("initProjectCalls = %v", be.initProjectCalls)
 	}
-	if m.mode != ModeNewForm || !strings.Contains(m.flash, "initialized git repo") {
+	if m.mode != ModeProjectPicker || !strings.Contains(m.flash, "initialized git repo") {
 		t.Fatalf("mode=%v flash=%q", m.mode, m.flash)
 	}
 }
@@ -519,7 +528,8 @@ func TestNewProjectNotGitRepoOffersInit(t *testing.T) {
 func TestProjectInitChoicePlainAndBack(t *testing.T) {
 	be := &fakeBackend{addProjectErr: gitwt.ErrNotGitRepo}
 	m := newTestModel(be)
-	m.Update(keyRune("P"))
+	m.Update(slashKey())
+	m.Update(keyRune("n"))
 	m.projForm.inputs[0].SetValue("plainy")
 	m.projForm.inputs[1].SetValue("/tmp/plainy")
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -538,7 +548,7 @@ func TestProjectInitChoicePlainAndBack(t *testing.T) {
 	if len(be.plainCalls) != 1 || be.plainCalls[0].name != "plainy" {
 		t.Fatalf("plainCalls = %v", be.plainCalls)
 	}
-	if m.mode != ModeNewForm || !strings.Contains(m.flash, "plain") {
+	if m.mode != ModeProjectPicker || !strings.Contains(m.flash, "plain") {
 		t.Fatalf("mode=%v flash=%q", m.mode, m.flash)
 	}
 }
@@ -546,7 +556,8 @@ func TestProjectInitChoicePlainAndBack(t *testing.T) {
 func TestProjectInitChoiceInitErrorReturnsToForm(t *testing.T) {
 	be := &fakeBackend{addProjectErr: gitwt.ErrNotGitRepo, initProjectErr: errors.New("mkdir denied")}
 	m := newTestModel(be)
-	m.Update(keyRune("P"))
+	m.Update(slashKey())
+	m.Update(keyRune("n"))
 	m.projForm.inputs[0].SetValue("p")
 	m.projForm.inputs[1].SetValue("/tmp/p")
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -559,7 +570,8 @@ func TestProjectInitChoiceInitErrorReturnsToForm(t *testing.T) {
 func TestNewProjectPlainAddError(t *testing.T) {
 	be := &fakeBackend{addProjectErr: errors.New("name taken")}
 	m := newTestModel(be)
-	m.Update(keyRune("P"))
+	m.Update(slashKey())
+	m.Update(keyRune("n"))
 	m.projForm.inputs[0].SetValue("dup")
 	m.projForm.inputs[1].SetValue("/tmp/dup")
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})

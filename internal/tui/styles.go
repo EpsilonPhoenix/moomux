@@ -13,11 +13,10 @@ var (
 	colBorder  = lipgloss.AdaptiveColor{Light: "#9a9aa5", Dark: "#2d2f3a"}
 	colSelBg   = lipgloss.AdaptiveColor{Light: "#a9bdf0", Dark: "#2f395e"}
 
-	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
-	cowStyle    = lipgloss.NewStyle().Foreground(colMute)
-	muteStyle   = lipgloss.NewStyle().Foreground(colMute)
-	tabActive   = lipgloss.NewStyle().Bold(true).Foreground(colAccent).Padding(0, 1)
-	tabInactive = lipgloss.NewStyle().Foreground(colMute).Padding(0, 1)
+	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
+	cowStyle   = lipgloss.NewStyle().Foreground(colMute)
+	muteStyle  = lipgloss.NewStyle().Foreground(colMute)
+	tabActive  = lipgloss.NewStyle().Bold(true).Foreground(colAccent).Padding(0, 1)
 
 	listRow         = lipgloss.NewStyle().Padding(0, 1)
 	listRowSelected = lipgloss.NewStyle().Padding(0, 1).Background(colSelBg).Foreground(colFg).Bold(true)

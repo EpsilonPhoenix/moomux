@@ -55,7 +55,13 @@ func TestRenderRowLinkHitOffsetsAccountForProjectLabel(t *testing.T) {
 // name text isn't given its own explicit style, wipes out any background
 // applied before it, leaving a gap in the highlight.
 func TestRenderRowSelectedBackgroundCoversWholeRow(t *testing.T) {
-	lipgloss.SetColorProfile(2) // force SGR codes to be emitted regardless of terminal detection
+	// Force SGR codes to be emitted regardless of terminal detection; this is
+	// process-global state, so it must be restored or every later test in
+	// this package's binary renders with a different color profile than it
+	// expects.
+	orig := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(2)
+	defer lipgloss.SetColorProfile(orig)
 	s := session.Session{Name: "feature-auth"}
 	row, _ := renderRow(s, watcher.Parked, 40, true, "🚀")
 	rendered := listRowSelected.Render(row)

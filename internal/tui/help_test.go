@@ -18,6 +18,12 @@ func TestHelpToggle(t *testing.T) {
 		{ID: "demo:a", Project: "demo", Name: "a", Ticket: "https://example/T-1"},
 	}}
 	m := newTestModel(be)
+	// The help overlay lists every command across two side-by-side columns;
+	// at newTestModel's default 24 rows it's genuinely too short to show the
+	// full list without scrolling (the R row alone wraps to 3 lines). Use a
+	// height tall enough to render the whole thing in one View() call, same
+	// as most real terminals.
+	m.height = 34
 
 	if m.mode != ModeList {
 		t.Fatalf("expected ModeList initially, got %v", m.mode)
@@ -41,7 +47,10 @@ func TestHelpToggle(t *testing.T) {
 	if !strings.Contains(view, "moomux commands") {
 		t.Fatalf("help view missing title, got:\n%s", view)
 	}
-	if !strings.Contains(view, "edit session") || !strings.Contains(view, "edit project") {
+	// "picker" alone rather than a longer phrase: the description column
+	// wraps at a width that depends on the overlay's layout, and a longer
+	// phrase can end up split across lines by that wrap.
+	if !strings.Contains(view, "edit session") || !strings.Contains(view, "picker") {
 		t.Fatalf("help view missing edit commands, got:\n%s", view)
 	}
 	if m.linkHits != nil {

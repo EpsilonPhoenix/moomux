@@ -31,7 +31,7 @@ func (m *Model) renderList(width, height int) (string, []linkHit) {
 		empty = "  no sessions — press n to create"
 	}
 	if len(m.projects) == 0 {
-		empty = "  no projects yet — press P to add one"
+		empty = "  no projects yet — press / then n to add one"
 	} else if m.showArchived {
 		title = "ARCHIVED"
 		empty = "  no archived sessions"
