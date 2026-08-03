@@ -195,6 +195,39 @@ func TestNewSessionFormAppendsTicketAndPRToFirstPrompt(t *testing.T) {
 	}
 }
 
+// TestNewSessionCreateInFlightBlocksSecondForm guards against the race where
+// submitting a second "new session" form while the first CreateSession call
+// is still in flight (e.g. still creating the tmux session/terminal) lets
+// both calls run concurrently before the first is registered in the store —
+// producing two sessions that collide on the same tmux session name.
+func TestNewSessionCreateInFlightBlocksSecondForm(t *testing.T) {
+	be := &fakeBackend{}
+	m := newTestModel(be)
+
+	m.Update(keyRune("n"))
+	typeText(m, "myfeat")
+	_, cmd := press(m, tea.KeyEnter)
+	if cmd == nil {
+		t.Fatalf("expected a create command")
+	}
+	cmd() // runs backend.CreateSession, but the result message isn't fed back — call is still "in flight"
+	if len(be.createCalls) != 1 || m.mode != ModeList || !m.busy {
+		t.Fatalf("after first submit: calls=%v mode=%v busy=%v", be.createCalls, m.mode, m.busy)
+	}
+
+	m.Update(keyRune("n"))
+	if m.mode != ModeList {
+		t.Fatalf("second 'n' opened the form while a create was still in flight: mode=%v", m.mode)
+	}
+	if m.flashKind != "error" || !strings.Contains(m.flash, "still creating") {
+		t.Fatalf("flash = %q (%s)", m.flash, m.flashKind)
+	}
+	press(m, tea.KeyEnter)
+	if len(be.createCalls) != 1 {
+		t.Fatalf("createCalls = %v, want still 1 (second submit must not have fired)", be.createCalls)
+	}
+}
+
 func TestNewSessionFormEmptySubmitIsNoop(t *testing.T) {
 	be := &fakeBackend{}
 	m := newTestModel(be)

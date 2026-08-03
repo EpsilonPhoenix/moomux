@@ -13,7 +13,20 @@ import (
 	"github.com/erickgnclvs/moomux/internal/browser"
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/gitwt"
+	"github.com/erickgnclvs/moomux/internal/watcher"
 )
+
+// updateTitlesCmd pushes each changed session's new status to its tmux
+// window name in the background (rename-window shells out, so this stays
+// off the Update goroutine).
+func updateTitlesCmd(backend Backend, changed map[string]watcher.State) tea.Cmd {
+	return func() tea.Msg {
+		for id, st := range changed {
+			_ = backend.SetSessionStatusTitle(id, st)
+		}
+		return nil
+	}
+}
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -52,7 +65,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setFlash("error", warning)
 			}
 		}
-		return m, tea.Batch(listenStatus(m.statusCh), refreshStatusCmd(m))
+		changedTitles := map[string]watcher.State{}
+		for _, s := range m.backend.Sessions() {
+			st := m.effectiveState(s)
+			if prev, ok := m.titleState[s.ID]; !ok || prev != st {
+				m.titleState[s.ID] = st
+				changedTitles[s.ID] = st
+			}
+		}
+		cmds := []tea.Cmd{listenStatus(m.statusCh), refreshStatusCmd(m)}
+		if len(changedTitles) > 0 {
+			cmds = append(cmds, updateTitlesCmd(m.backend, changedTitles))
+		}
+		return m, tea.Batch(cmds...)
 
 	case StatusRefreshedMsg:
 		m.tmuxAlive = msg.TmuxAlive
@@ -508,6 +533,16 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case key.Matches(msg, m.keys.New):
+		if m.busy {
+			// A session create is already in flight; opening another form here
+			// would let its submit fire a second, concurrent osascript call
+			// into iTerm2 before the first tab/window has settled — iTerm2
+			// resolves "current window"/"current tab" racily while it's still
+			// launching, so the second AppleScript can land its "tmux attach"
+			// in the tab the first one just created instead of a new one (see
+			// terminal/iterm.go's createTab).
+			return m.flashError(fmt.Errorf("still creating the previous session — wait for it to finish"))
+		}
 		if len(m.projects) == 0 {
 			return m.flashError(fmt.Errorf("no projects configured — press / then n to add one"))
 		}

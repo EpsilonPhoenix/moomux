@@ -183,6 +183,14 @@ func (c *Client) SendLiteral(session, text string) error {
 	return err
 }
 
+// SetWindowName renames session's window. ConfigureTitleTracking already
+// turned on set-titles/set-titles-string for the window, so terminals whose
+// tab title tracks it (iTerm2, kitty, etc.) pick up the new name automatically.
+func (c *Client) SetWindowName(session, name string) error {
+	_, err := c.Runner.Run("rename-window", "-t", exactWindow(session), name)
+	return err
+}
+
 // ConfigureTitleTracking ensures the tmux session keeps its window name stable
 // and continuously emits it as the terminal title. Safe to call on existing
 // sessions — idempotent tmux set-option calls never break anything.

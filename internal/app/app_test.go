@@ -14,6 +14,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/gitwt"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/tmux"
+	"github.com/erickgnclvs/moomux/internal/watcher"
 )
 
 // fakeGitRunner records git invocations. Keys in failOn (joined args, without
@@ -1139,6 +1140,27 @@ func TestUpdateProjectAcceptsDefaultAgent(t *testing.T) {
 	defaulted.Agent = ""
 	if err := a.UpdateProject("demo", defaulted); err != nil {
 		t.Fatalf("default agent must be accepted: %v", err)
+	}
+}
+
+func TestSetSessionStatusTitle(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
+	s := session.Session{ID: "demo:a", Project: "demo", Name: "a", TmuxSession: "moomux-a"}
+	if err := a.Store.Put(s); err != nil {
+		t.Fatal(err)
+	}
+	tm.calls = nil
+
+	if err := a.SetSessionStatusTitle(s.ID, watcher.Working); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"rename-window", "-t", "=moomux-a:", "● a"}
+	if len(tm.calls) != 1 || !reflect.DeepEqual(tm.calls[0], want) {
+		t.Fatalf("calls = %v", tm.calls)
+	}
+
+	if err := a.SetSessionStatusTitle("demo:missing", watcher.Working); err != nil {
+		t.Fatalf("unknown session should be a no-op, got err %v", err)
 	}
 }
 
