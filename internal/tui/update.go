@@ -77,6 +77,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(changedTitles) > 0 {
 			cmds = append(cmds, updateTitlesCmd(m.backend, changedTitles))
 		}
+		if cmd := m.fetchStaleGitStatusCmd(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 		return m, tea.Batch(cmds...)
 
 	case StatusRefreshedMsg:
@@ -84,6 +87,35 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for id, p := range msg.Prompts {
 			if m.prompts[id] == "" {
 				m.prompts[id] = p
+			}
+		}
+		if !m.tmuxCheckedOnce {
+			// The startup tmux-alive check (fired immediately by Init(), not
+			// the routine 2s one) just resolved. Every session's git status
+			// is still unfetched at this point (checkedAt is zero), so this
+			// covers all of them without waiting for the first watcher tick,
+			// which may be a couple seconds off yet.
+			m.tmuxCheckedOnce = true
+			return m, m.fetchStaleGitStatusCmd()
+		}
+		return m, nil
+
+	case GitStatusMsg:
+		for id, st := range msg.Status {
+			delete(m.gitStatusPending, id)
+			// Two overlapping fetches for the same session (a routine
+			// refresh racing the delete dialog's on-demand check, say) can
+			// resolve out of order — never let an older result clobber a
+			// fresher one already recorded.
+			if cur, ok := m.gitStatus[id]; ok && !st.checkedAt.After(cur.checkedAt) {
+				continue
+			}
+			m.gitStatus[id] = st
+		}
+		if m.confirmChecking && len(m.sessions) > 0 {
+			if st, ok := msg.Status[m.sessions[m.cursor].ID]; ok {
+				m.confirmGit = st
+				m.confirmChecking = false
 			}
 		}
 		return m, nil
@@ -572,11 +604,25 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openNewSessionForm()
 	case key.Matches(msg, m.keys.Delete):
 		if len(m.sessions) > 0 {
+			id := m.sessions[m.cursor].ID
+			// Opens instantly on whatever's cached from the routine
+			// background refresh (or nothing yet) so the dialog never
+			// visibly pauses, then kicks off a fresh check of its own in the
+			// background — confirmChecking drives a small loading note in
+			// the dialog until GitStatusMsg lands and updates confirmGit for
+			// real. Deliberately not routed through fetchStaleGitStatusCmd's
+			// gitStatusPending bookkeeping: this is an explicit user action
+			// that wants the freshest answer right now, not deduped against
+			// whatever the periodic refresh happens to be doing.
+			m.confirmGit = m.gitStatus[id]
+			m.confirmAck = false
+			m.confirmChecking = true
 			m.mode = ModeConfirmDelete
 			// Without this the dialog inherits the previous overlay's scroll
 			// offset and can open with the "what you're deleting" text
 			// scrolled off-screen, leaving only "y to confirm" visible.
 			m.resetOverlayViewport()
+			return m, fetchGitStatusCmd(m.backend, []string{id})
 		}
 	case key.Matches(msg, m.keys.Archive):
 		if len(m.sessions) > 0 {
@@ -860,6 +906,18 @@ func (m *Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Confirm):
 		if len(m.sessions) == 0 {
 			m.mode = ModeList
+			return m, nil
+		}
+		if m.confirmChecking {
+			// The fresh check hasn't resolved yet — acting on whatever's
+			// cached (possibly nothing, possibly stale) would defeat the
+			// point of checking at all. Ignore y until GitStatusMsg lands.
+			return m, nil
+		}
+		if m.confirmGit.ok && (m.confirmGit.dirty || m.confirmGit.unpushed) && !m.confirmAck {
+			// First y on a dirty/unpushed worktree only acknowledges the
+			// warning; a second y is required to actually delete.
+			m.confirmAck = true
 			return m, nil
 		}
 		id := m.sessions[m.cursor].ID

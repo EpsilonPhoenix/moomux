@@ -891,6 +891,26 @@ func pathWithin(root, path string) bool {
 	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+// WorktreeStatus reports id's worktree as dirty (uncommitted changes) and/or
+// unpushed (commits missing from its upstream, including no upstream at all).
+// ok is false when status can't be determined (unknown session, or the
+// worktree isn't a git repo), in which case dirty/unpushed are meaningless.
+func (a *App) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
+	s, exists := a.Store.Get(id)
+	if !exists {
+		return false, false, false
+	}
+	clean, err := a.Git.IsWorktreeClean(s.WorktreePath)
+	if err != nil {
+		return false, false, false
+	}
+	hasUnpushed, err := a.Git.HasUnpushedCommits(s.WorktreePath)
+	if err != nil {
+		return !clean, false, true
+	}
+	return !clean, hasUnpushed, true
+}
+
 func (a *App) DeleteSession(id string) error {
 	s, ok := a.Store.Get(id)
 	if !ok {

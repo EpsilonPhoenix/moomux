@@ -99,7 +99,7 @@ func (m *Model) renderList(width, height int) (string, []linkHit, []rowHit) {
 		// short terminals, where it's hidden).
 		line := titleRows + (i - start)
 		rows = append(rows, rowHit{sessionID: s.ID, line: line})
-		row, iconHits := renderRow(s, m.effectiveState(s), width-4, selected, projectLabel)
+		row, iconHits := renderRow(s, m.effectiveState(s), width-4, selected, projectLabel, m.gitStatus[s.ID])
 		for _, h := range iconHits {
 			h.sessionID = s.ID
 			h.line = line
@@ -119,7 +119,7 @@ func (m *Model) renderList(width, height int) (string, []linkHit, []rowHit) {
 	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), hits, rows
 }
 
-func renderRow(s session.Session, st watcher.State, width int, selected bool, projectLabel string) (string, []linkHit) {
+func renderRow(s session.Session, st watcher.State, width int, selected bool, projectLabel string, git gitStatusInfo) (string, []linkHit) {
 	dotStyle := dotParkedStyle
 	switch st {
 	case watcher.Working:
@@ -129,13 +129,52 @@ func renderRow(s session.Session, st watcher.State, width int, selected bool, pr
 	case watcher.NeedsInput:
 		dotStyle = dotNeedsInputStyle
 	}
-	iconTicketStyle, iconPRStyle := iconTicketStyle, iconPRStyle
+	iconTicketStyle, iconPRStyle, gitWarnStyle := iconTicketStyle, iconPRStyle, warnStyle
 	if selected {
 		dotStyle = dotStyle.Background(colSelBg)
 		iconTicketStyle = iconTicketStyle.Background(colSelBg)
 		iconPRStyle = iconPRStyle.Background(colSelBg)
+		gitWarnStyle = gitWarnStyle.Background(colSelBg)
 	}
 	dot := dotStyle.Render("⬤")
+
+	// Candidate icons in priority order — ticket/PR are clickable links and
+	// stay longest; the git-status icons are the newest, lowest-priority
+	// addition and are the first dropped when width is tight. Building this
+	// list up front (rather than unconditionally rendering every icon) lets
+	// the loop below drop from the end until the row actually fits width,
+	// instead of just flooring nameWidth at 4 and letting a wide suffix blow
+	// through the caller's requested width on narrow terminals.
+	type iconCandidate struct {
+		style      lipgloss.Style
+		glyph, url string
+	}
+	var candidates []iconCandidate
+	if s.Ticket != "" {
+		candidates = append(candidates, iconCandidate{iconTicketStyle, "🎫", s.Ticket})
+	}
+	if s.PR != "" {
+		candidates = append(candidates, iconCandidate{iconPRStyle, "🔀", s.PR})
+	}
+	if git.ok && git.dirty {
+		candidates = append(candidates, iconCandidate{gitWarnStyle, "±", ""})
+	}
+	if git.ok && git.unpushed {
+		candidates = append(candidates, iconCandidate{gitWarnStyle, "↑", ""})
+	}
+	const minNameWidth = 4
+	dotWidth := lipgloss.Width(dot)
+	for len(candidates) > 0 {
+		iconsWidth := 0
+		for _, c := range candidates {
+			iconsWidth += lipgloss.Width(c.glyph) + 1
+		}
+		if width-1-iconsWidth-dotWidth >= minNameWidth {
+			break
+		}
+		candidates = candidates[:len(candidates)-1]
+	}
+
 	var icons string
 	var hits []linkHit
 	col := 0
@@ -145,16 +184,13 @@ func renderRow(s session.Session, st watcher.State, width int, selected bool, pr
 		icons += style.Render(glyph) + style.Render(" ")
 		col += w + 1
 	}
-	if s.Ticket != "" {
-		addIcon(iconTicketStyle, "🎫", s.Ticket)
-	}
-	if s.PR != "" {
-		addIcon(iconPRStyle, "🔀", s.PR)
+	for _, c := range candidates {
+		addIcon(c.style, c.glyph, c.url)
 	}
 	suffix := icons + dot
 	nameWidth := width - 1 - lipgloss.Width(suffix)
-	if nameWidth < 4 {
-		nameWidth = 4
+	if nameWidth < minNameWidth {
+		nameWidth = minNameWidth
 	}
 	var prefix string
 	if projectLabel != "" {
@@ -177,8 +213,13 @@ func renderRow(s session.Session, st watcher.State, width int, selected bool, pr
 			}
 			prefix = style.Render(label)
 			nameWidth -= labelWidth
-			if nameWidth < 4 {
-				nameWidth = 4
+			// Unlike the floor applied above (before the label was known),
+			// re-flooring this back up to 4 would grow the row past the
+			// width budget the icon-dropping logic upstream already fit to
+			// — at extremely tight widths the name column degrades toward
+			// empty instead, same as icons already do.
+			if nameWidth < 0 {
+				nameWidth = 0
 			}
 		}
 	}

@@ -46,6 +46,11 @@ var screens = map[string][]string{
 	// "new-project" scenarios capture.
 	"edit-project-emoji": {"/", "e", "tab", "tab", "tab"},
 	"confirm-delete":     {"d"},
+	// Same dialog, but caught mid-flight: the "d" press's fetchGitStatusCmd
+	// (the live re-check kicked off when the dialog opens) is deliberately
+	// left undrained by renderScreen, so this captures the "checking git
+	// status…" loading note before it resolves.
+	"confirm-delete-checking": {"d"},
 	// "demo" has sample sessions, so D there flashes the blocked error; the
 	// confirm screen is only reachable on the sessionless "spare" project
 	// (tab switches to it).
@@ -136,14 +141,25 @@ type fakeBackend struct {
 	// backend method here is a no-op since no other scenario needs its
 	// project/session data to actually change.
 	cfg *config.Config
+	// worktreeStatus, keyed by session id, backs WorktreeStatus for scenarios
+	// that need to show the dirty/unpushed delete warning; a missing entry
+	// means "unknown" (ok=false), matching every other scenario's default.
+	worktreeStatus map[string]struct{ dirty, unpushed bool }
 }
 
 func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket string) (session.Session, string, error) {
 	return session.Session{}, "", nil
 }
-func (f *fakeBackend) StartFirstPrompt(tmuxSession, prompt string) error       { return nil }
-func (f *fakeBackend) OpenSession(id string) (string, error)                   { return "", nil }
-func (f *fakeBackend) DeleteSession(id string) error                           { return nil }
+func (f *fakeBackend) StartFirstPrompt(tmuxSession, prompt string) error { return nil }
+func (f *fakeBackend) OpenSession(id string) (string, error)             { return "", nil }
+func (f *fakeBackend) DeleteSession(id string) error                     { return nil }
+func (f *fakeBackend) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
+	st, present := f.worktreeStatus[id]
+	if !present {
+		return false, false, false
+	}
+	return st.dirty, st.unpushed, true
+}
 func (f *fakeBackend) KillTmux(id string) error                                { return nil }
 func (f *fakeBackend) SetSessionStatusTitle(id string, st watcher.State) error { return nil }
 func (f *fakeBackend) MoveSession(id string, delta int) error                  { return nil }
@@ -261,22 +277,54 @@ func renderScreen(screenName string, width, height int, theme, appearance string
 	cfg.Theme = theme
 	cfg.Appearance = appearance
 	be := &fakeBackend{sessions: sessions, cfg: cfg}
+	if screenName == "confirm-delete" && len(sessions) > 0 {
+		// Must be set before the initial drive() below: git status is
+		// fetched for every session up front (regardless of agent state —
+		// it's no longer gated on being parked), so this needs to be in
+		// place before that sweep runs in order to demonstrate the
+		// dirty/unpushed delete warning on the session the "d" key sequence
+		// lands the cursor on.
+		be.worktreeStatus = map[string]struct{ dirty, unpushed bool }{
+			sessions[0].ID: {dirty: true, unpushed: true},
+		}
+	}
+	// Closed immediately: nothing in this synthetic harness ever sends on it,
+	// and closing lets drive() safely run a StatusTickMsg's/StatusRefreshedMsg's
+	// returned batch (which re-arms listenStatus(statusCh)) without blocking
+	// forever on an open, empty channel.
 	statusCh := make(chan watcher.Snapshot)
+	close(statusCh)
 	tui.ApplySettings(cfg)
 	m := tui.New(cfg, be, statusCh, func() {})
+	// tui.New() no longer calls TmuxAliveAll() synchronously (that now
+	// happens async, via Init(), so a slow tmux server can't block the real
+	// app's first render) — this harness never calls Init() at all, so
+	// without this every sample session would default to "not alive" and
+	// read as Parked regardless of the State a scenario sets below. This
+	// same StatusRefreshedMsg also triggers the startup git-status sweep
+	// (see model.go's tmuxCheckedOnce), fetching every session up front from
+	// whatever be.worktreeStatus already holds.
+	drive(m, tui.StatusRefreshedMsg{TmuxAlive: be.TmuxAliveAll()})
 
 	home, _ := os.UserHomeDir()
 
 	m.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	if screenName == "needs-input" {
-		// Update, not drive(): the returned cmd re-arms listenStatus(statusCh),
-		// which blocks forever reading a channel nothing here ever sends on.
 		m.Update(tui.StatusTickMsg{Snap: watcher.Snapshot{
 			States: map[string]watcher.State{sessions[0].WorktreePath: watcher.NeedsInput},
 		}})
 	}
 	for _, k := range keys {
-		drive(m, keyMsgFor(strings.ReplaceAll(k, "$HOME", home)))
+		msg := keyMsgFor(strings.ReplaceAll(k, "$HOME", home))
+		if screenName == "confirm-delete-checking" {
+			// Plain Update, not drive(): leaves the "d" press's
+			// fetchGitStatusCmd undrained so the dialog is caught showing
+			// its "checking git status…" note rather than the resolved
+			// result.
+			m.Update(msg)
+			continue
+		}
+		drive(m, msg)
 	}
 
 	return m.View(), nil
