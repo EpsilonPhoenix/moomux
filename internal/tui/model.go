@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"hash/fnv"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -32,6 +34,9 @@ type Backend interface {
 	StartFirstPrompt(tmuxSession, prompt string) error
 	OpenSession(id string) (hint string, err error)
 	DeleteSession(id string) error
+	// WorktreeStatus reports id's worktree as dirty/unpushed; ok is false if
+	// status can't be determined (unknown session, or not a git repo).
+	WorktreeStatus(id string) (dirty, unpushed, ok bool)
 	KillTmux(id string) error
 	// SetSessionStatusTitle renames id's tmux window to reflect st, so
 	// terminals tracking the window name as their tab title show it live.
@@ -154,9 +159,21 @@ type Model struct {
 	states       map[string]watcher.State
 	titleState   map[string]watcher.State // last status pushed as each session's tmux window title, by session id
 	tmuxAlive    map[string]bool
-	prompts      map[string]string
-	statusCh     <-chan watcher.Snapshot
-	cancelPoll   context.CancelFunc
+	// tmuxCheckedOnce becomes true once the first (async, startup) tmux-alive
+	// check resolves. Gates the startup fetchStaleGitStatusCmd call so it
+	// runs exactly once with real data — tmuxAlive is empty/unknown until
+	// then, and every subsequent StatusRefreshedMsg is just the routine 2s
+	// refresh (which doesn't need its own git-status check; the regular
+	// StatusTickMsg handler already does one every tick).
+	tmuxCheckedOnce bool
+	gitStatus       map[string]gitStatusInfo // by session id; see gitStatusStaleAfter for the refresh policy
+	// gitStatusPending marks session ids with a fetchGitStatusCmd currently
+	// in flight, so staleGitStatusIDs doesn't pile up duplicate concurrent
+	// fetches for a session whose `git status` call is just running long.
+	gitStatusPending map[string]bool
+	prompts          map[string]string
+	statusCh         <-chan watcher.Snapshot
+	cancelPoll       context.CancelFunc
 
 	mode            Mode
 	nameInput       textinput.Model
@@ -173,6 +190,16 @@ type Model struct {
 	editProjectName string
 	tagForm         tagForm
 	pickerCursor    int // index into m.projects while ModeProjectPicker is open
+	// confirmGit starts out as whatever's cached in m.gitStatus (possibly
+	// stale or empty) the instant ModeConfirmDelete opens, so the dialog
+	// never pauses. confirmChecking is true while a fresh fetchGitStatusCmd
+	// for the session is in flight; the dialog shows a small loading note
+	// until it resolves and confirmGit is updated for real (see GitStatusMsg
+	// in update.go). confirmAck becomes true once the user has pressed y
+	// through a dirty/unpushed warning once; a second y then actually deletes.
+	confirmGit      gitStatusInfo
+	confirmChecking bool
+	confirmAck      bool
 	// themeCursor is an index into themeNames while ModeThemePicker is open.
 	// previewAppearance holds the appearance being live-previewed there
 	// ("", "light", or "dark") until Enter persists it or Esc reverts to
@@ -302,27 +329,34 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 	pi.Width = 40
 
 	m := &Model{
-		cfg:             cfg,
-		backend:         backend,
-		keys:            DefaultKeyMap(),
-		states:          map[string]watcher.State{},
-		titleState:      map[string]watcher.State{},
-		tmuxAlive:       map[string]bool{},
-		prompts:         map[string]string{},
-		statusCh:        statusCh,
-		cancelPoll:      cancel,
-		nameInput:       ti,
-		branchInput:     bi,
-		ticketInput:     tki,
-		prInput:         pri,
-		promptInput:     pi,
-		overlayViewport: viewport.New(1, 1),
-		overlayMode:     ModeList,
-		overlayFocus:    -1,
+		cfg:              cfg,
+		backend:          backend,
+		keys:             DefaultKeyMap(),
+		states:           map[string]watcher.State{},
+		titleState:       map[string]watcher.State{},
+		tmuxAlive:        map[string]bool{},
+		gitStatus:        map[string]gitStatusInfo{},
+		gitStatusPending: map[string]bool{},
+		prompts:          map[string]string{},
+		statusCh:         statusCh,
+		cancelPoll:       cancel,
+		nameInput:        ti,
+		branchInput:      bi,
+		ticketInput:      tki,
+		prInput:          pri,
+		promptInput:      pi,
+		overlayViewport:  viewport.New(1, 1),
+		overlayMode:      ModeList,
+		overlayFocus:     -1,
 	}
 	m.projects = cfg.OrderedProjectNames()
 	m.refreshSessions()
-	m.refreshTmuxAlive()
+	// tmuxAlive is deliberately left empty here — populated asynchronously by
+	// Init()'s refreshStatusCmd instead of a synchronous TmuxAliveAll() call,
+	// so a slow or wedged tmux server can't block the first render. Until
+	// that resolves, effectiveState's "no entry = not alive" default reads
+	// every session as Parked, which self-corrects within one render once
+	// the real check lands.
 	m.refreshPrompts()
 	if len(m.projects) == 0 {
 		m.mode = ModeNewProject
@@ -341,8 +375,46 @@ func (m *Model) refreshPrompts() {
 	}
 }
 
-func (m *Model) refreshTmuxAlive() {
-	m.tmuxAlive = m.backend.TmuxAliveAll()
+// gitStatusStaleAfter bounds how long a cached gitStatusInfo is trusted
+// before it's worth a fresh `git status`/`rev-list` call — see
+// staleGitStatusIDs. Every session is tracked this way regardless of its
+// agent state (working, done, parked, whatever) — long enough that no
+// session is re-checked every single 2s tick (those calls can run well past
+// 2s), short enough that a session sitting untouched for a while still
+// eventually reflects changes made outside moomux (another terminal, an
+// editor, a push from elsewhere).
+const gitStatusStaleAfter = time.Minute
+
+// gitStatusStaleJitter varies gitStatusStaleThreshold by up to this fraction
+// of gitStatusStaleAfter, per session. Without it, every session first
+// fetched around the same moment (notably: all of them, at startup) would
+// keep coming due for refresh in the same tick forever after — a thundering
+// herd of `git status` calls every minute, on the minute, instead of spread
+// out.
+const gitStatusStaleJitter = 0.2
+
+// gitStatusInfo is a session's git worktree status. ok is false when it
+// couldn't be determined (unknown session, not a git repo, or simply not
+// fetched yet), in which case dirty/unpushed are meaningless. checkedAt is
+// when this was fetched — zero if never — and is what staleGitStatusIDs
+// compares against gitStatusStaleThreshold.
+type gitStatusInfo struct {
+	dirty, unpushed, ok bool
+	checkedAt           time.Time
+}
+
+// gitStatusStaleThreshold returns id's jittered staleness threshold: a
+// deterministic value in [gitStatusStaleAfter*(1-gitStatusStaleJitter),
+// gitStatusStaleAfter*(1+gitStatusStaleJitter)], derived from the session id
+// so it's stable across repeated calls (never flaps between "stale" and
+// "fresh" from call to call) without needing to store anything extra per
+// session.
+func gitStatusStaleThreshold(id string) time.Duration {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(id))
+	frac := float64(h.Sum32()) / float64(math.MaxUint32) // deterministic, in [0,1)
+	mult := 1 + gitStatusStaleJitter*(2*frac-1)          // in [1-J, 1+J]
+	return time.Duration(float64(gitStatusStaleAfter) * mult)
 }
 
 // refreshStatusCmd returns a tea.Cmd that computes the tmux-alive map and
@@ -364,14 +436,71 @@ func refreshStatusCmd(m *Model) tea.Cmd {
 		home, _ := os.UserHomeDir()
 		prompts := make(map[string]string)
 		for _, s := range backend.Sessions() {
-			if p := known[s.ID]; p != "" {
-				continue
+			if p := known[s.ID]; p == "" {
+				prompts[s.ID] = prompt.ForAgent(home, s.AgentName(), s.WorktreePath)
 			}
-			prompts[s.ID] = prompt.ForAgent(home, s.AgentName(), s.WorktreePath)
 		}
 
 		return StatusRefreshedMsg{TmuxAlive: tmuxAlive, Prompts: prompts}
 	}
+}
+
+// fetchGitStatusCmd computes git status for ids off the event-loop goroutine.
+// `git status`/`rev-list` can run well past the 2s status-tick interval, so
+// callers only pass ids that are actually worth checking right now — see
+// staleGitStatusIDs for the routine case, and the Delete key handler for the
+// delete-dialog's on-demand single-session check. The returned msg always has
+// an entry for every id passed in, even when WorktreeStatus reports ok=false
+// — callers (e.g. the delete dialog's "checking..." loader) use that
+// presence to tell "resolved, nothing to show" apart from "hasn't resolved
+// yet".
+func fetchGitStatusCmd(backend Backend, ids []string) tea.Cmd {
+	return func() tea.Msg {
+		now := time.Now()
+		status := make(map[string]gitStatusInfo, len(ids))
+		for _, id := range ids {
+			dirty, unpushed, ok := backend.WorktreeStatus(id)
+			status[id] = gitStatusInfo{dirty: dirty, unpushed: unpushed, ok: ok, checkedAt: now}
+		}
+		return GitStatusMsg{Status: status}
+	}
+}
+
+// staleGitStatusIDs returns every session whose cached git status is missing
+// or older than its jittered gitStatusStaleThreshold — regardless of agent
+// state, since the point is just to keep the info reasonably fresh for
+// whenever it's looked at (the list icons, the delete dialog). Sessions with
+// a fetch already in flight (gitStatusPending) are skipped so a slow
+// `git status` call doesn't get re-issued for the same session every tick
+// until it finally returns.
+func (m *Model) staleGitStatusIDs() []string {
+	var ids []string
+	for _, s := range m.backend.Sessions() {
+		if m.gitStatusPending[s.ID] {
+			continue
+		}
+		st, ok := m.gitStatus[s.ID]
+		if !ok || time.Since(st.checkedAt) > gitStatusStaleThreshold(s.ID) {
+			ids = append(ids, s.ID)
+		}
+	}
+	return ids
+}
+
+// fetchStaleGitStatusCmd wraps staleGitStatusIDs as a tea.Cmd, marking each
+// selected id pending first so staleGitStatusIDs won't pick it again before
+// this fetch resolves. Returns nil if nothing needs checking. Used by both
+// Init() (once, at startup — every session is "never checked", so this
+// covers all of them) and the StatusTickMsg handler (every ~2s thereafter).
+func (m *Model) fetchStaleGitStatusCmd() tea.Cmd {
+	ids := m.staleGitStatusIDs()
+	if len(ids) == 0 {
+		return nil
+	}
+	for _, id := range ids {
+		m.gitStatusPending[id] = true
+	}
+	return fetchGitStatusCmd(m.backend, ids)
 }
 
 // effectiveState returns the state to display: if tmux is dead the
@@ -587,7 +716,11 @@ func (m *Model) refreshSessions() {
 }
 
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(listenStatus(m.statusCh), tickFlash())
+	// refreshStatusCmd (normally the routine 2s refresh) is fired here too so
+	// the startup tmux-alive check runs immediately rather than waiting for
+	// the first tick — see the StatusRefreshedMsg case for what happens once
+	// it resolves.
+	return tea.Batch(listenStatus(m.statusCh), tickFlash(), refreshStatusCmd(m))
 }
 
 func listenStatus(ch <-chan watcher.Snapshot) tea.Cmd {

@@ -13,11 +13,18 @@ import (
 type fakeRunner struct {
 	calls [][]string
 	out   string
+	// errAt, keyed by call index (0-based), makes that call fail instead of
+	// returning out — used to simulate e.g. "no upstream configured".
+	errAt map[int]error
 }
 
 func (f *fakeRunner) Run(dir string, args ...string) (string, error) {
 	c := append([]string{"@" + dir}, args...)
+	idx := len(f.calls)
 	f.calls = append(f.calls, c)
+	if err, ok := f.errAt[idx]; ok {
+		return "", err
+	}
 	return f.out, nil
 }
 
@@ -179,6 +186,29 @@ func TestIsWorktreeClean(t *testing.T) {
 	clean, err = c.IsWorktreeClean("/wt/foo")
 	if err != nil || clean {
 		t.Fatalf("clean=%v err=%v, want dirty", clean, err)
+	}
+}
+
+func TestHasUnpushedCommits(t *testing.T) {
+	fr := &fakeRunner{out: "0\n"}
+	c := &Client{Runner: fr}
+	unpushed, err := c.HasUnpushedCommits("/wt/foo")
+	if err != nil || unpushed {
+		t.Fatalf("unpushed=%v err=%v, want false (up to date with upstream)", unpushed, err)
+	}
+
+	fr = &fakeRunner{out: "2\n"}
+	c = &Client{Runner: fr}
+	unpushed, err = c.HasUnpushedCommits("/wt/foo")
+	if err != nil || !unpushed {
+		t.Fatalf("unpushed=%v err=%v, want true (ahead of upstream)", unpushed, err)
+	}
+
+	fr = &fakeRunner{errAt: map[int]error{0: errors.New("no upstream configured")}}
+	c = &Client{Runner: fr}
+	unpushed, err = c.HasUnpushedCommits("/wt/foo")
+	if err != nil || !unpushed {
+		t.Fatalf("unpushed=%v err=%v, want true (no upstream)", unpushed, err)
 	}
 }
 

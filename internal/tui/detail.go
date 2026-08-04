@@ -70,6 +70,9 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 	row("agent", s.AgentName(), "")
 	row("name", truncate(s.Name, valueWidth), "")
 	row("worktree", truncateLeft(s.WorktreePath, valueWidth), "")
+	if git := m.gitStatus[s.ID]; git.ok {
+		row("git", gitStatusLabel(git), "")
+	}
 	rowLink("tmux", truncate(s.TmuxSession, valueWidth), "tmux attach -t "+s.TmuxSession, true)
 	row("created", humanizeAge(time.Since(s.CreatedAt)), "")
 	if s.Ticket != "" {
@@ -96,6 +99,22 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 	}
 	b.WriteString(cowStyle.Render(cowsay(cowMsg, valueWidth+10, st)))
 	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), hits
+}
+
+// gitStatusLabel renders a gitStatusInfo (git.ok must already be true) as the
+// short text shown in the detail panel's "git" row.
+func gitStatusLabel(git gitStatusInfo) string {
+	var parts []string
+	if git.dirty {
+		parts = append(parts, "uncommitted changes")
+	}
+	if git.unpushed {
+		parts = append(parts, "unpushed commits")
+	}
+	if len(parts) == 0 {
+		return "clean, pushed"
+	}
+	return strings.Join(parts, ", ")
 }
 
 func cowsay(msg string, maxWidth int, st watcher.State) string {

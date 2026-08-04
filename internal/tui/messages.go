@@ -18,6 +18,13 @@ type StatusRefreshedMsg struct {
 	Prompts   map[string]string
 }
 
+// GitStatusMsg carries git status for sessions that just transitioned into
+// watcher.Parked, computed by fetchGitStatusCmd. Update() merges these into
+// m.gitStatus rather than replacing it wholesale.
+type GitStatusMsg struct {
+	Status map[string]gitStatusInfo
+}
+
 // StatusChannelClosedMsg is delivered when the status watcher channel is
 // closed. It is terminal: no attempt is made to restart the watcher.
 type StatusChannelClosedMsg struct{}
