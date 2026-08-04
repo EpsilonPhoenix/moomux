@@ -307,8 +307,9 @@ func (m *Model) View() string {
 
 	var body string
 	var hits []linkHit
+	var rows []rowHit
 	var detailHits []linkHit
-	var detailX, detailY int
+	var detailX, detailY, listWidth int
 	// Below this width a side-by-side list+detail split leaves too little
 	// room for either panel (common on phone-sized SSH clients), so stack
 	// them instead.
@@ -321,16 +322,17 @@ func (m *Model) View() string {
 		// A stacked layout has two pairs of horizontal borders, while
 		// bodyHeight reserves room for one. Account for the second pair before
 		// splitting the content height between the panes.
+		listWidth = panelW
 		stackedHeight := bodyHeight - 2
 		if stackedHeight < 2*minStackedPaneHeight {
 			var listContent string
-			listContent, hits = m.renderList(panelW-2, bodyHeight)
+			listContent, hits, rows = m.renderList(panelW-2, bodyHeight)
 			body = panelBorder.Width(panelW).Height(bodyHeight).Render(listContent)
 		} else {
 			listH := stackedHeight / 2
 			detailH := stackedHeight - listH
 			var listContent string
-			listContent, hits = m.renderList(panelW-2, listH)
+			listContent, hits, rows = m.renderList(panelW-2, listH)
 			top := panelBorder.Width(panelW).Height(listH).Render(listContent)
 			var detailContent string
 			detailContent, detailHits = m.renderDetail(panelW-2, detailH)
@@ -355,8 +357,9 @@ func (m *Model) View() string {
 		// bodyHeight already excludes the panel's two border rows (the -2
 		// where it's computed above); subtracting again here left two blank
 		// filler rows per panel and clipped link hits near the bottom.
+		listWidth = listW
 		var listContent string
-		listContent, hits = m.renderList(listW-2, bodyHeight)
+		listContent, hits, rows = m.renderList(listW-2, bodyHeight)
 		left := panelBorder.Width(listW).Height(bodyHeight).Render(listContent)
 		var detailContent string
 		detailContent, detailHits = m.renderDetail(detailW-2, bodyHeight)
@@ -366,7 +369,7 @@ func (m *Model) View() string {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 	}
 
-	m.updateLinkHits(header, hits, detailHits, detailX, detailY)
+	m.updateLinkHits(header, hits, detailHits, detailX, detailY, rows, listWidth)
 
 	base := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 	// Very small terminal sizes can be shorter/narrower than the fixed

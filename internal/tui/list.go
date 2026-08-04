@@ -23,7 +23,15 @@ type linkHit struct {
 	col0, col1 int // half-open column range
 }
 
-func (m *Model) renderList(width, height int) (string, []linkHit) {
+// rowHit records a session row's line within the rendered list (local
+// coordinates, like linkHit), so a mouse click landing anywhere on the row —
+// not just on a ticket/PR icon — can select and open that session.
+type rowHit struct {
+	sessionID string
+	line      int
+}
+
+func (m *Model) renderList(width, height int) (string, []linkHit, []rowHit) {
 	var b strings.Builder
 	title := "SESSIONS"
 	empty := "  no sessions — press n to create"
@@ -58,7 +66,7 @@ func (m *Model) renderList(width, height int) (string, []linkHit) {
 	}
 	if len(m.sessions) == 0 {
 		b.WriteString(muteStyle.Render(empty))
-		return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), nil
+		return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), nil, nil
 	}
 	visible := height - titleRows
 	if visible < 1 {
@@ -79,6 +87,7 @@ func (m *Model) renderList(width, height int) (string, []linkHit) {
 		end = len(m.sessions)
 	}
 	var hits []linkHit
+	var rows []rowHit
 	for i := start; i < end; i++ {
 		s := m.sessions[i]
 		selected := i == m.cursor
@@ -86,13 +95,15 @@ func (m *Model) renderList(width, height int) (string, []linkHit) {
 		if m.allSessions {
 			projectLabel = m.projectEmoji(s.Project)
 		}
-		row, rowHits := renderRow(s, m.effectiveState(s), width-4, selected, projectLabel)
-		for _, h := range rowHits {
+		// titleRows lines for the "SESSIONS" title and blank line above (0 on
+		// short terminals, where it's hidden).
+		line := titleRows + (i - start)
+		rows = append(rows, rowHit{sessionID: s.ID, line: line})
+		row, iconHits := renderRow(s, m.effectiveState(s), width-4, selected, projectLabel)
+		for _, h := range iconHits {
 			h.sessionID = s.ID
-			// titleRows lines for the "SESSIONS" title and blank line above
-			// (0 on short terminals, where it's hidden); +1 column for the
-			// row style's own left padding.
-			h.line = titleRows + (i - start)
+			h.line = line
+			// +1 column for the row style's own left padding.
 			h.col0++
 			h.col1++
 			hits = append(hits, h)
@@ -105,7 +116,7 @@ func (m *Model) renderList(width, height int) (string, []linkHit) {
 		b.WriteString(row)
 		b.WriteString("\n")
 	}
-	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), hits
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), hits, rows
 }
 
 func renderRow(s session.Session, st watcher.State, width int, selected bool, projectLabel string) (string, []linkHit) {

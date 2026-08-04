@@ -331,6 +331,94 @@ func TestLinkClickOverSSHCopiesInsteadOfOpening(t *testing.T) {
 	}
 }
 
+// TestSessionRowClickSelectsAndOpens asserts that a left click anywhere on a
+// session's row (not just its ticket/PR icons) both moves the cursor to that
+// session and opens it — mobile clients tapping a row have no keyboard
+// cursor to line up with first, so the tap needs to do both in one motion.
+func TestSessionRowClickSelectsAndOpens(t *testing.T) {
+	cfg := &config.Config{Projects: map[string]config.Project{"demo": {Repo: "/tmp/demo"}}}
+	be := &fakeBackend{
+		sessions: []session.Session{
+			{ID: "demo:one", Project: "demo", Name: "one"},
+			{ID: "demo:two", Project: "demo", Name: "two"},
+		},
+		openHint: "run: tmux attach -t moomux-two",
+	}
+	statusCh := make(chan watcher.Snapshot)
+	m := New(cfg, be, statusCh, func() {})
+	m.width, m.height = 80, 24
+	m.View() // populate m.rowHits
+
+	var hit resolvedRowHit
+	for _, h := range m.rowHits {
+		if h.sessionID == "demo:two" {
+			hit = h
+		}
+	}
+	if hit.sessionID == "" {
+		t.Fatalf("no row hit found for demo:two, hits: %+v", m.rowHits)
+	}
+
+	run(m, tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: hit.x0, Y: hit.y})
+
+	if m.cursor != 1 {
+		t.Errorf("cursor = %d, want 1 (demo:two)", m.cursor)
+	}
+	if len(be.openCalls) != 1 || be.openCalls[0] != "demo:two" {
+		t.Errorf("openCalls = %v, want [demo:two]", be.openCalls)
+	}
+}
+
+// TestSessionRowClickOutsideListDoesNotSelect asserts that a click landing
+// outside every row's coordinates (e.g. on the border or an empty area) is a
+// no-op rather than resolving to whichever row happens to be nearest.
+func TestSessionRowClickOutsideListDoesNotSelect(t *testing.T) {
+	cfg := &config.Config{Projects: map[string]config.Project{"demo": {Repo: "/tmp/demo"}}}
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "demo:one", Project: "demo", Name: "one"},
+	}}
+	statusCh := make(chan watcher.Snapshot)
+	m := New(cfg, be, statusCh, func() {})
+	m.width, m.height = 80, 24
+	m.View()
+
+	if id, ok := m.sessionRowAt(-1, -1); ok {
+		t.Errorf("sessionRowAt(-1,-1) = (%q, true), want ok=false", id)
+	}
+
+	run(m, tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: -1, Y: -1})
+	if len(be.openCalls) != 0 {
+		t.Errorf("openCalls = %v, want none", be.openCalls)
+	}
+}
+
+// TestMouseWheelMovesCursor asserts that scrolling the mouse wheel over the
+// session list moves the cursor the same way the up/down keys do, wrapping
+// at the ends — mosh/Moshi clients on mobile have no arrow keys handy, but
+// do send wheel events for a two-finger scroll gesture.
+func TestMouseWheelMovesCursor(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "demo:one", Project: "demo", Name: "one"},
+		{ID: "demo:two", Project: "demo", Name: "two"},
+	}}
+	m := newTestModel(be)
+
+	run(m, tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown})
+	if m.cursor != 1 {
+		t.Fatalf("after wheel down: cursor = %d, want 1", m.cursor)
+	}
+
+	run(m, tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown})
+	if m.cursor != 0 {
+		t.Fatalf("after wheel down past the end: cursor = %d, want 0 (wrapped)", m.cursor)
+	}
+
+	run(m, tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp})
+	if m.cursor != 1 {
+		t.Fatalf("after wheel up wrapping past the start: cursor = %d, want 1", m.cursor)
+	}
+}
+
 // TestRemoteLinksToggleOverridesAutoDetection covers the R toggle: since
 // transports like mosh set none of SSH_TTY/SSH_CONNECTION/SSH_CLIENT,
 // browser.Remote()'s auto-detection has no signal for them, so a user needs

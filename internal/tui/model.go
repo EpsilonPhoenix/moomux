@@ -203,6 +203,7 @@ type Model struct {
 	width, height int
 
 	linkHits        []resolvedLinkHit
+	rowHits         []resolvedRowHit
 	overlayViewport viewport.Model
 	overlayMode     Mode
 	overlayFocus    int
@@ -228,13 +229,24 @@ type resolvedLinkHit struct {
 	x0, x1    int // half-open column range
 }
 
-// updateLinkHits recomputes m.linkHits in absolute terminal coordinates from
-// the list- and detail-local hits produced during rendering. It's a no-op
-// (clearing hits) outside ModeList, since panels aren't clickable behind an
-// overlay.
-func (m *Model) updateLinkHits(header string, listHits, detailHits []linkHit, detailX, detailY int) {
+// resolvedRowHit is a rowHit translated into absolute terminal coordinates,
+// computed fresh on every View() call and consulted by the mouse handler in
+// Update() to resolve a click anywhere on a session's row (not just its
+// ticket/PR icons) to that session.
+type resolvedRowHit struct {
+	sessionID string
+	y         int
+	x0, x1    int // half-open column range
+}
+
+// updateLinkHits recomputes m.linkHits and m.rowHits in absolute terminal
+// coordinates from the list- and detail-local hits produced during
+// rendering. It's a no-op (clearing hits) outside ModeList, since panels
+// aren't clickable behind an overlay.
+func (m *Model) updateLinkHits(header string, listHits, detailHits []linkHit, detailX, detailY int, listRows []rowHit, listWidth int) {
 	if m.mode != ModeList {
 		m.linkHits = nil
+		m.rowHits = nil
 		return
 	}
 	m.linkHits = m.linkHits[:0]
@@ -254,6 +266,29 @@ func (m *Model) updateLinkHits(header string, listHits, detailHits []linkHit, de
 	listY := lipgloss.Height(header) + panelBorder.GetBorderTopSize()
 	appendHits(listHits, listX, listY)
 	appendHits(detailHits, detailX, detailY)
+
+	m.rowHits = m.rowHits[:0]
+	for _, r := range listRows {
+		m.rowHits = append(m.rowHits, resolvedRowHit{
+			sessionID: r.sessionID,
+			y:         listY + r.line,
+			x0:        listX,
+			x1:        listX + listWidth,
+		})
+	}
+}
+
+// sessionRowAt returns the session ID whose row contains absolute terminal
+// coordinates (x, y), for turning a mouse click anywhere on a row (mobile
+// clients can't easily land a tap on the exact cursor column) into a
+// selection.
+func (m *Model) sessionRowAt(x, y int) (string, bool) {
+	for _, h := range m.rowHits {
+		if y == h.y && x >= h.x0 && x < h.x1 {
+			return h.sessionID, true
+		}
+	}
+	return "", false
 }
 
 // isRemote decides whether a ticket/PR icon click should copy the URL

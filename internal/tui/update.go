@@ -338,6 +338,31 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return LinkOpenedMsg{URL: url}
 				}
 			}
+			// Not a ticket/PR icon — a tap on the row itself selects and
+			// opens that session in one motion, since mobile clients (mosh
+			// over Moshi, etc.) have no keyboard focus to move a cursor with
+			// first.
+			if id, ok := m.sessionRowAt(msg.X, msg.Y); ok {
+				for i, s := range m.sessions {
+					if s.ID == id {
+						m.cursor = i
+						break
+					}
+				}
+				return m, m.openSessionCmd(id)
+			}
+		}
+		if msg.Action == tea.MouseActionPress {
+			switch msg.Button {
+			case tea.MouseButtonWheelUp:
+				if len(m.sessions) > 0 {
+					m.cursor = (m.cursor - 1 + len(m.sessions)) % len(m.sessions)
+				}
+			case tea.MouseButtonWheelDown:
+				if len(m.sessions) > 0 {
+					m.cursor = (m.cursor + 1) % len(m.sessions)
+				}
+			}
 		}
 		return m, nil
 
@@ -494,17 +519,9 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.NextProject):
-		if len(m.projects) > 0 {
-			m.activeProj = m.nextNonEmptyProject(1)
-			m.cursor = 0
-			m.refreshSessions()
-		}
+		m.switchProject(1)
 	case key.Matches(msg, m.keys.ShiftTab), key.Matches(msg, m.keys.PrevProject):
-		if len(m.projects) > 0 {
-			m.activeProj = m.nextNonEmptyProject(-1)
-			m.cursor = 0
-			m.refreshSessions()
-		}
+		m.switchProject(-1)
 	case key.Matches(msg, m.keys.NextProjectAll):
 		if len(m.projects) > 0 {
 			m.activeProj = (m.activeProj + 1) % len(m.projects)
@@ -625,17 +642,33 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, m.keys.Open):
 		if len(m.sessions) > 0 {
-			id := m.sessions[m.cursor].ID
-			return m, func() tea.Msg {
-				hint, err := m.backend.OpenSession(id)
-				if err != nil {
-					return ErrorMsg{Err: err}
-				}
-				return SessionOpenedMsg{ID: id, Hint: hint}
-			}
+			return m, m.openSessionCmd(m.sessions[m.cursor].ID)
 		}
 	}
 	return m, nil
+}
+
+// switchProject moves the active project by delta, skipping empty ones —
+// shared by Tab/Shift-Tab and a horizontal mouse-wheel swipe.
+func (m *Model) switchProject(delta int) {
+	if len(m.projects) == 0 {
+		return
+	}
+	m.activeProj = m.nextNonEmptyProject(delta)
+	m.cursor = 0
+	m.refreshSessions()
+}
+
+// openSessionCmd returns a Cmd that opens/attaches the given session,
+// shared by the Enter/o key binding and a row click.
+func (m *Model) openSessionCmd(id string) tea.Cmd {
+	return func() tea.Msg {
+		hint, err := m.backend.OpenSession(id)
+		if err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return SessionOpenedMsg{ID: id, Hint: hint}
+	}
 }
 
 // updateHelp handles keys while the help overlay is open. Any of ?, esc, or q
