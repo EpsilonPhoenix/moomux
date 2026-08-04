@@ -347,7 +347,9 @@ func (m *Model) View() string {
 		if listW < 20 {
 			listW = 20
 		}
-		detailW := m.width - listW - 2
+		// Each panel's border adds 2 columns beyond the width passed to
+		// Width(), so the two panels together need 4 columns reserved, not 2.
+		detailW := m.width - listW - 4
 		if detailW < 20 {
 			detailW = 20
 		}
