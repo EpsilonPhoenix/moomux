@@ -95,6 +95,51 @@ func TestNewSessionFormSendsFirstPrompt(t *testing.T) {
 	}
 }
 
+// TestNewSessionFormPromptSupportsMultilineNavigation guards the prompt
+// field's textarea behavior: ctrl+j inserts a newline (Enter is reserved for
+// form submit) and, once a second line exists, up/down move the cursor
+// between lines instead of leaving the field the way they do for every other
+// row in the form.
+func TestNewSessionFormPromptSupportsMultilineNavigation(t *testing.T) {
+	be := &fakeBackend{}
+	m := newTestModel(be)
+
+	m.Update(keyRune("n"))
+	typeText(m, "myfeat")
+	for i := 0; i < 5; i++ {
+		press(m, tea.KeyTab) // name -> branch -> agent -> ticket -> PR -> prompt
+	}
+	if m.newFormFocus != 6 {
+		t.Fatalf("focus = %d, want prompt field", m.newFormFocus)
+	}
+
+	typeText(m, "line one")
+	press(m, tea.KeyCtrlJ)
+	typeText(m, "line two")
+	if got := m.promptInput.Value(); got != "line one\nline two" {
+		t.Fatalf("promptInput value = %q", got)
+	}
+
+	press(m, tea.KeyUp)
+	if m.newFormFocus != 6 {
+		t.Fatalf("up arrow left the prompt field: focus = %d", m.newFormFocus)
+	}
+	press(m, tea.KeyDown)
+	if m.newFormFocus != 6 {
+		t.Fatalf("down arrow left the prompt field: focus = %d", m.newFormFocus)
+	}
+
+	// Every other field still cycles focus on up/down.
+	press(m, tea.KeyTab) // prompt -> project selector (wraps)
+	if m.newFormFocus != newFormProjFocus {
+		t.Fatalf("focus = %d, want project selector", m.newFormFocus)
+	}
+	press(m, tea.KeyDown)
+	if m.newFormFocus != 1 {
+		t.Fatalf("down arrow did not advance focus off the project selector: focus = %d", m.newFormFocus)
+	}
+}
+
 // TestNewSessionFormSurvivesPostCreatePRTagFailure guards against a
 // SetSessionTags failure (PR field) discarding the fact that CreateSession
 // already succeeded — the worktree and tmux session exist regardless, so

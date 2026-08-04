@@ -706,14 +706,24 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Cancel):
 		m.mode = ModeList
 		return m, nil
-	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.ShiftTab), key.Matches(msg, m.keys.FormDown), key.Matches(msg, m.keys.FormUp):
-		m.newFormBlurAll()
-		if key.Matches(msg, m.keys.ShiftTab) || key.Matches(msg, m.keys.FormUp) {
-			m.newFormFocus = (m.newFormFocus - 1 + newFormFieldCount) % newFormFieldCount
+	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.ShiftTab):
+		if key.Matches(msg, m.keys.ShiftTab) {
+			m.newFormMoveFocus(-1)
 		} else {
-			m.newFormFocus = (m.newFormFocus + 1) % newFormFieldCount
+			m.newFormMoveFocus(1)
 		}
-		m.newFormFocusInput()
+		return m, nil
+	case key.Matches(msg, m.keys.FormDown), key.Matches(msg, m.keys.FormUp):
+		// The prompt field is a multi-line textarea — leave ↑/↓ to it for
+		// moving the cursor between lines instead of switching fields.
+		if m.newFormFocus == 6 {
+			break
+		}
+		if key.Matches(msg, m.keys.FormUp) {
+			m.newFormMoveFocus(-1)
+		} else {
+			m.newFormMoveFocus(1)
+		}
 		return m, nil
 	case key.Matches(msg, m.keys.Left), key.Matches(msg, m.keys.Right):
 		// Only steer the project/agent selectors when one of them is the
@@ -839,6 +849,14 @@ func newFormPromptExtras(ticket, pr string) string {
 		lines = append(lines, "PR: "+pr)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// newFormMoveFocus blurs the currently focused field and shifts focus by
+// delta (wrapping), then focuses whatever field lands there.
+func (m *Model) newFormMoveFocus(delta int) {
+	m.newFormBlurAll()
+	m.newFormFocus = (m.newFormFocus + delta + newFormFieldCount) % newFormFieldCount
+	m.newFormFocusInput()
 }
 
 func (m *Model) newFormBlurAll() {

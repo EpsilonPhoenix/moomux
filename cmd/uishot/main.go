@@ -33,6 +33,10 @@ import (
 var screens = map[string][]string{
 	"list":        {},
 	"new-session": {"n"},
+	// 5 tabs lands on the first-prompt textarea (see newFormFieldCount);
+	// ctrl+j inserts a newline there since Enter is reserved for submit.
+	"new-session-multiline": {"n", "tab", "tab", "tab", "tab", "tab", "first line", "ctrl+j", "second line"},
+	"new-session-wide-line": {"n", "tab", "tab", "tab", "tab", "tab", "this is a single long line typed into the first prompt field that should only wrap once it actually reaches the right edge of the box on a wide terminal"},
 	// Adding/editing a project only happens inside the picker now (P/E were
 	// removed from the main list), so these open it first.
 	"new-project":    {"/", "n"},
@@ -97,6 +101,7 @@ var namedKeys = map[string]tea.KeyType{
 	"left":      tea.KeyLeft,
 	"right":     tea.KeyRight,
 	"ctrl+u":    tea.KeyCtrlU,
+	"ctrl+j":    tea.KeyCtrlJ,
 }
 
 func keyMsgFor(s string) tea.KeyMsg {
