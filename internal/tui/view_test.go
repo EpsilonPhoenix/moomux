@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/watcher"
@@ -276,6 +277,23 @@ func TestViewNeverExceedsTerminalHeight(t *testing.T) {
 				t.Fatalf("rendered height = %d, terminal height = %d", got, tc.height)
 			}
 		})
+	}
+}
+
+func TestWideLayoutKeepsRightBorder(t *testing.T) {
+	m := layoutTestModel(10)
+	m.width, m.height = 100, 24
+
+	for _, raw := range strings.Split(m.View(), "\n") {
+		line := ansi.Strip(raw)
+		if !strings.ContainsRune(line, '│') && !strings.ContainsRune(line, '┌') && !strings.ContainsRune(line, '└') {
+			continue
+		}
+		runes := []rune(line)
+		last := runes[len(runes)-1]
+		if last != '│' && last != '┐' && last != '┘' {
+			t.Fatalf("line missing right border, want trailing │/┐/┘, got %q: %q", last, line)
+		}
 	}
 }
 
