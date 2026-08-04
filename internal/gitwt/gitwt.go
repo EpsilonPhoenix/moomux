@@ -148,6 +148,20 @@ func (c *Client) IsWorktreeClean(worktreePath string) (bool, error) {
 	return strings.TrimSpace(out) == "", nil
 }
 
+// HasUnpushedCommits reports whether worktreePath's checked-out branch has
+// commits its upstream doesn't — including having no upstream configured at
+// all, since nothing has been pushed in that case either.
+func (c *Client) HasUnpushedCommits(worktreePath string) (bool, error) {
+	if _, err := c.Runner.Run(worktreePath, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"); err != nil {
+		return true, nil
+	}
+	out, err := c.Runner.Run(worktreePath, "rev-list", "--count", "@{u}..HEAD")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) != "0", nil
+}
+
 // BranchExists reports whether a local branch with the given name exists.
 func (c *Client) BranchExists(repoDir, branch string) bool {
 	_, err := c.Runner.Run(repoDir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)

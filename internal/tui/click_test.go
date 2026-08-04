@@ -61,6 +61,15 @@ type fakeBackend struct {
 
 	setThemeCalls []setThemeCall
 	setThemeErr   error
+
+	// worktreeStatus, keyed by session id, backs WorktreeStatus. A missing
+	// entry means "unknown" (ok=false) rather than "clean".
+	worktreeStatus      map[string]gitStatusInfo
+	worktreeStatusCalls []string
+
+	// tmuxAlive backs TmuxAliveAll; nil (the zero value) reads as "nothing
+	// alive", same as the map[string]bool{} every other test relies on.
+	tmuxAlive map[string]bool
 }
 
 type setThemeCall struct{ theme, appearance string }
@@ -112,6 +121,14 @@ func (f *fakeBackend) OpenSession(id string) (string, error) {
 func (f *fakeBackend) DeleteSession(id string) error {
 	f.deleteCalls = append(f.deleteCalls, id)
 	return f.deleteErr
+}
+func (f *fakeBackend) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
+	f.worktreeStatusCalls = append(f.worktreeStatusCalls, id)
+	st, present := f.worktreeStatus[id]
+	if !present {
+		return false, false, false
+	}
+	return st.dirty, st.unpushed, st.ok
 }
 func (f *fakeBackend) KillTmux(id string) error {
 	f.killCalls = append(f.killCalls, id)
@@ -165,7 +182,7 @@ func (f *fakeBackend) MoveProject(name string, delta int) error {
 	f.moveProjectCalls = append(f.moveProjectCalls, moveProjectCall{name: name, delta: delta})
 	return f.moveProjectErr
 }
-func (f *fakeBackend) TmuxAliveAll() map[string]bool { return map[string]bool{} }
+func (f *fakeBackend) TmuxAliveAll() map[string]bool { return f.tmuxAlive }
 func (f *fakeBackend) Sessions() []session.Session   { return f.sessions }
 func (f *fakeBackend) Projects() []string            { return nil }
 func (f *fakeBackend) AddProject(name string, p config.Project) error {

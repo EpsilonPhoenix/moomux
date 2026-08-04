@@ -20,7 +20,25 @@ import (
 func TestRenderRowProjectLabelFitsWidthBudget(t *testing.T) {
 	s := session.Session{Name: "feature-auth", Ticket: "https://x/1", PR: "https://x/2"}
 	for _, width := range []int{20, 30, 40, 60} {
-		row, _ := renderRow(s, watcher.Working, width, false, "🚀")
+		row, _ := renderRow(s, watcher.Working, width, false, "🚀", gitStatusInfo{})
+		if got := lipgloss.Width(row); got > width {
+			t.Fatalf("width %d: rendered row width = %d, want <= %d (row=%q)", width, got, width, row)
+		}
+	}
+}
+
+// TestRenderRowGitStatusIconsFitWidthBudget guards against the dirty/
+// unpushed git-status icons (± and ↑) overflowing the width budget on
+// narrow terminals: with ticket, PR, dirty, and unpushed all present, the
+// icon suffix is wide enough that flooring nameWidth at 4 without capping
+// the icon count let the row exceed its requested width at widths as high
+// as 14-15 — the same overflow class TestRenderRowProjectLabelFitsWidthBudget
+// guards for ticket/PR alone.
+func TestRenderRowGitStatusIconsFitWidthBudget(t *testing.T) {
+	s := session.Session{Name: "feature-auth", Ticket: "https://x/1", PR: "https://x/2"}
+	git := gitStatusInfo{ok: true, dirty: true, unpushed: true}
+	for width := 8; width <= 40; width++ {
+		row, _ := renderRow(s, watcher.Working, width, false, "🚀", git)
 		if got := lipgloss.Width(row); got > width {
 			t.Fatalf("width %d: rendered row width = %d, want <= %d (row=%q)", width, got, width, row)
 		}
@@ -34,8 +52,8 @@ func TestRenderRowProjectLabelFitsWidthBudget(t *testing.T) {
 // and the hit must always land inside the row's own rendered width.
 func TestRenderRowLinkHitOffsetsAccountForProjectLabel(t *testing.T) {
 	s := session.Session{Name: "feature-auth", Ticket: "https://x/1"}
-	withLabel, hitsWithLabel := renderRow(s, watcher.Parked, 40, false, "🚀")
-	_, hitsNoLabel := renderRow(s, watcher.Parked, 40, false, "")
+	withLabel, hitsWithLabel := renderRow(s, watcher.Parked, 40, false, "🚀", gitStatusInfo{})
+	_, hitsNoLabel := renderRow(s, watcher.Parked, 40, false, "", gitStatusInfo{})
 
 	if len(hitsWithLabel) != 1 || len(hitsNoLabel) != 1 {
 		t.Fatalf("expected exactly one ticket link hit each, got %d and %d", len(hitsWithLabel), len(hitsNoLabel))
@@ -63,7 +81,7 @@ func TestRenderRowSelectedBackgroundCoversWholeRow(t *testing.T) {
 	lipgloss.SetColorProfile(2)
 	defer lipgloss.SetColorProfile(orig)
 	s := session.Session{Name: "feature-auth"}
-	row, _ := renderRow(s, watcher.Parked, 40, true, "🚀")
+	row, _ := renderRow(s, watcher.Parked, 40, true, "🚀", gitStatusInfo{})
 	rendered := listRowSelected.Render(row)
 
 	idx := strings.Index(rendered, "feature-auth")

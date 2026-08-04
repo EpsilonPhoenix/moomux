@@ -2,8 +2,11 @@ package tui
 
 import (
 	"errors"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -291,7 +294,7 @@ func TestConfirmDeleteFlow(t *testing.T) {
 	be := &fakeBackend{sessions: []session.Session{{ID: "demo:a", Project: "demo", Name: "a"}}}
 	m := newTestModel(be)
 
-	m.Update(keyRune("d"))
+	run(m, keyRune("d"))
 	if m.mode != ModeConfirmDelete {
 		t.Fatalf("mode = %v", m.mode)
 	}
@@ -305,7 +308,7 @@ func TestConfirmDeleteFlow(t *testing.T) {
 		t.Fatalf("mode=%v deletes=%v", m.mode, be.deleteCalls)
 	}
 
-	m.Update(keyRune("d"))
+	run(m, keyRune("d"))
 	run(m, keyRune("y"))
 	if len(be.deleteCalls) != 1 || be.deleteCalls[0] != "demo:a" {
 		t.Fatalf("deleteCalls = %v", be.deleteCalls)
@@ -315,13 +318,272 @@ func TestConfirmDeleteFlow(t *testing.T) {
 	}
 }
 
+// TestConfirmDeleteOpensInstantlyThenUpdatesFromLiveCheck guards the whole
+// point of caching: the dialog must render immediately on whatever's already
+// in m.gitStatus (even nothing), not block on a fresh WorktreeStatus call —
+// but it also kicks off that fresh call in the background, shows a "checking"
+// note while it's in flight, and updates the warning for real once it
+// resolves. y is ignored until then, since acting on stale/missing info would
+// defeat the point of checking at all.
+func TestConfirmDeleteOpensInstantlyThenUpdatesFromLiveCheck(t *testing.T) {
+	be := &fakeBackend{
+		sessions:       []session.Session{{ID: "demo:a", Project: "demo", Name: "a"}},
+		worktreeStatus: map[string]gitStatusInfo{"demo:a": {dirty: true, unpushed: true, ok: true}},
+	}
+	m := newTestModel(be)
+	// Stale/absent cache on open: the dialog must not show a warning yet
+	// (nothing cached), only the "checking" note, and must not have called
+	// the backend synchronously.
+	_, cmd := m.Update(keyRune("d"))
+	if len(be.worktreeStatusCalls) != 0 {
+		t.Fatalf("opening the delete dialog must not call WorktreeStatus synchronously (it would pause the dialog), got calls = %v", be.worktreeStatusCalls)
+	}
+	if v := m.View(); strings.Contains(v, "uncommitted changes") || !strings.Contains(v, "checking") {
+		t.Fatalf("confirm view before the check resolves:\n%s", v)
+	}
+	// y must not act on the not-yet-resolved check.
+	m.Update(keyRune("y"))
+	if len(be.deleteCalls) != 0 || m.mode != ModeConfirmDelete {
+		t.Fatalf("y while checking: deleteCalls=%v mode=%v, want no-op", be.deleteCalls, m.mode)
+	}
+
+	// The background check resolves.
+	drainCmd(m, cmd)
+	if len(be.worktreeStatusCalls) != 1 || be.worktreeStatusCalls[0] != "demo:a" {
+		t.Fatalf("expected one WorktreeStatus call for demo:a, got %v", be.worktreeStatusCalls)
+	}
+	if v := m.View(); !strings.Contains(v, "uncommitted changes") || !strings.Contains(v, "unpushed commits") || strings.Contains(v, "checking") {
+		t.Fatalf("confirm view after the check resolves:\n%s", v)
+	}
+
+	// First y only acknowledges the now-resolved warning — no delete yet.
+	m.Update(keyRune("y"))
+	if len(be.deleteCalls) != 0 || m.mode != ModeConfirmDelete {
+		t.Fatalf("first y: deleteCalls=%v mode=%v, want no delete yet", be.deleteCalls, m.mode)
+	}
+
+	// Second y actually deletes.
+	run(m, keyRune("y"))
+	if len(be.deleteCalls) != 1 || be.deleteCalls[0] != "demo:a" {
+		t.Fatalf("deleteCalls = %v", be.deleteCalls)
+	}
+}
+
+// drainAll recursively runs cmd, feeding each resulting message back into
+// Update — including unwrapping tea.BatchMsg, which plain drainCmd/run leave
+// unexecuted (tea.Batch's Cmd yields a BatchMsg of further Cmds, not a final
+// message). Only safe when the model's statusCh is already closed: otherwise
+// the listenStatus cmd bundled into StatusTickMsg's batch blocks forever on
+// an empty, open channel.
+func drainAll(m *Model, cmd tea.Cmd) {
+	if cmd == nil {
+		return
+	}
+	msg := cmd()
+	if msg == nil {
+		return
+	}
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			drainAll(m, c)
+		}
+		return
+	}
+	_, next := m.Update(msg)
+	drainAll(m, next)
+}
+
+// TestGitStatusTrackedRegardlessOfState guards the core design point: git
+// status is no longer gated on being parked. A session that's actively
+// Working with no cached status yet still gets fetched on the next tick,
+// same as a parked one would — staleGitStatusIDs treats "never checked" as
+// maximally stale for every session, not just parked ones.
+func TestGitStatusTrackedRegardlessOfState(t *testing.T) {
+	be := &fakeBackend{
+		sessions:       []session.Session{{ID: "demo:a", Project: "demo", Name: "a", WorktreePath: "/wt/a"}},
+		worktreeStatus: map[string]gitStatusInfo{"demo:a": {dirty: true, ok: true}},
+	}
+	m := newTestModel(be)
+	m.tmuxAlive["demo:a"] = true
+	m.states["/wt/a"] = watcher.Working
+
+	drainCmd(m, m.fetchStaleGitStatusCmd())
+
+	if len(be.worktreeStatusCalls) != 1 || be.worktreeStatusCalls[0] != "demo:a" {
+		t.Fatalf("expected one WorktreeStatus call for a Working session with no cached status, got %v", be.worktreeStatusCalls)
+	}
+	if got := m.gitStatus["demo:a"]; !got.dirty {
+		t.Fatalf("gitStatus[demo:a] = %+v, want dirty=true", got)
+	}
+}
+
+// TestStaleGitStatusIsRefetched guards the staleness half of
+// staleGitStatusIDs: a cached status older than its jittered threshold is
+// worth a fresh fetch even though it was already checked once, since the
+// worktree can change while the session sits untouched (edits from another
+// terminal, a push from elsewhere).
+func TestStaleGitStatusIsRefetched(t *testing.T) {
+	be := &fakeBackend{
+		sessions:       []session.Session{{ID: "demo:a", Project: "demo", Name: "a", WorktreePath: "/wt/a"}},
+		worktreeStatus: map[string]gitStatusInfo{"demo:a": {dirty: true, ok: true}},
+	}
+	m := newTestModel(be)
+	// Well past even the top of the jitter range (gitStatusStaleAfter * (1 +
+	// gitStatusStaleJitter)), so this is unambiguously stale regardless of
+	// demo:a's particular jitter.
+	m.gitStatus["demo:a"] = gitStatusInfo{ok: true, checkedAt: time.Now().Add(-2 * gitStatusStaleAfter)}
+
+	drainCmd(m, m.fetchStaleGitStatusCmd())
+
+	if len(be.worktreeStatusCalls) != 1 || be.worktreeStatusCalls[0] != "demo:a" {
+		t.Fatalf("stale cached entry should trigger exactly one refetch, calls = %v", be.worktreeStatusCalls)
+	}
+	if got := m.gitStatus["demo:a"]; !got.dirty {
+		t.Fatalf("gitStatus[demo:a] not refreshed from the stale cache: %+v", got)
+	}
+}
+
+// TestFreshGitStatusIsNotRefetched is the other half: a cached entry well
+// within the staleness threshold must not trigger another
+// `git status`/`rev-list` call — that's the whole point of caching by
+// staleness instead of re-checking every session on every tick.
+func TestFreshGitStatusIsNotRefetched(t *testing.T) {
+	be := &fakeBackend{
+		sessions: []session.Session{{ID: "demo:a", Project: "demo", Name: "a", WorktreePath: "/wt/a"}},
+	}
+	m := newTestModel(be)
+	m.gitStatus["demo:a"] = gitStatusInfo{ok: true, checkedAt: time.Now()}
+
+	if cmd := m.fetchStaleGitStatusCmd(); cmd != nil {
+		t.Fatal("a fresh cached entry should not produce a fetch cmd")
+	}
+	if len(be.worktreeStatusCalls) != 0 {
+		t.Fatalf("no WorktreeStatus call expected, got %v", be.worktreeStatusCalls)
+	}
+}
+
+// TestGitStatusPendingSkipsDuplicateFetch guards against piling up
+// concurrent `git status` calls for the same session: once a fetch is in
+// flight (gitStatusPending), staleGitStatusIDs must not select that id again
+// even though its cache is still missing/stale — otherwise a session whose
+// git command is just running long would get re-issued a fresh fetch on
+// every single tick until the first one finally returns.
+func TestGitStatusPendingSkipsDuplicateFetch(t *testing.T) {
+	be := &fakeBackend{
+		sessions: []session.Session{{ID: "demo:a", Project: "demo", Name: "a", WorktreePath: "/wt/a"}},
+	}
+	m := newTestModel(be)
+
+	cmd := m.fetchStaleGitStatusCmd()
+	if cmd == nil {
+		t.Fatal("expected a fetch cmd for a never-checked session")
+	}
+	if !m.gitStatusPending["demo:a"] {
+		t.Fatal("demo:a should be marked pending once its fetch is dispatched")
+	}
+
+	// A second tick, before the first fetch resolves, must not re-select it.
+	if again := m.fetchStaleGitStatusCmd(); again != nil {
+		t.Fatal("a session with a fetch already in flight should not be re-selected")
+	}
+
+	// Resolving the first fetch clears pending and allows a future refetch.
+	drainCmd(m, cmd)
+	if m.gitStatusPending["demo:a"] {
+		t.Fatal("demo:a should no longer be pending once its fetch resolves")
+	}
+}
+
+// TestGitStatusMsgKeepsFresherResult guards against two overlapping fetches
+// for the same session (a routine refresh racing the delete dialog's
+// on-demand check, say) resolving out of order: whichever has the later
+// checkedAt wins, regardless of arrival order.
+func TestGitStatusMsgKeepsFresherResult(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{{ID: "demo:a", Project: "demo", Name: "a"}}}
+	m := newTestModel(be)
+
+	newer := time.Now()
+	older := newer.Add(-time.Hour)
+
+	m.Update(GitStatusMsg{Status: map[string]gitStatusInfo{"demo:a": {dirty: true, ok: true, checkedAt: newer}}})
+	if got := m.gitStatus["demo:a"]; !got.dirty || !got.checkedAt.Equal(newer) {
+		t.Fatalf("gitStatus[demo:a] = %+v after the first (newer) result", got)
+	}
+
+	// A stale, late-arriving result with an older checkedAt must not
+	// overwrite the fresher one already recorded.
+	m.Update(GitStatusMsg{Status: map[string]gitStatusInfo{"demo:a": {dirty: false, ok: true, checkedAt: older}}})
+	if got := m.gitStatus["demo:a"]; !got.dirty || !got.checkedAt.Equal(newer) {
+		t.Fatalf("gitStatus[demo:a] = %+v, want the newer result to survive", got)
+	}
+}
+
+// TestGitStatusStaleThresholdIsJittered guards against a thundering herd:
+// sessions all first fetched around the same moment (notably, every session
+// at startup) must not all come due for refresh in the same tick forever
+// after. gitStatusStaleThreshold must vary by session id (not return the
+// same duration for every id) and must be stable across repeated calls for
+// the same id (so staleness doesn't flap from one check to the next).
+func TestGitStatusStaleThresholdIsJittered(t *testing.T) {
+	a := gitStatusStaleThreshold("demo:a")
+	b := gitStatusStaleThreshold("demo:b")
+	if a == b {
+		t.Fatalf("expected different sessions to get different jittered thresholds, both = %v", a)
+	}
+	for _, got := range []time.Duration{a, b} {
+		lo := time.Duration(float64(gitStatusStaleAfter) * (1 - gitStatusStaleJitter))
+		hi := time.Duration(float64(gitStatusStaleAfter) * (1 + gitStatusStaleJitter))
+		if got < lo || got > hi {
+			t.Fatalf("threshold %v outside jitter range [%v, %v]", got, lo, hi)
+		}
+	}
+	if again := gitStatusStaleThreshold("demo:a"); again != a {
+		t.Fatalf("threshold for the same id changed across calls: %v then %v", a, again)
+	}
+}
+
+// TestInitFetchesGitStatusForEverySession guards the startup path: since
+// every session's git status is unfetched (checkedAt is zero) the moment the
+// app starts, the first tmux-alive resolution must kick off a fetch for all
+// of them, not just whichever happen to be parked — regardless of agent
+// state, without waiting for the first watcher tick.
+func TestInitFetchesGitStatusForEverySession(t *testing.T) {
+	be := &fakeBackend{
+		sessions: []session.Session{
+			{ID: "demo:a", Project: "demo", Name: "a", WorktreePath: "/wt/a"},
+			{ID: "demo:b", Project: "demo", Name: "b", WorktreePath: "/wt/b"},
+		},
+		worktreeStatus: map[string]gitStatusInfo{"demo:a": {dirty: true, ok: true}},
+	}
+	m := newTestModel(be)
+	// "b" is alive and Working — still expected to be checked, since git
+	// status tracking is no longer gated on parked state.
+	m.tmuxAlive["demo:b"] = true
+	m.states["/wt/b"] = watcher.Working
+
+	drainCmd(m, m.fetchStaleGitStatusCmd())
+
+	gotIDs := append([]string(nil), be.worktreeStatusCalls...)
+	sort.Strings(gotIDs)
+	if !reflect.DeepEqual(gotIDs, []string{"demo:a", "demo:b"}) {
+		t.Fatalf("expected a WorktreeStatus call for every session, got %v", gotIDs)
+	}
+	got, ok := m.gitStatus["demo:a"]
+	if !ok || !got.dirty {
+		t.Fatalf("gitStatus[demo:a] = %+v, ok=%v; want dirty=true", got, ok)
+	}
+	if _, ok := m.gitStatus["demo:b"]; !ok {
+		t.Fatal("gitStatus[demo:b] should have been fetched too — it's not gated on parked state")
+	}
+}
+
 func TestConfirmDeleteErrorFlashes(t *testing.T) {
 	be := &fakeBackend{
 		sessions:  []session.Session{{ID: "demo:a", Project: "demo", Name: "a"}},
 		deleteErr: errors.New("worktree busy"),
 	}
 	m := newTestModel(be)
-	m.Update(keyRune("d"))
+	run(m, keyRune("d"))
 	run(m, keyRune("y"))
 	if m.flashKind != "error" || !strings.Contains(m.flash, "worktree busy") {
 		t.Fatalf("flash = %q (%s)", m.flash, m.flashKind)
