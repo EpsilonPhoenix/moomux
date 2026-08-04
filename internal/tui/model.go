@@ -7,6 +7,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -163,7 +165,7 @@ type Model struct {
 	branchInput     textinput.Model
 	ticketInput     textinput.Model
 	prInput         textinput.Model
-	promptInput     textinput.Model
+	promptInput     textarea.Model
 	newFormFocus    int // 0=project selector, 1=nameInput, 2=branchInput, 3=agent selector, 4=ticketInput, 5=prInput, 6=promptInput
 	newFormErr      string
 	newFormAgentIdx int // agent selector in the new-session form; -1 means "not chosen yet"
@@ -296,10 +298,17 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 	pri.CharLimit = 256
 	pri.Width = 40
 
-	pi := textinput.New()
+	pi := textarea.New()
 	pi.Placeholder = "first prompt (optional)"
 	pi.CharLimit = 4096
-	pi.Width = 40
+	pi.ShowLineNumbers = false
+	pi.Prompt = "> "
+	pi.SetHeight(4)
+	pi.SetWidth(40)
+	// Enter is reserved as the form's global submit key (see updateNewForm),
+	// so it never reaches the textarea — ctrl+j is the only way to insert a
+	// newline while typing a multi-line prompt.
+	pi.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("ctrl+j"), key.WithHelp("ctrl+j", "newline"))
 
 	m := &Model{
 		cfg:             cfg,

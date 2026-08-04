@@ -71,6 +71,12 @@ func (m *Model) resizeFormInputs() {
 	setInputWidth(&m.nameInput, textInputWidth(&m.nameInput, 40, avail))
 	setInputWidth(&m.branchInput, textInputWidth(&m.branchInput, 40, avail))
 	setInputWidth(&m.ticketInput, textInputWidth(&m.ticketInput, 40, avail))
+	setInputWidth(&m.prInput, textInputWidth(&m.prInput, 40, avail))
+	// Unlike the single-line fields above, the textarea soft-wraps its
+	// content at its width instead of just scrolling — capping it to the
+	// same fixed 40 they use would wrap lines well before the box's actual
+	// edge on wide terminals, so let it fill the available width instead.
+	m.promptInput.SetWidth(avail)
 
 	if len(m.tagForm.inputs) == 2 {
 		labels := []string{"ticket url", "pr url"}
@@ -141,7 +147,7 @@ var newFormFieldHints = []string{
 	3: "which agent CLI runs in the session's pane — ←→ to choose",
 	4: "optional — shown as a clickable ticket icon next to the session",
 	5: "optional — shown as a clickable PR icon next to the session",
-	6: "optional — typed into the agent's pane as its first task once the session starts",
+	6: "optional — typed into the agent's pane as its first task once the session starts — ctrl+j for a newline",
 }
 
 func (m *Model) renderNewForm() string {
