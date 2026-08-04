@@ -23,14 +23,14 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 	s := m.sessions[m.cursor]
 	st := m.effectiveState(s)
 	dot := dotParked
-	label := "parked"
+	label := "in the barn"
 	switch st {
 	case watcher.Working:
-		dot, label = dotWorking, "working"
+		dot, label = dotWorking, "grazing"
 	case watcher.Done:
-		dot, label = dotDone, "done"
+		dot, label = dotDone, "chewing cud"
 	case watcher.NeedsInput:
-		dot, label = dotNeedsInput, "needs input"
+		dot, label = dotNeedsInput, "mooing for you"
 	}
 	var hits []linkHit
 	rowLink := func(k, v, url string, copyOnly bool) {
