@@ -651,11 +651,14 @@ func (m *Model) projectSessionCountFor(proj string) int {
 	return n
 }
 
-// projectHasSessions reports whether the named project has any session at
-// all (archived or not) — used to skip empty projects when cycling.
+// projectHasSessions reports whether the named project has any session
+// matching the current archived/active view — used to skip empty projects
+// when cycling. It must respect m.showArchived: a project with only
+// archived sessions is "empty" while viewing the active list, else cycling
+// lands you on a project whose list renders empty anyway.
 func (m *Model) projectHasSessions(name string) bool {
 	for _, s := range m.backend.Sessions() {
-		if s.Project == name {
+		if s.Project == name && s.Archived == m.showArchived {
 			return true
 		}
 	}

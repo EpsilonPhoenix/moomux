@@ -1330,6 +1330,36 @@ func TestProjectCyclingStaysWhenOnlyActiveHasSessions(t *testing.T) {
 	}
 }
 
+// A project whose only sessions are archived must count as empty while
+// viewing the active (non-archived) list, so cycling skips past it instead
+// of landing on a screen that renders "no sessions".
+func TestProjectCyclingSkipsProjectsWithOnlyArchivedSessions(t *testing.T) {
+	cfg := &config.Config{
+		Projects: map[string]config.Project{
+			"alpha":         {Repo: "/tmp/alpha"},
+			"archived-only": {Repo: "/tmp/archived-only"},
+			"beta":          {Repo: "/tmp/beta"},
+		},
+		Order: []string{"alpha", "archived-only", "beta"},
+	}
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "alpha:a", Project: "alpha", Name: "a"},
+		{ID: "archived-only:z", Project: "archived-only", Name: "z", Archived: true},
+		{ID: "beta:c", Project: "beta", Name: "c"},
+	}}
+	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
+	m.width, m.height = 80, 24
+
+	press(m, tea.KeyTab)
+	if m.projects[m.activeProj] != "beta" || len(m.sessions) != 1 {
+		t.Fatalf("after tab: proj=%q sessions=%v, want beta (archived-only skipped)", m.projects[m.activeProj], m.sessions)
+	}
+	press(m, tea.KeyShiftTab)
+	if m.projects[m.activeProj] != "alpha" {
+		t.Fatalf("after shift+tab: proj=%q, want alpha (archived-only skipped)", m.projects[m.activeProj])
+	}
+}
+
 // Mobile/remote terminals often can't send shift+arrow or shift+tab as a single
 // keypress, so every chorded action has a plain-letter alternate.
 func TestPlainLetterAlternatesForChordedKeys(t *testing.T) {
