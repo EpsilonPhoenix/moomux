@@ -261,7 +261,7 @@ func runSpawn(args []string) error {
 		return err
 	}
 
-	s, hint, err := a.CreateSession(*project, *name, *agent, *branch, *ticket)
+	s, hint, err := a.CreateSession(*project, *name, *agent, *branch, *ticket, true)
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}

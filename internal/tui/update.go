@@ -459,22 +459,27 @@ func (m *Model) resetOverlayViewport() {
 
 // openNewSessionForm opens the new-session dialog for the active project,
 // pre-selecting its default agent unless it requires an explicit choice on
-// every session.
+// every session. The project itself is only pre-selected when there's just
+// one to choose from — with more than one, the user must explicitly pick,
+// so focus starts on the project selector instead of skipping past it.
 func (m *Model) openNewSessionForm() {
 	m.mode = ModeNewForm
 	m.newFormErr = ""
-	m.newFormFocus = 1 // start below the project picker, at the name field
-	m.newFormProjIdx = m.activeProj
+	if len(m.projects) > 1 {
+		m.newFormProjIdx = -1
+		m.newFormFocus = newFormProjFocus
+	} else {
+		m.newFormProjIdx = m.activeProj
+		m.newFormFocus = 1 // start below the project picker, at the name field
+	}
+	m.newFormOpenInBackground = false
 	m.nameInput.SetValue("")
-	m.nameInput.Focus()
 	m.branchInput.SetValue("")
-	m.branchInput.Blur()
 	m.ticketInput.SetValue("")
-	m.ticketInput.Blur()
 	m.prInput.SetValue("")
-	m.prInput.Blur()
 	m.promptInput.SetValue("")
-	m.promptInput.Blur()
+	m.newFormBlurAll()
+	m.newFormFocusInput()
 	m.resetOverlayViewport()
 	m.resizeFormInputs()
 	m.newFormApplyProjectDefaults()
@@ -482,8 +487,13 @@ func (m *Model) openNewSessionForm() {
 
 // newFormApplyProjectDefaults sets the agent selector to the currently
 // selected project's default agent, unless that project requires an
-// explicit choice on every session.
+// explicit choice on every session. If no project is chosen yet, the agent
+// selector is left unset too, since it depends on the project.
 func (m *Model) newFormApplyProjectDefaults() {
+	if m.newFormProjIdx < 0 {
+		m.newFormAgentIdx = -1
+		return
+	}
 	proj := m.projects[m.newFormProjIdx]
 	p := m.cfg.Projects[proj]
 	if p.PromptAgent {
@@ -749,7 +759,7 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.FormDown), key.Matches(msg, m.keys.FormUp):
 		// The prompt field is a multi-line textarea — leave ↑/↓ to it for
 		// moving the cursor between lines instead of switching fields.
-		if m.newFormFocus == 6 {
+		if m.newFormFocus == 3 {
 			break
 		}
 		if key.Matches(msg, m.keys.FormUp) {
@@ -764,7 +774,9 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// cursor.
 		if m.newFormFocus == newFormProjFocus {
 			if len(m.projects) > 0 {
-				if key.Matches(msg, m.keys.Left) {
+				if m.newFormProjIdx < 0 {
+					m.newFormProjIdx = 0
+				} else if key.Matches(msg, m.keys.Left) {
 					m.newFormProjIdx = (m.newFormProjIdx - 1 + len(m.projects)) % len(m.projects)
 				} else {
 					m.newFormProjIdx = (m.newFormProjIdx + 1) % len(m.projects)
@@ -783,7 +795,15 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.newFormFocus == newFormOpenTerminalFocus {
+			m.newFormOpenInBackground = !m.newFormOpenInBackground
+			return m, nil
+		}
 	case key.Matches(msg, m.keys.Enter):
+		if m.newFormProjIdx < 0 {
+			m.newFormErr = "choose a project — tab to the project row, then ←→"
+			return m, nil
+		}
 		name := m.nameInput.Value()
 		branch := m.branchInput.Value()
 		ticket := m.ticketInput.Value()
@@ -800,6 +820,7 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.newFormErr = ""
 		proj := m.projects[m.newFormProjIdx]
 		agent := agentChoices[m.newFormAgentIdx]
+		openTerminal := !m.newFormOpenInBackground
 		m.mode = ModeList
 		label := name
 		if label == "" {
@@ -808,7 +829,7 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.setFlash("info", "creating "+label+"…")
 		m.busy = true
 		return m, func() tea.Msg {
-			s, hint, err := m.backend.CreateSession(proj, name, agent, branch, ticket)
+			s, hint, err := m.backend.CreateSession(proj, name, agent, branch, ticket, openTerminal)
 			if err != nil {
 				return ErrorMsg{Err: err}
 			}
@@ -842,14 +863,16 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// selector row: no text input to type into
 	case 2:
 		m.branchInput, cmd = m.branchInput.Update(msg)
-	case newFormAgentFocus:
-		// selector row: no text input to type into
+	case 3:
+		m.promptInput, cmd = m.promptInput.Update(msg)
 	case 4:
 		m.ticketInput, cmd = m.ticketInput.Update(msg)
 	case 5:
 		m.prInput, cmd = m.prInput.Update(msg)
-	case 6:
-		m.promptInput, cmd = m.promptInput.Update(msg)
+	case newFormAgentFocus:
+		// selector row: no text input to type into
+	case newFormOpenTerminalFocus:
+		// toggle row: no text input to type into
 	default:
 		m.nameInput, cmd = m.nameInput.Update(msg)
 	}
@@ -906,14 +929,16 @@ func (m *Model) newFormFocusInput() {
 		// selector row: nothing to focus
 	case 2:
 		m.branchInput.Focus()
-	case newFormAgentFocus:
-		// selector row: nothing to focus
+	case 3:
+		m.promptInput.Focus()
 	case 4:
 		m.ticketInput.Focus()
 	case 5:
 		m.prInput.Focus()
-	case 6:
-		m.promptInput.Focus()
+	case newFormAgentFocus:
+		// selector row: nothing to focus
+	case newFormOpenTerminalFocus:
+		// toggle row: nothing to focus
 	default:
 		m.nameInput.Focus()
 	}

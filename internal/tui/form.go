@@ -134,20 +134,26 @@ func (m *Model) renderFormHint(text string) string {
 // new-session form is currently focused, so the jargon (worktree, base
 // branch) doesn't have to be memorized up front.
 // newFormFieldCount is the focus cycle length: project selector, name,
-// branch, agent selector, ticket, PR, prompt — matching the rendered order.
-const newFormFieldCount = 7
+// branch, prompt, ticket, PR, agent selector, open-terminal toggle —
+// matching the rendered order.
+const newFormFieldCount = 8
 
 // newFormAgentFocus is the newFormFocus value for the agent selector row.
-const newFormAgentFocus = 3
+const newFormAgentFocus = 6
+
+// newFormOpenTerminalFocus is the newFormFocus value for the open-in-
+// background toggle row.
+const newFormOpenTerminalFocus = 7
 
 var newFormFieldHints = []string{
 	0: "which project this session belongs to — ←→ to choose",
-	1: "shown in the session list and used for the worktree folder name — leave blank to derive one from the branch",
-	2: "an existing branch to resume, or a new one to branch off the project's base branch",
-	3: "which agent CLI runs in the session's pane — ←→ to choose",
+	1: "shown in the list and worktree folder — blank uses branch",
+	2: "resume an existing branch, or branch off the base branch",
+	3: "optional — the agent's first task; ctrl+j for a newline",
 	4: "optional — shown as a clickable ticket icon next to the session",
 	5: "optional — shown as a clickable PR icon next to the session",
-	6: "optional — typed into the agent's pane as its first task once the session starts — ctrl+j for a newline",
+	6: "which agent CLI runs in the session's pane — ←→ to choose",
+	7: "on: starts the session in the background, no terminal window",
 }
 
 func (m *Model) renderNewForm() string {
@@ -161,15 +167,31 @@ func (m *Model) renderNewForm() string {
 	b.WriteString("\n\n")
 	b.WriteString(m.branchInput.View())
 	b.WriteString("\n\n")
-	b.WriteString(muteStyle.Render("agent:  "))
-	b.WriteString(m.renderNewFormAgentSelector())
+	b.WriteString(m.promptInput.View())
 	b.WriteString("\n\n")
 	b.WriteString(m.ticketInput.View())
 	b.WriteString("\n\n")
 	b.WriteString(m.prInput.View())
 	b.WriteString("\n\n")
-	b.WriteString(m.promptInput.View())
+	b.WriteString(muteStyle.Render("agent:  "))
+	b.WriteString(m.renderNewFormAgentSelector())
+	b.WriteString("\n\n")
+	b.WriteString(muteStyle.Render("open in background:  "))
+	b.WriteString(m.renderNewFormOpenTerminalToggle())
 	return b.String()
+}
+
+func (m *Model) renderNewFormOpenTerminalToggle() string {
+	focused := m.newFormFocus == newFormOpenTerminalFocus
+	choice := "on"
+	if !m.newFormOpenInBackground {
+		choice = "off"
+	}
+	label := "[" + choice + "]"
+	if focused {
+		return titleStyle.Render(label)
+	}
+	return lipgloss.NewStyle().Bold(true).Render(label)
 }
 
 // newFormProjFocus is the newFormFocus value for the project selector row.
@@ -178,6 +200,9 @@ const newFormProjFocus = 0
 func (m *Model) renderNewFormProjectSelector() string {
 	if len(m.projects) == 0 {
 		return ""
+	}
+	if m.newFormProjIdx < 0 {
+		return warnStyle.Render("choose a project (←→)")
 	}
 	focused := m.newFormFocus == newFormProjFocus
 	var b strings.Builder
@@ -282,21 +307,21 @@ func (m *Model) renderSessionAgentSelector() string {
 // to be looked up elsewhere.
 var projFormFieldHints = []string{
 	0: "internal label for this project — shown in the tabs at the top",
-	1: "path to the project's git repo — prefilled from the current directory; edit it, or point elsewhere",
+	1: "path to the project's git repo — edit or point elsewhere",
 	2: "the branch new session worktrees branch off of (usually main or master)",
-	3: "prepended to every new session's branch name, e.g. \"alice/\" → alice/feature-x — leave blank to skip",
-	4: "shown instead of the project name in the all-sessions view — ←→ to choose, \"auto\" picks one automatically",
-	5: "coding agent launched by default for new sessions in this project — \"ask each time\" requires choosing one on every new session",
-	6: "off: every session runs directly in the repo folder instead of its own worktree/branch",
+	3: "prepended to new branch names, e.g. alice/feature-x — blank to skip",
+	4: "shown instead of the project name in all-sessions — ←→ to choose",
+	5: "default agent for new sessions — \"ask each time\" prompts every time",
+	6: "off: sessions run directly in the repo, no worktree/branch",
 }
 
 var editProjectFieldHints = []string{
 	0: "project names cannot be changed",
-	1: "repository path used by new sessions — existing worktrees stay where they are",
+	1: "repo path used by new sessions — existing worktrees stay put",
 	2: "base branch used when creating new session worktrees",
 	3: "prepended to branches created for new sessions — leave blank to skip",
-	4: "shown instead of the project name in the all-sessions view — ←→ to choose, \"auto\" picks one automatically",
-	5: "coding agent copied into new sessions by default — \"ask each time\" requires choosing one on every new session",
+	4: "shown instead of the project name in all-sessions — ←→ to choose",
+	5: "default agent for new sessions — \"ask each time\" prompts every time",
 	6: "changes worktree behavior for new sessions only",
 }
 

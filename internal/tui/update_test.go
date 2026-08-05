@@ -48,13 +48,16 @@ func TestNewSessionFormFlow(t *testing.T) {
 	m.nameInput.SetValue("myfeat")
 	m.nameInput.CursorEnd()
 	press(m, tea.KeyTab) // -> branch
-	press(m, tea.KeyTab) // -> agent selector
+	for i := 0; i < 4; i++ {
+		press(m, tea.KeyTab) // branch -> prompt -> ticket -> PR -> agent selector
+	}
 	press(m, tea.KeyRight)
 	if agentChoices[m.newFormAgentIdx] != "codex" {
 		t.Fatalf("agent = %q", agentChoices[m.newFormAgentIdx])
 	}
-	press(m, tea.KeyLeft) // back to claude
-	press(m, tea.KeyTab)  // -> ticket
+	press(m, tea.KeyLeft)     // back to claude
+	press(m, tea.KeyShiftTab) // agent -> PR
+	press(m, tea.KeyShiftTab) // PR -> ticket
 	typeText(m, "https://t/1")
 	press(m, tea.KeyShiftTab)
 	press(m, tea.KeyShiftTab) // -> branch again
@@ -81,8 +84,8 @@ func TestNewSessionFormSendsFirstPrompt(t *testing.T) {
 
 	m.Update(keyRune("n"))
 	typeText(m, "myfeat")
-	for i := 0; i < 5; i++ {
-		press(m, tea.KeyTab) // name -> branch -> agent -> ticket -> PR -> prompt
+	for i := 0; i < 2; i++ {
+		press(m, tea.KeyTab) // name -> branch -> prompt
 	}
 	typeText(m, "do the thing")
 
@@ -106,10 +109,10 @@ func TestNewSessionFormPromptSupportsMultilineNavigation(t *testing.T) {
 
 	m.Update(keyRune("n"))
 	typeText(m, "myfeat")
-	for i := 0; i < 5; i++ {
-		press(m, tea.KeyTab) // name -> branch -> agent -> ticket -> PR -> prompt
+	for i := 0; i < 2; i++ {
+		press(m, tea.KeyTab) // name -> branch -> prompt
 	}
-	if m.newFormFocus != 6 {
+	if m.newFormFocus != 3 {
 		t.Fatalf("focus = %d, want prompt field", m.newFormFocus)
 	}
 
@@ -121,22 +124,22 @@ func TestNewSessionFormPromptSupportsMultilineNavigation(t *testing.T) {
 	}
 
 	press(m, tea.KeyUp)
-	if m.newFormFocus != 6 {
+	if m.newFormFocus != 3 {
 		t.Fatalf("up arrow left the prompt field: focus = %d", m.newFormFocus)
 	}
 	press(m, tea.KeyDown)
-	if m.newFormFocus != 6 {
+	if m.newFormFocus != 3 {
 		t.Fatalf("down arrow left the prompt field: focus = %d", m.newFormFocus)
 	}
 
 	// Every other field still cycles focus on up/down.
-	press(m, tea.KeyTab) // prompt -> project selector (wraps)
-	if m.newFormFocus != newFormProjFocus {
-		t.Fatalf("focus = %d, want project selector", m.newFormFocus)
+	press(m, tea.KeyTab) // prompt -> ticket
+	if m.newFormFocus != 4 {
+		t.Fatalf("focus = %d, want ticket field", m.newFormFocus)
 	}
 	press(m, tea.KeyDown)
-	if m.newFormFocus != 1 {
-		t.Fatalf("down arrow did not advance focus off the project selector: focus = %d", m.newFormFocus)
+	if m.newFormFocus != 5 {
+		t.Fatalf("down arrow did not advance focus off the ticket field: focus = %d", m.newFormFocus)
 	}
 }
 
@@ -152,7 +155,7 @@ func TestNewSessionFormSurvivesPostCreatePRTagFailure(t *testing.T) {
 	m.Update(keyRune("n"))
 	typeText(m, "myfeat")
 	for i := 0; i < 4; i++ {
-		press(m, tea.KeyTab) // name -> branch -> agent -> ticket -> PR
+		press(m, tea.KeyTab) // name -> branch -> prompt -> ticket -> PR
 	}
 	typeText(m, "https://github.com/x/y/pull/2")
 
@@ -179,8 +182,8 @@ func TestNewSessionFormSurvivesPostCreateFirstPromptFailure(t *testing.T) {
 
 	m.Update(keyRune("n"))
 	typeText(m, "myfeat")
-	for i := 0; i < 5; i++ {
-		press(m, tea.KeyTab) // name -> branch -> agent -> ticket -> PR -> prompt
+	for i := 0; i < 2; i++ {
+		press(m, tea.KeyTab) // name -> branch -> prompt
 	}
 	typeText(m, "do the thing")
 
@@ -201,12 +204,13 @@ func TestNewSessionFormClearsPRAndPromptOnReopen(t *testing.T) {
 	m := newTestModel(be)
 
 	m.Update(keyRune("n"))
-	for i := 0; i < 4; i++ {
-		press(m, tea.KeyTab) // name -> branch -> agent -> ticket -> PR
-	}
-	typeText(m, "https://github.com/x/y/pull/2")
+	press(m, tea.KeyTab) // -> branch
 	press(m, tea.KeyTab) // -> prompt
 	typeText(m, "leftover prompt")
+	for i := 0; i < 2; i++ {
+		press(m, tea.KeyTab) // prompt -> ticket -> PR
+	}
+	typeText(m, "https://github.com/x/y/pull/2")
 	press(m, tea.KeyEsc) // cancel without submitting
 
 	m.Update(keyRune("n")) // reopen
@@ -224,14 +228,13 @@ func TestNewSessionFormAppendsTicketAndPRToFirstPrompt(t *testing.T) {
 
 	m.Update(keyRune("n"))
 	typeText(m, "myfeat")
-	for i := 0; i < 3; i++ {
-		press(m, tea.KeyTab) // name -> branch -> agent -> ticket
-	}
+	press(m, tea.KeyTab) // -> branch
+	press(m, tea.KeyTab) // -> prompt
+	typeText(m, "do the thing")
+	press(m, tea.KeyTab) // -> ticket
 	typeText(m, "https://ticket.example/1")
 	press(m, tea.KeyTab) // -> PR
 	typeText(m, "https://github.com/x/y/pull/2")
-	press(m, tea.KeyTab) // -> prompt
-	typeText(m, "do the thing")
 
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if len(be.tagCalls) != 1 || be.tagCalls[0].ticket != "https://ticket.example/1" || be.tagCalls[0].pr != "https://github.com/x/y/pull/2" {
@@ -309,6 +312,45 @@ func TestNewSessionFormAgentRequiredErrorRendered(t *testing.T) {
 	}
 	if v := m.View(); !strings.Contains(v, "requires choosing an agent") {
 		t.Fatalf("agent-required error not rendered:\n%s", v)
+	}
+}
+
+func TestNewSessionFormForcesProjectChoiceWithMultipleProjects(t *testing.T) {
+	be := &fakeBackend{}
+	m := newMultiProjectTestModel(be) // projects: alpha, beta
+	m.Update(keyRune("n"))
+	if m.newFormProjIdx != -1 {
+		t.Fatalf("projIdx = %d, want -1 with more than one project", m.newFormProjIdx)
+	}
+	if m.newFormFocus != newFormProjFocus {
+		t.Fatalf("focus = %d, want to start on the project selector", m.newFormFocus)
+	}
+	press(m, tea.KeyEnter)
+	if len(be.createCalls) != 0 {
+		t.Fatalf("createCalls = %v", be.createCalls)
+	}
+	if v := m.View(); !strings.Contains(v, "choose a project") {
+		t.Fatalf("project-required error not rendered:\n%s", v)
+	}
+
+	press(m, tea.KeyRight)
+	if m.projects[m.newFormProjIdx] != "alpha" {
+		t.Fatalf("projIdx = %d, want alpha", m.newFormProjIdx)
+	}
+	press(m, tea.KeyTab) // -> name
+	typeText(m, "myfeat")
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(be.createCalls) != 1 || be.createCalls[0].project != "alpha" {
+		t.Fatalf("createCalls = %v", be.createCalls)
+	}
+}
+
+func TestNewSessionFormDefaultsProjectWithSingleProject(t *testing.T) {
+	be := &fakeBackend{}
+	m := newTestModel(be) // single project: demo
+	m.Update(keyRune("n"))
+	if m.newFormProjIdx != 0 {
+		t.Fatalf("projIdx = %d, want 0 with a single project", m.newFormProjIdx)
 	}
 }
 
