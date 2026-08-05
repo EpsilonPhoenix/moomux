@@ -383,13 +383,13 @@ func TestShortFormViewportKeepsFocusedInputVisible(t *testing.T) {
 	m.mode = ModeNewForm
 	m.nameInput.SetValue("unique-name")
 	m.branchInput.SetValue("unique-branch")
+	m.promptInput.SetValue("unique-prompt")
 	m.ticketInput.SetValue("unique-ticket")
 	m.prInput.SetValue("unique-pr")
-	m.promptInput.SetValue("unique-prompt")
 	m.resizeFormInputs()
 
-	values := []string{"[demo]", "unique-name", "unique-branch", "[claude]", "unique-ticket", "unique-pr", "unique-prompt"}
-	hints := []string{"which project", "worktree folder", "existing branch", "←→ to choose", "clickable ticket", "clickable PR", "typed into the agent's pane"}
+	values := []string{"[demo]", "unique-name", "unique-branch", "unique-prompt", "unique-ticket", "unique-pr", "[claude]", "[off]"}
+	hints := []string{"which project", "worktree folder", "existing branch", "agent's first task", "clickable ticket", "clickable PR", "←→ to choose", "background"}
 	for focus, value := range values {
 		m.newFormBlurAll()
 		m.newFormFocus = focus
@@ -404,6 +404,45 @@ func TestShortFormViewportKeepsFocusedInputVisible(t *testing.T) {
 		}
 		if !strings.Contains(view, hints[focus]) {
 			t.Fatalf("contextual hint %q is not visible:\n%s", hints[focus], view)
+		}
+	}
+}
+
+// TestFocusedOverlayLineCoversEveryNewFormField guards against
+// focusedOverlayLine silently falling through to nameInput's line for a
+// focus value it doesn't recognize — which happened for the prompt/PR/
+// open-terminal fields after the new-session form was reordered, and made
+// the overlay viewport scroll to the wrong spot (visible as the dialog
+// jumping/"resizing") whenever one of those fields was focused.
+func TestFocusedOverlayLineCoversEveryNewFormField(t *testing.T) {
+	m := layoutTestModel(1)
+	m.mode = ModeNewForm
+	m.nameInput.SetValue("tok-name")
+	m.branchInput.SetValue("tok-branch")
+	m.promptInput.SetValue("tok-firstprompt")
+	m.ticketInput.SetValue("tok-ticket")
+	m.prInput.SetValue("tok-prurl")
+	m.newFormAgentIdx = 0
+	content := m.compactOverlayContent(m.renderNewForm())
+
+	cases := []struct {
+		focus  int
+		marker string
+	}{
+		{newFormProjFocus, "project:"},
+		{1, "tok-name"},
+		{2, "tok-branch"},
+		{3, "tok-firstprompt"},
+		{4, "tok-ticket"},
+		{5, "tok-prurl"},
+		{newFormAgentFocus, "agent:"},
+		{newFormOpenTerminalFocus, "open in background:"},
+	}
+	for _, tc := range cases {
+		m.newFormFocus = tc.focus
+		want := lineContaining(content, tc.marker)
+		if got := m.focusedOverlayLine(content); got != want {
+			t.Fatalf("focus %d: focusedOverlayLine = %d, want %d (line containing %q)", tc.focus, got, want, tc.marker)
 		}
 	}
 }

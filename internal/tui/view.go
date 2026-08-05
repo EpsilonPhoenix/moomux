@@ -155,14 +155,16 @@ func (m *Model) focusedOverlayLine(content string) int {
 			return lineContaining(content, m.renderNewFormProjectSelector())
 		case 2:
 			return lineContaining(content, m.branchInput.View())
-		case newFormAgentFocus:
-			return lineContaining(content, m.renderNewFormAgentSelector())
+		case 3:
+			return lineContaining(content, m.promptInput.View())
 		case 4:
 			return lineContaining(content, m.ticketInput.View())
 		case 5:
 			return lineContaining(content, m.prInput.View())
-		case 6:
-			return lineContaining(content, m.promptInput.View())
+		case newFormAgentFocus:
+			return lineContaining(content, m.renderNewFormAgentSelector())
+		case newFormOpenTerminalFocus:
+			return lineContaining(content, m.renderNewFormOpenTerminalToggle())
 		default:
 			return lineContaining(content, m.nameInput.View())
 		}

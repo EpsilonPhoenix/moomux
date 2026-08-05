@@ -198,8 +198,9 @@ func (a *App) tmuxSessionUsingWorktree(path string) (string, error) {
 
 // CreateSession's hint, when non-empty, is a user-facing instruction
 // (e.g. "run: tmux attach -t ...") to show alongside success — it is
-// not an error.
-func (a *App) CreateSession(project, name, agent, existingBranch, ticket string) (session.Session, string, error) {
+// not an error. When openTerminal is false, the tmux session is started
+// detached and no terminal window is opened.
+func (a *App) CreateSession(project, name, agent, existingBranch, ticket string, openTerminal bool) (session.Session, string, error) {
 	proj, ok := a.Cfg.Projects[project]
 	if !ok {
 		return session.Session{}, "", fmt.Errorf("unknown project %q", project)
@@ -313,18 +314,24 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 		return session.Session{}, "", fmt.Errorf("tmux new-session: %w", err)
 	}
 	slog.Info("tmux session created", "name", tmuxName)
-	tabID, hint, err := a.openTerminal("", tmuxName, name)
-	if err != nil {
-		// The worktree and tmux session already exist at this point;
-		// failing would strand them outside the store. Degrade to a
-		// manual-attach hint instead.
-		slog.Error("terminal open failed", "tmux_session", tmuxName, "name", name, "err", err)
-		hint = fmt.Sprintf("couldn't open a terminal (%v) — attach yourself: tmux attach -t %s", err, tmuxName)
+	var tabID, hint string
+	if openTerminal {
+		var err error
+		tabID, hint, err = a.openTerminal("", tmuxName, name)
+		if err != nil {
+			// The worktree and tmux session already exist at this point;
+			// failing would strand them outside the store. Degrade to a
+			// manual-attach hint instead.
+			slog.Error("terminal open failed", "tmux_session", tmuxName, "name", name, "err", err)
+			hint = fmt.Sprintf("couldn't open a terminal (%v) — attach yourself: tmux attach -t %s", err, tmuxName)
+		}
+		if hooksHint != "" {
+			hint = joinHints(hooksHint, hint)
+		}
+		slog.Info("terminal opened", "tmux_session", tmuxName)
+	} else {
+		hint = joinHints(hooksHint, fmt.Sprintf("tmux session started in background — attach with: tmux attach -t %s", tmuxName))
 	}
-	if hooksHint != "" {
-		hint = joinHints(hooksHint, hint)
-	}
-	slog.Info("terminal opened", "tmux_session", tmuxName)
 
 	s := session.Session{
 		ID:           session.MakeID(project, name),

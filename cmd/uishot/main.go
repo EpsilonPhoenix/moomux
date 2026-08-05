@@ -33,10 +33,12 @@ import (
 var screens = map[string][]string{
 	"list":        {},
 	"new-session": {"n"},
-	// 5 tabs lands on the first-prompt textarea (see newFormFieldCount);
+	// "right" picks the first (of two sample) projects, since the form
+	// forces an explicit choice when there's more than one; 3 tabs from
+	// there lands on the first-prompt textarea (see newFormFieldCount) —
 	// ctrl+j inserts a newline there since Enter is reserved for submit.
-	"new-session-multiline": {"n", "tab", "tab", "tab", "tab", "tab", "first line", "ctrl+j", "second line"},
-	"new-session-wide-line": {"n", "tab", "tab", "tab", "tab", "tab", "this is a single long line typed into the first prompt field that should only wrap once it actually reaches the right edge of the box on a wide terminal"},
+	"new-session-multiline": {"n", "right", "tab", "tab", "tab", "first line", "ctrl+j", "second line"},
+	"new-session-wide-line": {"n", "right", "tab", "tab", "tab", "this is a single long line typed into the first prompt field that should only wrap once it actually reaches the right edge of the box on a wide terminal"},
 	// Adding/editing a project only happens inside the picker now (P/E were
 	// removed from the main list), so these open it first.
 	"new-project":    {"/", "n"},
@@ -152,7 +154,7 @@ type fakeBackend struct {
 	worktreeStatus map[string]struct{ dirty, unpushed bool }
 }
 
-func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket string) (session.Session, string, error) {
+func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket string, openTerminal bool) (session.Session, string, error) {
 	return session.Session{}, "", nil
 }
 func (f *fakeBackend) StartFirstPrompt(tmuxSession, prompt string) error { return nil }

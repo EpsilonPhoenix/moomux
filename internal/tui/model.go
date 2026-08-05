@@ -29,7 +29,7 @@ type Backend interface {
 	// CreateSession's hint, when non-empty, is a user-facing instruction
 	// (e.g. "run: tmux attach -t ...") to show alongside success — it is
 	// not an error.
-	CreateSession(project, name, agent, existingBranch, ticket string) (s session.Session, hint string, err error)
+	CreateSession(project, name, agent, existingBranch, ticket string, openTerminal bool) (s session.Session, hint string, err error)
 	// StartFirstPrompt waits for a freshly created session's agent pane to
 	// be ready, then types prompt into it and starts the agent working on
 	// it. No-op if prompt is empty.
@@ -177,21 +177,22 @@ type Model struct {
 	statusCh         <-chan watcher.Snapshot
 	cancelPoll       context.CancelFunc
 
-	mode            Mode
-	nameInput       textinput.Model
-	branchInput     textinput.Model
-	ticketInput     textinput.Model
-	prInput         textinput.Model
-	promptInput     textarea.Model
-	newFormFocus    int // 0=project selector, 1=nameInput, 2=branchInput, 3=agent selector, 4=ticketInput, 5=prInput, 6=promptInput
-	newFormErr      string
-	newFormAgentIdx int // agent selector in the new-session form; -1 means "not chosen yet"
-	newFormProjIdx  int // project selector in the new-session form; index into m.projects
-	projForm        projectForm
-	sessionForm     sessionForm
-	editProjectName string
-	tagForm         tagForm
-	pickerCursor    int // index into m.projects while ModeProjectPicker is open
+	mode                    Mode
+	nameInput               textinput.Model
+	branchInput             textinput.Model
+	ticketInput             textinput.Model
+	prInput                 textinput.Model
+	promptInput             textarea.Model
+	newFormFocus            int // 0=project selector, 1=nameInput, 2=branchInput, 3=promptInput, 4=ticketInput, 5=prInput, 6=agent selector, 7=open-terminal toggle
+	newFormErr              string
+	newFormAgentIdx         int  // agent selector in the new-session form; -1 means "not chosen yet"
+	newFormProjIdx          int  // project selector in the new-session form; index into m.projects
+	newFormOpenInBackground bool // whether to skip opening a terminal window for the new session; off by default
+	projForm                projectForm
+	sessionForm             sessionForm
+	editProjectName         string
+	tagForm                 tagForm
+	pickerCursor            int // index into m.projects while ModeProjectPicker is open
 	// confirmGit starts out as whatever's cached in m.gitStatus (possibly
 	// stale or empty) the instant ModeConfirmDelete opens, so the dialog
 	// never pauses. confirmChecking is true while a fresh fetchGitStatusCmd
