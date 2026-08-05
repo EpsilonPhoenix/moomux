@@ -81,9 +81,37 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 	if s.PR != "" {
 		row("pr", truncateLeft(s.PR, valueWidth), s.PR)
 	}
-	if prompt := m.prompts[s.ID]; prompt != "" {
+	prompt := m.prompts[s.ID]
+	if prompt == "" {
+		prompt = s.Prompt
+	}
+	if prompt != "" {
 		oneline := strings.ReplaceAll(strings.ReplaceAll(prompt, "\r\n", " "), "\n", " ")
-		row("prompt", truncate(oneline, valueWidth), "")
+		const maxPromptLines = 3
+		lines := wrapLines(oneline, valueWidth)
+		if len(lines) > maxPromptLines {
+			lines = lines[:maxPromptLines]
+			last := []rune(lines[maxPromptLines-1])
+			if len(last) > valueWidth-1 {
+				last = last[:valueWidth-1]
+			}
+			lines[maxPromptLines-1] = string(last) + "…"
+		}
+		key := muteStyle.Render(fmt.Sprintf("%-10s", "prompt:"))
+		blank := muteStyle.Render(fmt.Sprintf("%-10s", ""))
+		for i, ln := range lines {
+			label := blank
+			if i == 0 {
+				label = key
+			}
+			line := lipgloss.Height(lipgloss.NewStyle().Width(width).Render(b.String())) - 1
+			col0 := lipgloss.Width(label) + 1
+			col1 := min(width, col0+lipgloss.Width(ln))
+			if line < height && col0 < col1 {
+				hits = append(hits, linkHit{sessionID: s.ID, url: oneline, copyOnly: true, line: line, col0: col0, col1: col1})
+			}
+			b.WriteString(fmt.Sprintf("%s %s\n", label, detailLinkStyle.Render(ln)))
+		}
 	}
 	b.WriteString("\n")
 	var cowMsg string

@@ -177,6 +177,9 @@ func (f *fakeBackend) SetSessionTags(id, ticket, pr string) (session.Session, er
 func (f *fakeBackend) SetSessionAgent(id, agent string) (session.Session, error) {
 	return session.Session{}, nil
 }
+func (f *fakeBackend) SetSessionPrompt(id, prompt string) (session.Session, error) {
+	return session.Session{}, nil
+}
 func (f *fakeBackend) SetSessionArchived(id string, archived bool) (session.Session, error) {
 	return session.Session{}, nil
 }
@@ -224,6 +227,7 @@ func sampleSessions() []session.Session {
 			CreatedAt:    now,
 			Agent:        "claude",
 			Ticket:       "https://tracker.example/TICK-123",
+			Prompt:       "add JWT-based auth to the login flow, including refresh token rotation, session revocation on logout, and rate limiting on the token endpoint so we don't get hammered by retries",
 		},
 		{
 			ID:           "demo:bugfix-timeout",
