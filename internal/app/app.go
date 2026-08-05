@@ -520,6 +520,18 @@ func (a *App) SetSessionTags(id, ticket, pr string) (session.Session, error) {
 	return s, nil
 }
 
+func (a *App) SetSessionPrompt(id, prompt string) (session.Session, error) {
+	s, ok := a.Store.Get(id)
+	if !ok {
+		return session.Session{}, fmt.Errorf("unknown session %q", id)
+	}
+	s.Prompt = prompt
+	if err := a.Store.Put(s); err != nil {
+		return s, fmt.Errorf("store: %w", err)
+	}
+	return s, nil
+}
+
 func (a *App) SetSessionAgent(id, agent string) (session.Session, error) {
 	if err := validateAgent(agent); err != nil {
 		return session.Session{}, err

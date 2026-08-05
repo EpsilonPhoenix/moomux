@@ -44,6 +44,7 @@ type Backend interface {
 	// terminals tracking the window name as their tab title show it live.
 	SetSessionStatusTitle(id string, st watcher.State) error
 	SetSessionTags(id, ticket, pr string) (session.Session, error)
+	SetSessionPrompt(id, prompt string) (session.Session, error)
 	SetSessionAgent(id, agent string) (session.Session, error)
 	// SetSessionArchived hides (or restores) a session from the default
 	// list without touching its tmux session or worktree.

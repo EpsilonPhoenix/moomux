@@ -850,6 +850,9 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if extra := newFormPromptExtras(ticket, pr); extra != "" {
 					firstPrompt += "\n\n" + extra
 				}
+				if updated, promptErr := m.backend.SetSessionPrompt(s.ID, firstPrompt); promptErr == nil {
+					s = updated
+				}
 				if err := m.backend.StartFirstPrompt(s.TmuxSession, firstPrompt); err != nil {
 					hint = joinHint(hint, fmt.Sprintf("couldn't send first prompt: %v", err))
 				}

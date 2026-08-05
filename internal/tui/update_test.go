@@ -96,6 +96,9 @@ func TestNewSessionFormSendsFirstPrompt(t *testing.T) {
 	if len(be.firstPromptCalls) != 1 || be.firstPromptCalls[0].prompt != "do the thing" {
 		t.Fatalf("firstPromptCalls = %v", be.firstPromptCalls)
 	}
+	if len(be.sessions) != 1 || be.sessions[0].Prompt != "do the thing" {
+		t.Fatalf("session prompt not persisted: %v", be.sessions)
+	}
 }
 
 // TestNewSessionFormPromptSupportsMultilineNavigation guards the prompt

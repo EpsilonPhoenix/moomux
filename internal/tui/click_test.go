@@ -151,6 +151,15 @@ func (f *fakeBackend) SetSessionTags(id, ticket, pr string) (session.Session, er
 	}
 	return session.Session{ID: id, Ticket: ticket, PR: pr}, nil
 }
+func (f *fakeBackend) SetSessionPrompt(id, prompt string) (session.Session, error) {
+	for i, s := range f.sessions {
+		if s.ID == id {
+			f.sessions[i].Prompt = prompt
+			return f.sessions[i], nil
+		}
+	}
+	return session.Session{ID: id, Prompt: prompt}, nil
+}
 func (f *fakeBackend) SetSessionAgent(id, agent string) (session.Session, error) {
 	f.sessionAgentCalls = append(f.sessionAgentCalls, sessionAgentCall{id, agent})
 	if f.sessionAgentErr != nil {
