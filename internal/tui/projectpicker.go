@@ -15,8 +15,8 @@ const projectPickerRowMarker = "▸ "
 // renderProjectPicker renders the cursor-navigable project list opened by
 // ProjectPicker (jump straight to a project without cycling tabs). Each row
 // is the project name on the left and a small right-aligned detail column —
-// active session count, plus archived count (dimmed) when it has any —
-// rather than a superscript glued onto the name, so the name stays plain and
+// active session count plus archived count (dimmed), e.g. "1/0" — rather
+// than a superscript glued onto the name, so the name stays plain and
 // readable and archived sessions aren't silently left out of the count.
 func (m *Model) renderProjectPicker() string {
 	var b strings.Builder
@@ -63,19 +63,16 @@ func (m *Model) renderProjectPicker() string {
 		a, r := active[p], archived[p]
 		detail := ""
 		if a > 0 || r > 0 {
-			detail = fmt.Sprintf("%d", a)
-			if r > 0 {
-				// listRow/listRowSelected wrap the finished row in their own
-				// style afterward, which doesn't reach back into text
-				// already rendered with its own style — so the archived
-				// number's highlight background has to be set explicitly to
-				// match, the same way renderRow does for its icons/dot.
-				archivedStyle := muteStyle
-				if selected {
-					archivedStyle = archivedStyle.Background(colSelBg)
-				}
-				detail += archivedStyle.Render(fmt.Sprintf("/%d", r))
+			// listRow/listRowSelected wrap the finished row in their own style
+			// afterward, which doesn't reach back into text already rendered
+			// with its own style — so the archived number's highlight
+			// background has to be set explicitly to match, the same way
+			// renderRow does for its icons/dot.
+			archivedStyle := muteStyle
+			if selected {
+				archivedStyle = archivedStyle.Background(colSelBg)
 			}
+			detail = fmt.Sprintf("%d", a) + archivedStyle.Render(fmt.Sprintf("/%d", r))
 		}
 
 		avail := rowWidth - lipgloss.Width(prefix)

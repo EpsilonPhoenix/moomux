@@ -369,9 +369,9 @@ func TestProjectPickerFooterReachesFullTierOnWideTerminals(t *testing.T) {
 }
 
 // TestProjectPickerShowsActiveAndArchivedCounts covers the detail column:
-// a project with both active and archived sessions shows both counts
-// (active/archived), not just active — and a project with only active
-// sessions shows just that number, with no stray "/0".
+// every project with any sessions shows both counts (active/archived), even
+// when one side is zero — a bare "1" without the archived side reads as an
+// ambiguous single number, not clearly "1 active".
 // TestProjectPickerLegendAlignsWithCounts guards against the legend and the
 // row counts drifting apart: an earlier version built the legend with
 // Width(rowWidth) and Padding(0,1) in the same lipgloss style, which sets
@@ -419,8 +419,8 @@ func TestProjectPickerShowsActiveAndArchivedCounts(t *testing.T) {
 	if !strings.Contains(view, "2/1") {
 		t.Fatalf("expected alpha's row to show \"2/1\" (2 active, 1 archived), got:\n%s", view)
 	}
-	if strings.Contains(view, "1/0") || strings.Contains(view, "1 /0") {
-		t.Fatalf("expected beta's row to show a bare \"1\", not a stray archived count, got:\n%s", view)
+	if !strings.Contains(view, "1/0") {
+		t.Fatalf("expected beta's row to show \"1/0\" (1 active, 0 archived), got:\n%s", view)
 	}
 }
 
