@@ -15,6 +15,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/codexhook"
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/gitwt"
+	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/terminal"
 	"github.com/erickgnclvs/moomux/internal/tmux"
@@ -28,6 +29,7 @@ type App struct {
 	Tmux         *tmux.Client
 	Terminal     terminal.TerminalOpener
 	Git          *gitwt.Client
+	PR           *prstatus.Client
 	WorktreeRoot string
 }
 
@@ -928,6 +930,21 @@ func (a *App) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
 		return !clean, false, true
 	}
 	return !clean, hasUnpushed, true
+}
+
+// PRStatus reports the merge/CI status of id's attached PR. ok is false when
+// the session has no PR attached, or the lookup fails (gh not installed, not
+// authenticated, or the PR can't be resolved).
+func (a *App) PRStatus(id string) (prstatus.Info, bool) {
+	s, exists := a.Store.Get(id)
+	if !exists || s.PR == "" {
+		return prstatus.Info{}, false
+	}
+	info, err := a.PR.Fetch(s.PR)
+	if err != nil {
+		return prstatus.Info{}, false
+	}
+	return info, true
 }
 
 func (a *App) DeleteSession(id string) error {

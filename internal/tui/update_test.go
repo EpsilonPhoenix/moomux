@@ -12,6 +12,7 @@ import (
 
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/gitwt"
+	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/watcher"
 )
@@ -664,6 +665,115 @@ func TestInitFetchesGitStatusForEverySession(t *testing.T) {
 	}
 	if _, ok := m.gitStatus["demo:b"]; !ok {
 		t.Fatal("gitStatus[demo:b] should have been fetched too — it's not gated on parked state")
+	}
+}
+
+// TestPRStatusOnlyFetchedForSessionsWithPRAttached guards stalePRStatusIDs'
+// filter: unlike git status, a PR-status fetch only makes sense for sessions
+// that actually have a PR attached — calling `gh pr view` with no PR would
+// be meaningless.
+func TestPRStatusOnlyFetchedForSessionsWithPRAttached(t *testing.T) {
+	be := &fakeBackend{
+		sessions: []session.Session{
+			{ID: "demo:a", Project: "demo", Name: "a", PR: "https://github.com/example/repo/pull/1"},
+			{ID: "demo:b", Project: "demo", Name: "b"},
+		},
+		prStatus: map[string]prStatusInfo{
+			"demo:a": {ok: true, info: prstatus.Info{State: "OPEN"}},
+		},
+	}
+	m := newTestModel(be)
+
+	drainCmd(m, m.fetchStalePRStatusCmd())
+
+	if !reflect.DeepEqual(be.prStatusCalls, []string{"demo:a"}) {
+		t.Fatalf("prStatusCalls = %v, want only demo:a (no PR attached to demo:b)", be.prStatusCalls)
+	}
+	if got := m.prStatus["demo:a"]; !got.ok || got.info.State != "OPEN" {
+		t.Fatalf("prStatus[demo:a] = %+v", got)
+	}
+}
+
+// TestStalePRStatusIsRefetched and TestFreshPRStatusIsNotRefetched mirror
+// their git-status counterparts: a cached entry outside its jittered
+// threshold is worth a fresh `gh pr view` call, one inside it is not.
+func TestStalePRStatusIsRefetched(t *testing.T) {
+	be := &fakeBackend{
+		sessions: []session.Session{{ID: "demo:a", Project: "demo", Name: "a", PR: "https://github.com/example/repo/pull/1"}},
+		prStatus: map[string]prStatusInfo{"demo:a": {ok: true, info: prstatus.Info{State: "MERGED"}}},
+	}
+	m := newTestModel(be)
+	m.prStatus["demo:a"] = prStatusInfo{ok: true, checkedAt: time.Now().Add(-2 * prStatusStaleAfter)}
+
+	drainCmd(m, m.fetchStalePRStatusCmd())
+
+	if !reflect.DeepEqual(be.prStatusCalls, []string{"demo:a"}) {
+		t.Fatalf("prStatusCalls = %v, want exactly one refetch", be.prStatusCalls)
+	}
+	if got := m.prStatus["demo:a"]; got.info.State != "MERGED" {
+		t.Fatalf("prStatus[demo:a] not refreshed from the stale cache: %+v", got)
+	}
+}
+
+func TestFreshPRStatusIsNotRefetched(t *testing.T) {
+	be := &fakeBackend{
+		sessions: []session.Session{{ID: "demo:a", Project: "demo", Name: "a", PR: "https://github.com/example/repo/pull/1"}},
+	}
+	m := newTestModel(be)
+	m.prStatus["demo:a"] = prStatusInfo{ok: true, checkedAt: time.Now()}
+
+	if cmd := m.fetchStalePRStatusCmd(); cmd != nil {
+		t.Fatal("a fresh cached entry should not produce a fetch cmd")
+	}
+	if len(be.prStatusCalls) != 0 {
+		t.Fatalf("no PRStatus call expected, got %v", be.prStatusCalls)
+	}
+}
+
+// TestPRStatusPendingSkipsDuplicateFetch mirrors
+// TestGitStatusPendingSkipsDuplicateFetch: a fetch already in flight must not
+// be re-issued on the next tick before it resolves.
+func TestPRStatusPendingSkipsDuplicateFetch(t *testing.T) {
+	be := &fakeBackend{
+		sessions: []session.Session{{ID: "demo:a", Project: "demo", Name: "a", PR: "https://github.com/example/repo/pull/1"}},
+	}
+	m := newTestModel(be)
+
+	cmd := m.fetchStalePRStatusCmd()
+	if cmd == nil {
+		t.Fatal("expected a fetch cmd for a never-checked PR")
+	}
+	if !m.prStatusPending["demo:a"] {
+		t.Fatal("demo:a should be marked pending once its fetch is dispatched")
+	}
+	if again := m.fetchStalePRStatusCmd(); again != nil {
+		t.Fatal("a session with a fetch already in flight should not be re-selected")
+	}
+
+	drainCmd(m, cmd)
+	if m.prStatusPending["demo:a"] {
+		t.Fatal("demo:a should no longer be pending once its fetch resolves")
+	}
+}
+
+// TestPRStatusMsgKeepsFresherResult mirrors TestGitStatusMsgKeepsFresherResult:
+// an older, late-arriving result must not clobber a fresher one already
+// recorded.
+func TestPRStatusMsgKeepsFresherResult(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{{ID: "demo:a", Project: "demo", Name: "a", PR: "https://github.com/example/repo/pull/1"}}}
+	m := newTestModel(be)
+
+	newer := time.Now()
+	older := newer.Add(-time.Hour)
+
+	m.Update(PRStatusMsg{Status: map[string]prStatusInfo{"demo:a": {ok: true, info: prstatus.Info{State: "MERGED"}, checkedAt: newer}}})
+	if got := m.prStatus["demo:a"]; got.info.State != "MERGED" || !got.checkedAt.Equal(newer) {
+		t.Fatalf("prStatus[demo:a] = %+v after the first (newer) result", got)
+	}
+
+	m.Update(PRStatusMsg{Status: map[string]prStatusInfo{"demo:a": {ok: true, info: prstatus.Info{State: "OPEN"}, checkedAt: older}}})
+	if got := m.prStatus["demo:a"]; got.info.State != "MERGED" || !got.checkedAt.Equal(newer) {
+		t.Fatalf("prStatus[demo:a] = %+v, want the newer result to survive", got)
 	}
 }
 

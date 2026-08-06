@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/erickgnclvs/moomux/internal/config"
+	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/watcher"
 )
@@ -72,5 +73,57 @@ func TestDetailLinkHitsSurviveWrappedRows(t *testing.T) {
 	}
 	if ticketHit.line != ticketLine {
 		t.Fatalf("hit line = %d, rendered ticket row = %d\n%s", ticketHit.line, ticketLine, rendered)
+	}
+}
+
+// TestPRStatusLabel guards the label mapping: merged/closed wins outright
+// (mergeable/CI stop being meaningful once a PR is done), otherwise
+// conflicts and CI state are reported together.
+func TestPRStatusLabel(t *testing.T) {
+	cases := []struct {
+		name string
+		info prstatus.Info
+		want string
+	}{
+		{"merged", prstatus.Info{State: "MERGED", Mergeable: "CONFLICTING", CI: "FAILING"}, "merged"},
+		{"closed", prstatus.Info{State: "CLOSED"}, "closed"},
+		{"open, no checks", prstatus.Info{State: "OPEN", Mergeable: "MERGEABLE", CI: "NONE"}, "open"},
+		{"open, passing", prstatus.Info{State: "OPEN", Mergeable: "MERGEABLE", CI: "PASSING"}, "open, CI passing"},
+		{"open, conflicting", prstatus.Info{State: "OPEN", Mergeable: "CONFLICTING", CI: "NONE"}, "open, conflicts"},
+		{"open, conflicting and failing", prstatus.Info{State: "OPEN", Mergeable: "CONFLICTING", CI: "FAILING"}, "open, conflicts, CI failing"},
+		{"open, pending", prstatus.Info{State: "OPEN", Mergeable: "MERGEABLE", CI: "PENDING"}, "open, CI running"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := prStatusLabel(tc.info); got != tc.want {
+				t.Fatalf("prStatusLabel(%+v) = %q, want %q", tc.info, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDetailShowsPRStatusRowOnlyWhenCached guards the detail panel's wiring:
+// the "pr status" row only appears once a status has actually resolved into
+// m.prStatus, not merely because the session has a PR attached — otherwise
+// a session that just gained a PR (before its first gh pr view resolves)
+// would show a misleading or empty status.
+func TestDetailShowsPRStatusRowOnlyWhenCached(t *testing.T) {
+	cfg := &config.Config{Projects: map[string]config.Project{"demo": {Repo: "/tmp/demo"}}}
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "demo:one", Project: "demo", Name: "one", PR: "https://github.com/example/repo/pull/1"},
+	}}
+	statusCh := make(chan watcher.Snapshot)
+	m := New(cfg, be, statusCh, func() {})
+	m.width, m.height = 80, 24
+
+	frame, _ := m.renderDetail(80-2, 24-2)
+	if strings.Contains(frame, "pr status") {
+		t.Fatalf("expected no pr status row before a status resolves:\n%s", frame)
+	}
+
+	m.prStatus["demo:one"] = prStatusInfo{ok: true, info: prstatus.Info{State: "OPEN", Mergeable: "CONFLICTING", CI: "FAILING"}}
+	frame, _ = m.renderDetail(80-2, 24-2)
+	if !strings.Contains(frame, "conflicts") || !strings.Contains(frame, "CI failing") {
+		t.Fatalf("expected the cached pr status to render:\n%s", frame)
 	}
 }

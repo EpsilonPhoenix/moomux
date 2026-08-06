@@ -25,6 +25,13 @@ type GitStatusMsg struct {
 	Status map[string]gitStatusInfo
 }
 
+// PRStatusMsg carries PR status for sessions with a PR attached, computed by
+// fetchPRStatusCmd. Update() merges these into m.prStatus rather than
+// replacing it wholesale, mirroring GitStatusMsg.
+type PRStatusMsg struct {
+	Status map[string]prStatusInfo
+}
+
 // StatusChannelClosedMsg is delivered when the status watcher channel is
 // closed. It is terminal: no attempt is made to restart the watcher.
 type StatusChannelClosedMsg struct{}

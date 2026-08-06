@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/erickgnclvs/moomux/internal/config"
+	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/watcher"
 )
@@ -66,6 +67,11 @@ type fakeBackend struct {
 	// entry means "unknown" (ok=false) rather than "clean".
 	worktreeStatus      map[string]gitStatusInfo
 	worktreeStatusCalls []string
+
+	// prStatus, keyed by session id, backs PRStatus. A missing entry means
+	// "unknown" (ok=false), mirroring worktreeStatus.
+	prStatus      map[string]prStatusInfo
+	prStatusCalls []string
 
 	// tmuxAlive backs TmuxAliveAll; nil (the zero value) reads as "nothing
 	// alive", same as the map[string]bool{} every other test relies on.
@@ -132,6 +138,14 @@ func (f *fakeBackend) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
 		return false, false, false
 	}
 	return st.dirty, st.unpushed, st.ok
+}
+func (f *fakeBackend) PRStatus(id string) (prstatus.Info, bool) {
+	f.prStatusCalls = append(f.prStatusCalls, id)
+	st, present := f.prStatus[id]
+	if !present {
+		return prstatus.Info{}, false
+	}
+	return st.info, st.ok
 }
 func (f *fakeBackend) KillTmux(id string) error {
 	f.killCalls = append(f.killCalls, id)

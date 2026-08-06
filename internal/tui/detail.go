@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/watcher"
 )
 
@@ -80,6 +81,9 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 	}
 	if s.PR != "" {
 		row("pr", truncateLeft(s.PR, valueWidth), s.PR)
+		if pr := m.prStatus[s.ID]; pr.ok {
+			row("pr status", prStatusLabel(pr.info), "")
+		}
 	}
 	prompt := m.prompts[s.ID]
 	if prompt == "" {
@@ -143,6 +147,34 @@ func gitStatusLabel(git gitStatusInfo) string {
 		return "clean, pushed"
 	}
 	return strings.Join(parts, ", ")
+}
+
+// prStatusLabel renders a prstatus.Info (pr.ok must already be true) as the
+// short text shown in the detail panel's "pr status" row. Merged/closed wins
+// outright since mergeable/CI stop meaning anything once the PR is done.
+func prStatusLabel(info prstatus.Info) string {
+	switch info.State {
+	case "MERGED":
+		return "merged"
+	case "CLOSED":
+		return "closed"
+	}
+	var parts []string
+	if info.Mergeable == "CONFLICTING" {
+		parts = append(parts, "conflicts")
+	}
+	switch info.CI {
+	case "FAILING":
+		parts = append(parts, "CI failing")
+	case "PENDING":
+		parts = append(parts, "CI running")
+	case "PASSING":
+		parts = append(parts, "CI passing")
+	}
+	if len(parts) == 0 {
+		return "open"
+	}
+	return "open, " + strings.Join(parts, ", ")
 }
 
 func cowsay(msg string, maxWidth int, st watcher.State) string {

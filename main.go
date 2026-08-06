@@ -20,6 +20,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/codexhook"
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/gitwt"
+	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/terminal"
 	"github.com/erickgnclvs/moomux/internal/tmux"
@@ -233,6 +234,7 @@ func newApp() (*app.App, error) {
 		Tmux:         tmux.New(),
 		Terminal:     terminal.Detect(),
 		Git:          gitwt.New(),
+		PR:           prstatus.New(),
 		WorktreeRoot: app.WorktreeRootDefault(),
 	}, nil
 }

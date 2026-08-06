@@ -80,6 +80,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.fetchStaleGitStatusCmd(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+		if cmd := m.fetchStalePRStatusCmd(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 		return m, tea.Batch(cmds...)
 
 	case StatusRefreshedMsg:
@@ -96,7 +99,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// covers all of them without waiting for the first watcher tick,
 			// which may be a couple seconds off yet.
 			m.tmuxCheckedOnce = true
-			return m, m.fetchStaleGitStatusCmd()
+			return m, tea.Batch(m.fetchStaleGitStatusCmd(), m.fetchStalePRStatusCmd())
 		}
 		return m, nil
 
@@ -117,6 +120,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.confirmGit = st
 				m.confirmChecking = false
 			}
+		}
+		return m, nil
+
+	case PRStatusMsg:
+		for id, st := range msg.Status {
+			delete(m.prStatusPending, id)
+			if cur, ok := m.prStatus[id]; ok && !st.checkedAt.After(cur.checkedAt) {
+				continue
+			}
+			m.prStatus[id] = st
 		}
 		return m, nil
 

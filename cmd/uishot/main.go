@@ -19,6 +19,7 @@ import (
 
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/gitwt"
+	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/tui"
 	"github.com/erickgnclvs/moomux/internal/watcher"
@@ -91,6 +92,10 @@ var screens = map[string][]string{
 	// guard), hence the dedicated single-project config below.
 	"project-picker-emptied": {"/", "d", "y"},
 	"theme-picker":           {"T"},
+	// "down" moves the cursor onto "bugfix-timeout", the sample session with
+	// a PR attached, so its detail panel shows the PR status row (see
+	// renderScreen's prStatus wiring below).
+	"pr-status": {"down"},
 }
 
 var namedKeys = map[string]tea.KeyType{
@@ -152,6 +157,10 @@ type fakeBackend struct {
 	// that need to show the dirty/unpushed delete warning; a missing entry
 	// means "unknown" (ok=false), matching every other scenario's default.
 	worktreeStatus map[string]struct{ dirty, unpushed bool }
+	// prStatus, keyed by session id, backs PRStatus for scenarios that need
+	// to show the detail panel's PR status row; a missing entry means
+	// "unknown" (ok=false), matching every other scenario's default.
+	prStatus map[string]prstatus.Info
 }
 
 func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket string, openTerminal bool) (session.Session, string, error) {
@@ -166,6 +175,10 @@ func (f *fakeBackend) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
 		return false, false, false
 	}
 	return st.dirty, st.unpushed, true
+}
+func (f *fakeBackend) PRStatus(id string) (prstatus.Info, bool) {
+	info, present := f.prStatus[id]
+	return info, present
 }
 func (f *fakeBackend) KillTmux(id string) error                                { return nil }
 func (f *fakeBackend) SetSessionStatusTitle(id string, st watcher.State) error { return nil }
@@ -297,6 +310,14 @@ func renderScreen(screenName string, width, height int, theme, appearance string
 		// lands the cursor on.
 		be.worktreeStatus = map[string]struct{ dirty, unpushed bool }{
 			sessions[0].ID: {dirty: true, unpushed: true},
+		}
+	}
+	if screenName == "pr-status" && len(sessions) > 1 {
+		// Must be set before drive() below, for the same reason as
+		// confirm-delete's worktreeStatus above: PR status is swept for
+		// every PR-attached session up front.
+		be.prStatus = map[string]prstatus.Info{
+			sessions[1].ID: {State: "OPEN", Mergeable: "CONFLICTING", CI: "FAILING"},
 		}
 	}
 	// Closed immediately: nothing in this synthetic harness ever sends on it,
