@@ -196,12 +196,23 @@ func (c *Client) RemoveWorktree(repoDir, worktreePath string) error {
 		return statErr
 	}
 	if err != nil {
-		// git refused to remove it and the directory is still there — e.g.
+		// git refused to remove it and the directory is still there. If
+		// it's an orphaned worktree checkout — its .git file still points
+		// at a worktrees/ gitdir that git itself has already forgotten
+		// (e.g. someone ran `git worktree prune` in the main repo without
+		// going through moomux) — finish the cleanup ourselves. Otherwise
 		// it's the repo's main working tree (a no-worktree session's
 		// WorktreePath IS the repo) or a checkout belonging to another
-		// repo. Deleting it ourselves here is how a stale entry wipes a
-		// real repository; surface the error instead.
-		return err
+		// repo; deleting it ourselves is how a stale entry wipes a real
+		// repository, so surface the error instead.
+		if !isOrphanedWorktreeCheckout(worktreePath) {
+			return err
+		}
+		if rmErr := os.RemoveAll(worktreePath); rmErr != nil {
+			return rmErr
+		}
+		_, _ = c.Runner.Run(repoDir, "worktree", "prune")
+		return nil
 	}
 	// git reported success but left the directory on disk — seen in
 	// practice even on a clean --force removal. Finish the job ourselves
@@ -211,6 +222,29 @@ func (c *Client) RemoveWorktree(repoDir, worktreePath string) error {
 	}
 	_, _ = c.Runner.Run(repoDir, "worktree", "prune")
 	return nil
+}
+
+// isOrphanedWorktreeCheckout reports whether path is a worktree checkout
+// whose git-side registration is already gone — its .git file points at a
+// worktrees/<name> gitdir that no longer exists. Real repos (a full .git
+// directory) and worktrees git still knows about return false, so callers
+// only treat the checkout as safe to delete themselves in the one case
+// where git has nothing left to lose track of.
+func isOrphanedWorktreeCheckout(path string) bool {
+	info, err := os.Stat(path + "/.git")
+	if err != nil || info.IsDir() {
+		return false
+	}
+	data, err := os.ReadFile(path + "/.git")
+	if err != nil {
+		return false
+	}
+	gitdir := strings.TrimSpace(strings.TrimPrefix(string(data), "gitdir:"))
+	if gitdir == "" {
+		return false
+	}
+	_, statErr := os.Stat(gitdir)
+	return os.IsNotExist(statErr)
 }
 
 // DeleteBranch force-deletes a local branch, e.g. after its worktree has been
