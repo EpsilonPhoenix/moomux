@@ -1,63 +1,29 @@
 package tui
 
 var quipsWorking = []string{
-	"on it...",
-	"crunching...",
-	"in the zone",
-	"don't interrupt me",
-	"almost there...",
-	"trust the process",
-	"heads down",
-	"grinding...",
-	"locked in",
-	"making it happen",
-	"cooking something up",
-	"deep focus",
+	"udderly focused",
+	"milking this for progress",
+	"no time to graze",
+	"plowing through it",
 }
 
 var quipsDone = []string{
-	"moo...",
-	"all done",
-	"chewing cud",
-	"your move",
-	"ready when you are",
-	"standing by",
-	"at your service",
-	"just here vibing",
-	"anytime now...",
-	"still here",
-	"no rush... or is there?",
-	"wrapped up",
+	"that's a wrap, moove along",
+	"udder success",
+	"cow-culated risk paid off",
+	"steaks were high, nailed it",
 }
 
 var quipsNeedsInput = []string{
-	"need a word",
-	"stuck on a fence",
-	"c'mon, look over here",
-	"blocked, moo!",
-	"waiting on you specifically",
-	"can't go further without you",
-	"permission, please",
-	"hey, over here",
-	"decision needed",
-	"paused for you",
-	"your call to make",
-	"stalled, need input",
+	"udderly stuck without you",
+	"moo-ve this along, please",
+	"cow-nfused, help me out",
 }
 
 var quipsParked = []string{
-	"zzz...",
-	"taking a nap",
-	"out to pasture",
-	"resting",
-	"offline",
-	"on break",
-	"do not disturb",
-	"gone fishin'",
-	"lights out",
-	"hibernating",
-	"clocked out",
-	"pasture mode",
+	"chewing the cud, nothing to see",
+	"herd nothing, seen nothing",
+	"mootering off for now",
 }
 
 func pickQuip(sessionID string, pool []string) string {
