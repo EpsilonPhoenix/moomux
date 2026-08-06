@@ -435,8 +435,11 @@ func (m *Model) View() string {
 
 func (m *Model) renderHeader() string {
 	eyes := "oo"
-	if len(m.sessions) > 0 && m.cursor < len(m.sessions) {
-		switch m.effectiveState(m.sessions[m.cursor]) {
+	st := watcher.Parked
+	haveCursor := len(m.sessions) > 0 && m.cursor < len(m.sessions)
+	if haveCursor {
+		st = m.effectiveState(m.sessions[m.cursor])
+		switch st {
 		case watcher.Working:
 			eyes = "**"
 		case watcher.Done:
@@ -447,11 +450,33 @@ func (m *Model) renderHeader() string {
 			eyes = "--"
 		}
 	}
-	cow := cowStyle.Render("  ^__^\n  (" + eyes + ")\\_\n  (__)\\ )")
-	left := cow
+
+	var left string
 	if m.width >= narrowWidthBreak {
+		cow := cowStyle.Render("  ^__^\n  (" + eyes + ")\\_\n  (__)\\ )")
 		wordmark := titleStyle.Render("moomux")
 		left = lipgloss.JoinHorizontal(lipgloss.Center, cow, "  ", wordmark)
+	} else {
+		// Mirrored to face right, toward the quip, instead of the wide
+		// layout's left-facing cow — there's no wordmark to face here.
+		cow := cowStyle.Render("  ^__^\n_/(" + eyes + ")\n \\(__)")
+		left = cow
+		if haveCursor {
+			pool := quipsParked
+			switch st {
+			case watcher.Working:
+				pool = quipsWorking
+			case watcher.Done:
+				pool = quipsDone
+			case watcher.NeedsInput:
+				pool = quipsNeedsInput
+			}
+			quipWidth := m.width - lipgloss.Width(cow) - 5
+			if quipWidth > 3 {
+				quip := muteStyle.Render(truncateToWidth(pickQuip(m.sessions[m.cursor].ID, pool), quipWidth))
+				left = lipgloss.JoinHorizontal(lipgloss.Center, cow, "  ", quip)
+			}
+		}
 	}
 
 	remaining := m.width - 2 - lipgloss.Width(left)
