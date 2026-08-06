@@ -38,6 +38,40 @@ func TestQuerySQLiteRespectsContextCancellation(t *testing.T) {
 	}
 }
 
+// TestQuerySQLiteSetsBusyTimeout guards against the "database is locked"
+// flake (sqlite3 CLI exits 5/SQLITE_BUSY when Codex itself holds a write
+// lock on state_N.sqlite at poll time): querySQLite must ask sqlite3 to wait
+// for the lock via PRAGMA busy_timeout instead of failing immediately. The
+// fake sqlite3 here simulates a would-be-busy DB by only succeeding when it
+// sees a busy_timeout pragma among its args.
+func TestQuerySQLiteSetsBusyTimeout(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "sqlite3")
+	script := `#!/bin/sh
+for a in "$@"; do
+  case "$a" in
+    *busy_timeout*) echo "/tmp/wt-a	1"; exit 0 ;;
+  esac
+done
+exit 5
+`
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	rows, err := querySQLite(context.Background(), "irrelevant.db", "SELECT 1")
+	if err != nil {
+		t.Fatalf("querySQLite returned error, want busy_timeout to avoid SQLITE_BUSY: %v", err)
+	}
+	if rows["/tmp/wt-a"] != 1 {
+		t.Fatalf("got %v, want row for /tmp/wt-a", rows)
+	}
+}
+
 // TestSQLiteWatcherMarkerDirWinsOverStaleRow replaces "sqlite3" on PATH with
 // a fake that reports a stale (long-idle) row for /tmp/wt-a, which alone
 // would classify as Waiting. A codexhook marker for the same cwd must still
