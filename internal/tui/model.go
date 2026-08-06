@@ -19,6 +19,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/browser"
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/prompt"
+	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/watcher"
 )
@@ -39,6 +40,9 @@ type Backend interface {
 	// WorktreeStatus reports id's worktree as dirty/unpushed; ok is false if
 	// status can't be determined (unknown session, or not a git repo).
 	WorktreeStatus(id string) (dirty, unpushed, ok bool)
+	// PRStatus reports the merge/CI status of id's attached PR; ok is false
+	// if the session has no PR attached or the lookup fails.
+	PRStatus(id string) (info prstatus.Info, ok bool)
 	KillTmux(id string) error
 	// SetSessionStatusTitle renames id's tmux window to reflect st, so
 	// terminals tracking the window name as their tab title show it live.
@@ -174,9 +178,12 @@ type Model struct {
 	// in flight, so staleGitStatusIDs doesn't pile up duplicate concurrent
 	// fetches for a session whose `git status` call is just running long.
 	gitStatusPending map[string]bool
-	prompts          map[string]string
-	statusCh         <-chan watcher.Snapshot
-	cancelPoll       context.CancelFunc
+	prStatus         map[string]prStatusInfo // by session id, only populated for sessions with a PR attached; see prStatusStaleAfter
+	// prStatusPending mirrors gitStatusPending for fetchPRStatusCmd.
+	prStatusPending map[string]bool
+	prompts         map[string]string
+	statusCh        <-chan watcher.Snapshot
+	cancelPoll      context.CancelFunc
 
 	mode                    Mode
 	nameInput               textinput.Model
@@ -383,6 +390,8 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 		tmuxAlive:        map[string]bool{},
 		gitStatus:        map[string]gitStatusInfo{},
 		gitStatusPending: map[string]bool{},
+		prStatus:         map[string]prStatusInfo{},
+		prStatusPending:  map[string]bool{},
 		prompts:          map[string]string{},
 		statusCh:         statusCh,
 		cancelPoll:       cancel,
@@ -456,11 +465,43 @@ type gitStatusInfo struct {
 // "fresh" from call to call) without needing to store anything extra per
 // session.
 func gitStatusStaleThreshold(id string) time.Duration {
+	return jitteredStaleThreshold(id, gitStatusStaleAfter, gitStatusStaleJitter)
+}
+
+// jitteredStaleThreshold is the shared math behind gitStatusStaleThreshold
+// and prStatusStaleThreshold: a deterministic value in
+// [base*(1-jitter), base*(1+jitter)], derived from id so it's stable across
+// repeated calls for the same id.
+func jitteredStaleThreshold(id string, base time.Duration, jitter float64) time.Duration {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(id))
 	frac := float64(h.Sum32()) / float64(math.MaxUint32) // deterministic, in [0,1)
-	mult := 1 + gitStatusStaleJitter*(2*frac-1)          // in [1-J, 1+J]
-	return time.Duration(float64(gitStatusStaleAfter) * mult)
+	mult := 1 + jitter*(2*frac-1)                        // in [1-J, 1+J]
+	return time.Duration(float64(base) * mult)
+}
+
+// prStatusStaleAfter bounds how long a cached prStatusInfo is trusted before
+// it's worth another `gh pr view` call. Longer than gitStatusStaleAfter since
+// a PR's merge/CI status changes less often than a worktree's dirty state,
+// and gh hits the network (slower, rate-limited) rather than a local git
+// call.
+const prStatusStaleAfter = 2 * time.Minute
+
+const prStatusStaleJitter = 0.2
+
+// prStatusInfo is a session's PR status. ok is false when it couldn't be
+// determined (no PR attached, gh unavailable, or the PR couldn't be
+// resolved), in which case Info is meaningless. checkedAt is when this was
+// fetched — zero if never — and is what stalePRStatusIDs compares against
+// prStatusStaleThreshold.
+type prStatusInfo struct {
+	info      prstatus.Info
+	ok        bool
+	checkedAt time.Time
+}
+
+func prStatusStaleThreshold(id string) time.Duration {
+	return jitteredStaleThreshold(id, prStatusStaleAfter, prStatusStaleJitter)
 }
 
 // refreshStatusCmd returns a tea.Cmd that computes the tmux-alive map and
@@ -547,6 +588,50 @@ func (m *Model) fetchStaleGitStatusCmd() tea.Cmd {
 		m.gitStatusPending[id] = true
 	}
 	return fetchGitStatusCmd(m.backend, ids)
+}
+
+// fetchPRStatusCmd computes PR status for ids off the event-loop goroutine —
+// each is a network-bound `gh pr view` call, mirroring fetchGitStatusCmd.
+func fetchPRStatusCmd(backend Backend, ids []string) tea.Cmd {
+	return func() tea.Msg {
+		now := time.Now()
+		status := make(map[string]prStatusInfo, len(ids))
+		for _, id := range ids {
+			info, ok := backend.PRStatus(id)
+			status[id] = prStatusInfo{info: info, ok: ok, checkedAt: now}
+		}
+		return PRStatusMsg{Status: status}
+	}
+}
+
+// stalePRStatusIDs returns every session with a PR attached whose cached
+// status is missing or older than its jittered prStatusStaleThreshold,
+// mirroring staleGitStatusIDs.
+func (m *Model) stalePRStatusIDs() []string {
+	var ids []string
+	for _, s := range m.backend.Sessions() {
+		if s.PR == "" || m.prStatusPending[s.ID] {
+			continue
+		}
+		st, ok := m.prStatus[s.ID]
+		if !ok || time.Since(st.checkedAt) > prStatusStaleThreshold(s.ID) {
+			ids = append(ids, s.ID)
+		}
+	}
+	return ids
+}
+
+// fetchStalePRStatusCmd wraps stalePRStatusIDs as a tea.Cmd, mirroring
+// fetchStaleGitStatusCmd. Returns nil if nothing needs checking.
+func (m *Model) fetchStalePRStatusCmd() tea.Cmd {
+	ids := m.stalePRStatusIDs()
+	if len(ids) == 0 {
+		return nil
+	}
+	for _, id := range ids {
+		m.prStatusPending[id] = true
+	}
+	return fetchPRStatusCmd(m.backend, ids)
 }
 
 // effectiveState returns the state to display: if tmux is dead the
