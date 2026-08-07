@@ -16,8 +16,21 @@ const narrowWidthBreak = 72
 // minStackedPaneHeight is the minimum usable content height for each panel in
 // the narrow stacked layout. When a mobile keyboard leaves fewer rows than
 // this for both panes, the list gets the full body instead of being pushed
-// above the visible viewport by the detail pane.
-const minStackedPaneHeight = 10
+// above the visible viewport by the detail pane. It's also the detail pane's
+// own floor once it is shown, so a session with very little to display (or
+// nothing selected) still gets a reasonably sized panel rather than one
+// that's collapsed down to a couple of rows. This layout is always
+// compactScreen (width alone guarantees it), so detail here never shows
+// worktree/created — lowered from 10 accordingly.
+const minStackedPaneHeight = 7
+
+// minStackedListRows is the smallest the session list is allowed to shrink
+// to in order to give the detail pane room to fit its content — much less
+// than minStackedPaneHeight, since once a session's selected, the detail
+// pane (not the list) is the thing being read closely; the list just needs
+// to stay visible enough to confirm what's selected and to keep scrolling
+// through it.
+const minStackedListRows = 4
 
 // compactScreen reports whether the terminal is small enough (short or
 // narrow) that panel titles should be dropped to reclaim their rows for
@@ -300,91 +313,10 @@ func (m *Model) View() string {
 	if m.width == 0 {
 		return "starting…"
 	}
-
-	header := m.renderHeader()
-	footer := m.renderFooter()
-
-	// -2 accounts for panelBorder's top/bottom border lines, which sit
-	// outside the Height() passed to it below.
-	bodyHeight := m.height - lipgloss.Height(header) - lipgloss.Height(footer) - 2
-	if bodyHeight < 5 {
-		bodyHeight = 5
+	if m.mode == ModeMultiView {
+		return m.renderMultiView()
 	}
-
-	var body string
-	var hits []linkHit
-	var rows []rowHit
-	var detailHits []linkHit
-	var detailX, detailY, listWidth int
-	// Below this width a side-by-side list+detail split leaves too little
-	// room for either panel (common on phone-sized SSH clients), so stack
-	// them instead.
-	if m.width < narrowWidthBreak {
-		panelW := m.width - 2
-		if panelW < 20 {
-			panelW = 20
-		}
-
-		// A stacked layout has two pairs of horizontal borders, while
-		// bodyHeight reserves room for one. Account for the second pair before
-		// splitting the content height between the panes.
-		listWidth = panelW
-		stackedHeight := bodyHeight - 2
-		if stackedHeight < 2*minStackedPaneHeight {
-			var listContent string
-			listContent, hits, rows = m.renderList(panelW-2, bodyHeight)
-			body = panelBorder.Width(panelW).Height(bodyHeight).Render(listContent)
-		} else {
-			listH := stackedHeight / 2
-			detailH := stackedHeight - listH
-			var listContent string
-			listContent, hits, rows = m.renderList(panelW-2, listH)
-			top := panelBorder.Width(panelW).Height(listH).Render(listContent)
-			var detailContent string
-			detailContent, detailHits = m.renderDetail(panelW-2, detailH)
-			bottom := panelBorder.Width(panelW).Height(detailH).Render(detailContent)
-			detailX = panelBorder.GetBorderLeftSize() + panelBorder.GetPaddingLeft()
-			detailY = lipgloss.Height(header) + lipgloss.Height(top) + panelBorder.GetBorderTopSize()
-			body = lipgloss.JoinVertical(lipgloss.Left, top, bottom)
-		}
-	} else {
-		listW := 42
-		if m.width-listW < 30 {
-			listW = m.width / 2
-		}
-		if listW < 20 {
-			listW = 20
-		}
-		// Each panel's border adds 2 columns beyond the width passed to
-		// Width(), so the two panels together need 4 columns reserved, not 2.
-		detailW := m.width - listW - 4
-		if detailW < 20 {
-			detailW = 20
-		}
-
-		// bodyHeight already excludes the panel's two border rows (the -2
-		// where it's computed above); subtracting again here left two blank
-		// filler rows per panel and clipped link hits near the bottom.
-		listWidth = listW
-		var listContent string
-		listContent, hits, rows = m.renderList(listW-2, bodyHeight)
-		left := panelBorder.Width(listW).Height(bodyHeight).Render(listContent)
-		var detailContent string
-		detailContent, detailHits = m.renderDetail(detailW-2, bodyHeight)
-		right := panelBorder.Width(detailW).Height(bodyHeight).Render(detailContent)
-		detailX = lipgloss.Width(left) + panelBorder.GetBorderLeftSize() + panelBorder.GetPaddingLeft()
-		detailY = lipgloss.Height(header) + panelBorder.GetBorderTopSize()
-		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
-	}
-
-	m.updateLinkHits(header, hits, detailHits, detailX, detailY, rows, listWidth)
-
-	base := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
-	// Very small terminal sizes can be shorter/narrower than the fixed
-	// header and footer combined. Never emit more rows or columns than the
-	// terminal reported, otherwise terminal viewport panning can hide the
-	// top/side of the list.
-	base = lipgloss.NewStyle().MaxHeight(m.height).MaxWidth(m.width).Render(base)
+	base := m.renderListView()
 
 	switch m.mode {
 	case ModeNewForm:
@@ -433,6 +365,142 @@ func (m *Model) View() string {
 	return base
 }
 
+// renderListView renders the classic single-project list+detail body (header
+// + list/detail body + footer), picking side-by-side or stacked layout based
+// on m.width same as always. Used directly for ModeList, and reused by
+// ModeMultiView's single-panel special case (see renderMultiView) so a lone
+// project looks exactly like the classic view instead of a cramped one-panel
+// multi-view box.
+func (m *Model) renderListView() string {
+	header := m.renderHeader()
+	footer := m.renderFooter()
+
+	// -2 accounts for panelBorder's top/bottom border lines, which sit
+	// outside the Height() passed to it below.
+	bodyHeight := m.height - lipgloss.Height(header) - lipgloss.Height(footer) - 2
+	if bodyHeight < 5 {
+		bodyHeight = 5
+	}
+
+	var body string
+	var hits []linkHit
+	var rows []rowHit
+	var detailHits []linkHit
+	var detailX, detailY, listWidth int
+	// Below this width a side-by-side list+detail split leaves too little
+	// room for either panel (common on phone-sized SSH clients), so stack
+	// them instead.
+	if m.width < narrowWidthBreak {
+		panelW := m.width - 2
+		if panelW < 20 {
+			panelW = 20
+		}
+
+		// Both panes share a single outer border in this layout (rather than
+		// each getting its own) — two separate bordered boxes stacked with no
+		// gap between them doubled up into a heavy-looking rule, when a
+		// single thin separator says the same thing. That single reserved
+		// row is what's subtracted here, instead of a whole second pair of
+		// borders. The detail pane's own "DETAIL" title stays hidden (see
+		// compactScreen) — the separator marks the boundary instead.
+		listWidth = panelW
+		avail := bodyHeight - 1
+		if avail < 2*minStackedPaneHeight {
+			// Not enough room for a meaningful split — most likely a mobile
+			// keyboard eating a big chunk of the screen. Give the list the
+			// whole area instead of squeezing both panes down to a sliver;
+			// this is the same threshold that used to gate the old fixed-
+			// fraction split, kept unchanged so the keyboard-showing case
+			// still hides the detail pane the way it always has.
+			var listContent string
+			listContent, hits, rows = m.renderList(panelW-2, bodyHeight)
+			body = panelBorder.Width(panelW).Height(bodyHeight).Render(listContent)
+		} else {
+			// The list gets enough room to show every one of its sessions
+			// without scrolling (compactScreen is always true at this
+			// width, so it never needs rows for its own title either) —
+			// it's the thing being actively browsed, so a project with a
+			// lot of sessions takes priority over the detail pane. Detail
+			// gets whatever's left and simply clips from the bottom (via
+			// its own Height/MaxHeight) if that isn't enough to show
+			// everything, rather than the list being forced to scroll
+			// through a long session list just to protect detail's size.
+			listH := len(m.sessions)
+			if listH < minStackedListRows {
+				listH = minStackedListRows
+			}
+			if listH > avail {
+				listH = avail
+			}
+			detailH := avail - listH
+			var listContent string
+			listContent, hits, rows = m.renderList(panelW-2, listH)
+			var detailContent string
+			detailContent, detailHits = m.renderDetail(panelW-2, detailH)
+			separator := lipgloss.NewStyle().Foreground(colBorder).Render(strings.Repeat("─", panelW-2))
+			combined := lipgloss.JoinVertical(lipgloss.Left, listContent, separator, detailContent)
+			detailX = panelBorder.GetBorderLeftSize() + panelBorder.GetPaddingLeft()
+			detailY = lipgloss.Height(header) + panelBorder.GetBorderTopSize() + listH + 1
+			body = panelBorder.Width(panelW).Height(bodyHeight).Render(combined)
+		}
+	} else {
+		listW := 42
+		if m.width-listW < 30 {
+			listW = m.width / 2
+		}
+		if listW < 20 {
+			listW = 20
+		}
+		// Each panel's border adds 2 columns beyond the width passed to
+		// Width(), so the two panels together need 4 columns reserved, not 2.
+		detailW := m.width - listW - 4
+		if detailW < 20 {
+			detailW = 20
+		}
+
+		// bodyHeight already excludes the panel's two border rows (the -2
+		// where it's computed above); subtracting again here left two blank
+		// filler rows per panel and clipped link hits near the bottom.
+		listWidth = listW
+		var listContent string
+		listContent, hits, rows = m.renderList(listW-2, bodyHeight)
+		left := panelBorder.Width(listW).Height(bodyHeight).Render(listContent)
+		var detailContent string
+		detailContent, detailHits = m.renderDetail(detailW-2, bodyHeight)
+		right := panelBorder.Width(detailW).Height(bodyHeight).Render(detailContent)
+		detailX = lipgloss.Width(left) + panelBorder.GetBorderLeftSize() + panelBorder.GetPaddingLeft()
+		detailY = lipgloss.Height(header) + panelBorder.GetBorderTopSize()
+		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	}
+
+	m.updateLinkHits(header, hits, detailHits, detailX, detailY, rows, listWidth)
+
+	base := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+	// Very small terminal sizes can be shorter/narrower than the fixed
+	// header and footer combined. Never emit more rows or columns than the
+	// terminal reported, otherwise terminal viewport panning can hide the
+	// top/side of the list.
+	base = lipgloss.NewStyle().MaxHeight(m.height).MaxWidth(m.width).Render(base)
+	return base
+}
+
+// headerCowArt returns the small critter shown in the header: the normal
+// face-on cow, or — while viewing the archived list — the barn it's put out
+// to, echoing effectiveState's own "in the barn" label for a parked
+// session. mirrored picks the narrow layout's right-facing cow orientation;
+// the barn has no facing direction, so it's the same either way. Unlike the
+// cow, the barn doesn't reflect eyes/session state — archived sessions are
+// effectively always parked, so there's nothing worth distinguishing there.
+func headerCowArt(eyes string, archived, mirrored bool) string {
+	if !archived {
+		if mirrored {
+			return "  ^__^\n_/(" + eyes + ")\n \\(__)"
+		}
+		return "  ^__^\n  (" + eyes + ")\\_\n  (__)\\ )"
+	}
+	return " (___) \n ) U ( \n(  |  )\n || || "
+}
+
 func (m *Model) renderHeader() string {
 	eyes := "oo"
 	st := watcher.Parked
@@ -453,13 +521,11 @@ func (m *Model) renderHeader() string {
 
 	var left string
 	if m.width >= narrowWidthBreak {
-		cow := cowStyle.Render("  ^__^\n  (" + eyes + ")\\_\n  (__)\\ )")
-		wordmark := titleStyle.Render("moomux")
-		left = lipgloss.JoinHorizontal(lipgloss.Center, cow, "  ", wordmark)
+		left = cowStyle.Render(headerCowArt(eyes, m.showArchived, false))
 	} else {
 		// Mirrored to face right, toward the quip, instead of the wide
 		// layout's left-facing cow — there's no wordmark to face here.
-		cow := cowStyle.Render("  ^__^\n_/(" + eyes + ")\n \\(__)")
+		cow := cowStyle.Render(headerCowArt(eyes, m.showArchived, true))
 		left = cow
 		if haveCursor {
 			pool := quipsParked
@@ -484,25 +550,17 @@ func (m *Model) renderHeader() string {
 		remaining = 0
 	}
 
-	// Only the active project is shown — even on wide terminals — now that
-	// the picker (/) is the way to see and jump to every project; a row of
-	// every project's tab stopped pulling its weight once switching away
-	// from the active one is a whole separate dialog anyway.
+	// The active project name and the "multi view" label both used to sit
+	// here, but the picker (/) already shows/switches projects, and
+	// ModeMultiView's own panel titles already name each project — this slot
+	// only earns its keep for the zero-projects hint, pointing a first-time
+	// user at the picker instead of leaving the header blank with no other
+	// affordance to add one. Real multi-panel rendering can't reach this
+	// with zero projects (multiViewPanelCount is 0, so renderMultiView
+	// delegates to this same renderListView path instead) — so there's no
+	// mode to exclude here anymore.
 	var right string
-	if m.allSessions {
-		// No single project is "active" in this view, so there's nothing
-		// meaningful to show in the project-tabs slot — leave it blank
-		// rather than a stale or misleading label.
-	} else if len(m.projects) > 0 && m.activeProj < len(m.projects) && remaining > 2 {
-		// tabActive contributes one padding cell on each side. The session
-		// count used to show here as a superscript, but the picker's own
-		// detail column (active/archived) already covers that, so the
-		// header just names the project.
-		label := truncateToWidth(m.projects[m.activeProj], remaining-2)
-		right = tabActive.Render(label)
-	} else if remaining > 2 {
-		// No project to show as the active tab (no projects configured
-		// yet) — point at the picker instead of leaving the header blank.
+	if len(m.projects) == 0 && remaining > 2 {
 		right = muteStyle.Render(truncateToWidth("/ projects", remaining))
 	}
 

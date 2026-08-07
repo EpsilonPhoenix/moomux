@@ -1350,6 +1350,7 @@ func TestNavigationAndProjectSwitching(t *testing.T) {
 	}}
 	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
 	m.width, m.height = 80, 24
+	m.mode = ModeList
 
 	m.Update(keyRune("j"))
 	if m.cursor != 1 {
@@ -1391,6 +1392,7 @@ func TestProjectCyclingSkipsEmptyProjects(t *testing.T) {
 	}}
 	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
 	m.width, m.height = 80, 24
+	m.mode = ModeList
 
 	if m.projects[m.activeProj] != "alpha" {
 		t.Fatalf("start proj=%q", m.projects[m.activeProj])
@@ -1462,6 +1464,7 @@ func TestProjectCyclingSkipsProjectsWithOnlyArchivedSessions(t *testing.T) {
 	}}
 	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
 	m.width, m.height = 80, 24
+	m.mode = ModeList
 
 	press(m, tea.KeyTab)
 	if m.projects[m.activeProj] != "beta" || len(m.sessions) != 1 {
@@ -1487,6 +1490,7 @@ func TestPlainLetterAlternatesForChordedKeys(t *testing.T) {
 	}}
 	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
 	m.width, m.height = 80, 24
+	m.mode = ModeList
 
 	// "]" / "[" switch project like tab / shift+tab.
 	m.Update(keyRune("]"))

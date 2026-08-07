@@ -85,6 +85,7 @@ const (
 	ModeEditProject
 	ModeProjectPicker
 	ModeThemePicker
+	ModeMultiView
 )
 
 var agentChoices = []string{"claude", "codex", "opencode"}
@@ -161,7 +162,6 @@ type Model struct {
 	activeProj   int
 	sessions     []session.Session
 	showArchived bool // when true, the list shows archived sessions instead of active ones
-	allSessions  bool // when true, the list shows every project's sessions, grouped by project, instead of just the active one
 	cursor       int
 	states       map[string]watcher.State
 	titleState   map[string]watcher.State // last status pushed as each session's tmux window title, by session id
@@ -224,6 +224,12 @@ type Model struct {
 	// decide whether a successful add returns to the picker or opens the
 	// new-session form.
 	projectDialogReturn Mode
+	// sessionDialogReturn is where a session-level dialog (new/delete/tag/
+	// edit-session, help) sends the user back to once it closes — ModeList
+	// normally, or ModeMultiView when it was opened from there (see
+	// updateMultiView's delegation to updateList). Mirrors
+	// projectDialogReturn's role for the project dialogs.
+	sessionDialogReturn Mode
 	pending             pendingProject
 	flash               string
 	flashKind           string // "info" or "error"
@@ -237,6 +243,30 @@ type Model struct {
 	// on the host. Toggled with R; there's no "force open" counterpart —
 	// if auto-detection isn't already saying remote, links just open.
 	forceCopyLinks bool
+
+	// multiFocus is a global index into m.projects — which project Tab/
+	// Shift-Tab and Up/Down/Open act on while ModeMultiView is active. It can
+	// point outside the currently visible window (see multiOffset); that's
+	// exactly what tells ensureMultiFocusVisible to slide the window.
+	multiFocus int
+	// multiOffset is the index of the first project shown in ModeMultiView's
+	// side-by-side panels — panning this is how focus moving past either
+	// edge of the visible window "slides" the view instead of the focused
+	// project just going off-screen.
+	multiOffset int
+	// multiCursors is each project's selected row within its own panel in
+	// ModeMultiView, keyed by project name so it survives switching focus
+	// away and back. Unlike m.cursor (a single index into the one active
+	// project's m.sessions), multi-view shows several projects' lists at
+	// once and each needs its own independent selection.
+	multiCursors map[string]int
+	// multiPinned is a project name multiViewEligibleProjects() shows even
+	// though it wouldn't otherwise qualify — set when the project picker
+	// jumps to a project with nothing to show yet (see updateProjectPicker),
+	// so multi-view actually lands on it instead of leaving it invisible.
+	// Cleared as soon as focus moves elsewhere (Tab/Shift-Tab); it's a
+	// one-shot "show me this one," not a standing exception.
+	multiPinned string
 
 	width, height int
 
@@ -279,10 +309,14 @@ type resolvedRowHit struct {
 
 // updateLinkHits recomputes m.linkHits and m.rowHits in absolute terminal
 // coordinates from the list- and detail-local hits produced during
-// rendering. It's a no-op (clearing hits) outside ModeList, since panels
-// aren't clickable behind an overlay.
+// rendering. It's a no-op (clearing hits) outside ModeList and ModeMultiView,
+// since panels aren't clickable behind an overlay. ModeMultiView only ever
+// reaches here via renderListView's own single-project fallback (see
+// renderMultiView) — its actual multi-panel layout clears the hits itself
+// and never calls this, so allowing the mode through doesn't make the
+// unclickable multi-panel rows clickable.
 func (m *Model) updateLinkHits(header string, listHits, detailHits []linkHit, detailX, detailY int, listRows []rowHit, listWidth int) {
-	if m.mode != ModeList {
+	if m.mode != ModeList && m.mode != ModeMultiView {
 		m.linkHits = nil
 		m.rowHits = nil
 		return
@@ -403,8 +437,18 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 		overlayViewport:  viewport.New(1, 1),
 		overlayMode:      ModeList,
 		overlayFocus:     -1,
+		multiCursors:     map[string]int{},
 	}
 	m.projects = cfg.OrderedProjectNames()
+	// Land on the first project with active sessions rather than always
+	// project 0 — a config-order project with nothing going on isn't a
+	// useful thing to open on by default when another one has active work.
+	for i, name := range m.projects {
+		if m.projectHasSessions(name) {
+			m.activeProj = i
+			break
+		}
+	}
 	m.refreshSessions()
 	// tmuxAlive is deliberately left empty here — populated asynchronously by
 	// Init()'s refreshStatusCmd instead of a synchronous TmuxAliveAll() call,
@@ -416,6 +460,15 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 	if len(m.projects) == 0 {
 		m.mode = ModeNewProject
 		m.projForm = newProjectForm()
+	} else {
+		// Multi-view is the primary view now — it already collapses to the
+		// classic single-project layout whenever only one project would show
+		// (see renderMultiView), so this costs nothing when there's just one
+		// project and surfaces the rest at a glance when there's more.
+		m.mode = ModeMultiView
+		if idx := indexOfProject(m.multiViewEligibleProjects(), m.projects[m.activeProj]); idx >= 0 {
+			m.multiFocus = idx
+		}
 	}
 	return m
 }
@@ -800,35 +853,18 @@ func (m *Model) refreshSessions() {
 		selectedID = m.sessions[m.cursor].ID
 	}
 
-	// In the all-sessions view, projs is every project; otherwise it's just
-	// the active one. Sessions with a live tmux window float to the top
-	// across the whole list regardless of project, with project order as
-	// the tiebreaker among sessions sharing the same status — that
-	// tiebreaker is also what keeps a single project's view (projs has one
-	// entry, so it never affects ordering) in its existing (Order-based)
-	// place.
-	projs := m.projects
-	if !m.allSessions {
-		projs = m.projects[m.activeProj : m.activeProj+1]
-	}
-	projIndex := make(map[string]int, len(projs))
-	for i, p := range projs {
-		projIndex[p] = i
-	}
+	// Sessions with a live tmux window float to the top of the active
+	// project's list regardless of order otherwise.
+	proj := m.projects[m.activeProj]
 	all := m.backend.Sessions()
 	out := make([]session.Session, 0, len(all))
-	for _, proj := range projs {
-		for _, s := range all {
-			if s.Project == proj && s.Archived == m.showArchived {
-				out = append(out, s)
-			}
+	for _, s := range all {
+		if s.Project == proj && s.Archived == m.showArchived {
+			out = append(out, s)
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		if ai, aj := m.tmuxAlive[out[i].ID], m.tmuxAlive[out[j].ID]; ai != aj {
-			return ai && !aj
-		}
-		return projIndex[out[i].Project] < projIndex[out[j].Project]
+		return m.tmuxAlive[out[i].ID] && !m.tmuxAlive[out[j].ID]
 	})
 	m.sessions = out
 

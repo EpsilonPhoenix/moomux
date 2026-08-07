@@ -324,12 +324,16 @@ func TestClippedDetailURLsDoNotLeaveClickTargets(t *testing.T) {
 		},
 	}})
 
-	_, clippedHits := m.renderDetail(36, 5)
+	// No "DETAIL" title text, but its 2-row gap is still reserved (to stay
+	// aligned with the list pane's "SESSIONS" title next to it): blank,
+	// blank, project, status, name, agent, ticket, pr — height 6 cuts off
+	// before either link row, height 8 fits both.
+	_, clippedHits := m.renderDetail(36, 6)
 	if len(clippedHits) != 0 {
 		t.Fatalf("clipped detail returned link hits: %+v", clippedHits)
 	}
 
-	_, visibleHits := m.renderDetail(36, 10)
+	_, visibleHits := m.renderDetail(36, 8)
 	if len(visibleHits) != 2 {
 		t.Fatalf("visible detail returned %d link hits, want 2: %+v", len(visibleHits), visibleHits)
 	}
