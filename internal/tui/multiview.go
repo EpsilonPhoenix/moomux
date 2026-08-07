@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -112,8 +113,13 @@ func (m *Model) ensureMultiFocusVisible() {
 }
 
 // multiViewSessionsFor returns proj's sessions matching the current
-// showArchived filter, in backend order — mirrors refreshSessions' filter
-// but per-project rather than folded into the single m.sessions list.
+// showArchived filter, live-tmux sessions floated to the top — mirrors
+// refreshSessions' filter and sort, but per-project rather than folded into
+// the single m.sessions list. Matching that sort matters: delegateToList
+// navigates the focused panel's selection through m.sessions (see
+// enterSingleProjectContext), so if this returned a different order the
+// panel would render, Up/Down would visibly skip over rows instead of
+// moving to the adjacent one.
 func (m *Model) multiViewSessionsFor(proj string) []session.Session {
 	var out []session.Session
 	for _, s := range m.backend.Sessions() {
@@ -121,6 +127,9 @@ func (m *Model) multiViewSessionsFor(proj string) []session.Session {
 			out = append(out, s)
 		}
 	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return m.tmuxAlive[out[i].ID] && !m.tmuxAlive[out[j].ID]
+	})
 	return out
 }
 
