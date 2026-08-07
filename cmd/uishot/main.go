@@ -34,12 +34,12 @@ import (
 var screens = map[string][]string{
 	"list":        {},
 	"new-session": {"n"},
-	// "right" picks the first (of two sample) projects, since the form
-	// forces an explicit choice when there's more than one; 3 tabs from
-	// there lands on the first-prompt textarea (see newFormFieldCount) —
-	// ctrl+j inserts a newline there since Enter is reserved for submit.
-	"new-session-multiline": {"n", "right", "tab", "tab", "tab", "first line", "ctrl+j", "second line"},
-	"new-session-wide-line": {"n", "right", "tab", "tab", "tab", "this is a single long line typed into the first prompt field that should only wrap once it actually reaches the right edge of the box on a wide terminal"},
+	// The form preselects the active project, so no "right" press is needed
+	// to pick one; 3 tabs from there lands on the first-prompt textarea (see
+	// newFormFieldCount) — ctrl+j inserts a newline there since Enter is
+	// reserved for submit.
+	"new-session-multiline": {"n", "tab", "tab", "tab", "first line", "ctrl+j", "second line"},
+	"new-session-wide-line": {"n", "tab", "tab", "tab", "this is a single long line typed into the first prompt field that should only wrap once it actually reaches the right edge of the box on a wide terminal"},
 	// Adding/editing a project only happens inside the picker now (P/E were
 	// removed from the main list), so these open it first.
 	"new-project":    {"/", "n"},

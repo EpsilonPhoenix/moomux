@@ -432,20 +432,19 @@ func (m *Model) resetOverlayViewport() {
 	m.overlayFocus = -1
 }
 
-// openNewSessionForm opens the new-session dialog for the active project,
-// pre-selecting its default agent unless it requires an explicit choice on
-// every session. The project itself is only pre-selected when there's just
-// one to choose from — with more than one, the user must explicitly pick,
-// so focus starts on the project selector instead of skipping past it.
+// openNewSessionForm opens the new-session dialog, pre-selecting the
+// project it was opened from (and its default agent, unless that project
+// requires an explicit choice on every session). With more than one
+// project, focus still starts on the project selector so it's easy to see
+// and change, it just isn't forced to an empty choice.
 func (m *Model) openNewSessionForm() {
 	m.mode = ModeNewForm
 	m.sessionDialogReturn = ModeList
 	m.newFormErr = ""
+	m.newFormProjIdx = m.activeProj
 	if len(m.projects) > 1 {
-		m.newFormProjIdx = -1
 		m.newFormFocus = newFormProjFocus
 	} else {
-		m.newFormProjIdx = m.activeProj
 		m.newFormFocus = 1 // start below the project picker, at the name field
 	}
 	m.newFormOpenInBackground = false

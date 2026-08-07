@@ -319,32 +319,25 @@ func TestNewSessionFormAgentRequiredErrorRendered(t *testing.T) {
 	}
 }
 
-func TestNewSessionFormForcesProjectChoiceWithMultipleProjects(t *testing.T) {
+func TestNewSessionFormDefaultsToActiveProjectWithMultipleProjects(t *testing.T) {
 	be := &fakeBackend{}
-	m := newMultiProjectTestModel(be) // projects: alpha, beta
+	m := newMultiProjectTestModel(be) // projects: alpha, beta; active = alpha
 	m.Update(keyRune("n"))
-	if m.newFormProjIdx != -1 {
-		t.Fatalf("projIdx = %d, want -1 with more than one project", m.newFormProjIdx)
+	if m.projects[m.newFormProjIdx] != "alpha" {
+		t.Fatalf("projIdx = %d, want alpha preselected", m.newFormProjIdx)
 	}
 	if m.newFormFocus != newFormProjFocus {
 		t.Fatalf("focus = %d, want to start on the project selector", m.newFormFocus)
 	}
-	press(m, tea.KeyEnter)
-	if len(be.createCalls) != 0 {
-		t.Fatalf("createCalls = %v", be.createCalls)
-	}
-	if v := m.View(); !strings.Contains(v, "choose a project") {
-		t.Fatalf("project-required error not rendered:\n%s", v)
-	}
 
 	press(m, tea.KeyRight)
-	if m.projects[m.newFormProjIdx] != "alpha" {
-		t.Fatalf("projIdx = %d, want alpha", m.newFormProjIdx)
+	if m.projects[m.newFormProjIdx] != "beta" {
+		t.Fatalf("projIdx = %d, want beta after switching", m.newFormProjIdx)
 	}
 	press(m, tea.KeyTab) // -> name
 	typeText(m, "myfeat")
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if len(be.createCalls) != 1 || be.createCalls[0].project != "alpha" {
+	if len(be.createCalls) != 1 || be.createCalls[0].project != "beta" {
 		t.Fatalf("createCalls = %v", be.createCalls)
 	}
 }
