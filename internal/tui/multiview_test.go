@@ -68,6 +68,31 @@ func TestMultiViewTicketIconsAreClickable(t *testing.T) {
 	}
 }
 
+// TestMultiViewPanelShowsCowWhenListIsShort is the regression test for the
+// bug report that the detail panel's cow art was always hidden off the
+// bottom of a multi-view panel: renderMultiPanel used to split list/detail
+// height as a flat 1/3 ratio of the whole panel regardless of how many
+// sessions were actually in the list, so a project with only a couple of
+// sessions still starved its detail section down to minMultiDetailHeight —
+// nowhere near enough rows for the detail fields plus the multi-line cowsay
+// art beneath them. Sizing the list off its actual session count instead
+// (mirroring the narrow single-project stacked layout) frees the rest of the
+// panel for detail, letting the cow's fixed closing lines fit on screen.
+func TestMultiViewPanelShowsCowWhenListIsShort(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+		{ID: "b1", Project: "beta", Name: "b1"},
+	}}
+	m := newMultiProjectTestModel(be) // alpha, beta
+	m.width, m.height = 80, 30
+	m.mode = ModeMultiView
+
+	frame := m.View()
+	if !strings.Contains(frame, "||     ||") {
+		t.Fatalf("detail panel's cow art got clipped off the bottom despite its short session list:\n%s", frame)
+	}
+}
+
 // TestMultiViewTicketIconClickCopiesOverSSH asserts that a ticket icon click
 // inside the multi-panel grid still follows the mobile/SSH rule (see
 // TestLinkClickOverSSHCopiesInsteadOfOpening for the single-panel case):

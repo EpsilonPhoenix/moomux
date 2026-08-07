@@ -451,14 +451,22 @@ const minMultiDetailHeight = 5
 // title, mirroring the narrow single-project layout's own treatment.
 func (m *Model) renderMultiPanel(proj string, sessions []session.Session, cursor int, width, height int, focused bool) (string, []linkHit, []rowHit) {
 	avail := height - 1 // reserve one row for the separator
-	detailH := avail / 3
-	if detailH < minMultiDetailHeight {
-		detailH = minMultiDetailHeight
-	}
-	listH := avail - detailH
-	if listH < minStackedPaneHeight {
+	if avail < minStackedPaneHeight+minMultiDetailHeight {
 		return m.renderSessionPanel(proj, sessions, cursor, width, height, focused)
 	}
+	// listH tracks the list's actual content (like the narrow single-project
+	// stacked layout does) instead of a fixed fraction of the panel — a
+	// short session list no longer hoards rows the detail section needs to
+	// fit its cow art, which used to get clipped off the bottom even in a
+	// tall terminal when a project only had a couple of sessions.
+	listH := len(sessions)
+	if listH < minStackedListRows {
+		listH = minStackedListRows
+	}
+	if maxListH := avail - minMultiDetailHeight; listH > maxListH {
+		listH = maxListH
+	}
+	detailH := avail - listH
 	list, hits, rows := m.renderSessionPanel(proj, sessions, cursor, width, listH, focused)
 
 	var sel session.Session
