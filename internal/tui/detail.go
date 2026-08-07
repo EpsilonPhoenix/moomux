@@ -33,13 +33,42 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 // spacing is still reserved (see renderDetail) — ModeMultiView's panels
 // never need it, having no side-by-side sibling column to line up with.
 func (m *Model) renderDetailFor(s session.Session, hasSelection bool, width, height int, titleGap bool) (string, []linkHit) {
+	content, allHits := m.renderDetailContent(s, hasSelection, width, titleGap)
+	var hits []linkHit
+	for _, h := range allHits {
+		// MaxHeight below clips the rendered detail. Do not leave invisible
+		// link targets behind in footer or border coordinates.
+		if h.line < height {
+			hits = append(hits, h)
+		}
+	}
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(content), hits
+}
+
+// detailContentHeight reports how many rows renderDetailContent's output for
+// s actually takes at width — its content (fields, wrapped prompt, closing
+// cowsay art) varies per session, so renderMultiPanel measures it rather than
+// guessing, sizing each panel's detail section around what it truly needs
+// instead of a flat fraction of the panel that starves the cow whenever the
+// session list next to it is long.
+func (m *Model) detailContentHeight(s session.Session, hasSelection bool, width int) int {
+	content, _ := m.renderDetailContent(s, hasSelection, width, false)
+	return lipgloss.Height(lipgloss.NewStyle().Width(width).Render(content))
+}
+
+// renderDetailContent builds renderDetailFor's content and link hits without
+// applying its final Height/MaxHeight clipping — shared by renderDetailFor
+// (which then clips to the space actually available and drops hits that
+// land past it) and detailContentHeight (which measures the unclipped result
+// to decide how much space to give it in the first place).
+func (m *Model) renderDetailContent(s session.Session, hasSelection bool, width int, titleGap bool) (string, []linkHit) {
 	var b strings.Builder
 	if titleGap {
 		b.WriteString("\n\n")
 	}
 	if !hasSelection {
 		b.WriteString(muteStyle.Render("nothing selected"))
-		return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), nil
+		return b.String(), nil
 	}
 	st := m.effectiveState(s)
 	dot := dotParked
@@ -62,9 +91,7 @@ func (m *Model) renderDetailFor(s session.Session, hasSelection bool, width, hei
 		if url != "" {
 			col0 := lipgloss.Width(key) + 1
 			col1 := min(width, col0+lipgloss.Width(v))
-			// MaxHeight/MaxWidth below clips the rendered detail. Do not leave
-			// invisible link targets behind in footer or border coordinates.
-			if line < height && col0 < col1 {
+			if col0 < col1 {
 				hits = append(hits, linkHit{
 					sessionID: s.ID,
 					url:       url,
@@ -136,7 +163,7 @@ func (m *Model) renderDetailFor(s session.Session, hasSelection bool, width, hei
 			line := lipgloss.Height(lipgloss.NewStyle().Width(width).Render(b.String())) - 1
 			col0 := lipgloss.Width(label) + 1
 			col1 := min(width, col0+lipgloss.Width(ln))
-			if line < height && col0 < col1 {
+			if col0 < col1 {
 				hits = append(hits, linkHit{sessionID: s.ID, url: oneline, copyOnly: true, line: line, col0: col0, col1: col1})
 			}
 			b.WriteString(fmt.Sprintf("%s %s\n", label, detailLinkStyle.Render(ln)))
@@ -155,7 +182,7 @@ func (m *Model) renderDetailFor(s session.Session, hasSelection bool, width, hei
 		cowMsg = pickQuip(s.ID, quipsParked)
 	}
 	b.WriteString(cowStyle.Render(cowsay(cowMsg, valueWidth+10, st)))
-	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), hits
+	return b.String(), hits
 }
 
 // gitStatusLabel renders a gitStatusInfo (git.ok must already be true) as the

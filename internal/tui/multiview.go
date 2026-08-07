@@ -460,21 +460,35 @@ const minMultiDetailHeight = 5
 // title, mirroring the narrow single-project layout's own treatment.
 func (m *Model) renderMultiPanel(proj string, sessions []session.Session, cursor int, width, height int, focused bool) (string, []linkHit, []rowHit) {
 	avail := height - 1 // reserve one row for the separator
-	detailH := avail / 3
-	if detailH < minMultiDetailHeight {
-		detailH = minMultiDetailHeight
-	}
-	listH := avail - detailH
-	if listH < minStackedPaneHeight {
+	if avail < minStackedPaneHeight+minMultiDetailHeight {
 		return m.renderSessionPanel(proj, sessions, cursor, width, height, focused)
 	}
-	list, hits, rows := m.renderSessionPanel(proj, sessions, cursor, width, listH, focused)
 
 	var sel session.Session
 	hasSel := cursor < len(sessions)
 	if hasSel {
 		sel = sessions[cursor]
 	}
+
+	// detailH is sized around what the selected session's detail content
+	// actually needs (fields, wrapped prompt, closing cowsay art) rather
+	// than a flat fraction of the panel — a project with a long, actively-
+	// scrolled session list (the whole point of this app) used to starve its
+	// own detail section down to minMultiDetailHeight regardless of how much
+	// room the terminal had, so the cow tacked onto the bottom of detail's
+	// content never got to render. It's still capped so a chatty session
+	// (long ticket/PR/prompt fields) can't push the list below a usable
+	// minimum in a short terminal.
+	detailH := m.detailContentHeight(sel, hasSel, width)
+	if maxDetailH := avail - minStackedListRows; detailH > maxDetailH {
+		detailH = maxDetailH
+	}
+	if detailH < minMultiDetailHeight {
+		detailH = minMultiDetailHeight
+	}
+	listH := avail - detailH
+	list, hits, rows := m.renderSessionPanel(proj, sessions, cursor, width, listH, focused)
+
 	detail, detailHits := m.renderDetailFor(sel, hasSel, width, detailH, false)
 	// detail sits below the list and its one-row separator, so its hits
 	// (relative to the detail panel's own top) need that offset folded in
