@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -409,30 +410,71 @@ func TestSessionRowClickOutsideListDoesNotSelect(t *testing.T) {
 	}
 }
 
-// TestMouseWheelMovesCursor asserts that scrolling the mouse wheel over the
-// session list moves the cursor the same way the up/down keys do, wrapping
-// at the ends — mosh/Moshi clients on mobile have no arrow keys handy, but
-// do send wheel events for a two-finger scroll gesture.
-func TestMouseWheelMovesCursor(t *testing.T) {
+// TestMouseWheelScrollsViewportNotCursor asserts that scrolling the mouse
+// wheel over the session list moves the visible window, leaving the
+// selected cursor untouched — unlike the up/down keys, which move the
+// selection. Mosh/Moshi clients on mobile have no arrow keys handy, but do
+// send wheel events for a two-finger scroll gesture, and a scroll gesture
+// should behave like scrolling, not like repeatedly pressing down.
+func TestMouseWheelScrollsViewportNotCursor(t *testing.T) {
+	var sessions []session.Session
+	for i := 0; i < 10; i++ {
+		sessions = append(sessions, session.Session{
+			ID:      fmt.Sprintf("demo:s%d", i),
+			Project: "demo",
+			Name:    fmt.Sprintf("s%d", i),
+		})
+	}
+	be := &fakeBackend{sessions: sessions}
+	m := newTestModel(be)
+	m.width, m.height = 80, 8 // short enough that the list can't show all 10 rows at once
+	m.View()
+
+	startBefore := m.scrollTop
+	run(m, tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown})
+	m.View()
+	if m.cursor != 0 {
+		t.Fatalf("after wheel down: cursor = %d, want 0 (unchanged)", m.cursor)
+	}
+	if m.scrollTop != startBefore+1 {
+		t.Fatalf("after wheel down: scrollTop = %d, want %d", m.scrollTop, startBefore+1)
+	}
+
+	run(m, tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp})
+	m.View()
+	if m.cursor != 0 {
+		t.Fatalf("after wheel up: cursor = %d, want 0 (unchanged)", m.cursor)
+	}
+	if m.scrollTop != startBefore {
+		t.Fatalf("after wheel up: scrollTop = %d, want %d", m.scrollTop, startBefore)
+	}
+
+	// Moving the selection with a key resumes the normal cursor-centering
+	// behavior, discarding the wheel's manual scroll position.
+	run(m, tea.KeyMsg{Type: tea.KeyDown})
+	m.View()
+	if m.scrollLocked {
+		t.Fatalf("after pressing down: scrollLocked = true, want false (cursor move should release the wheel's scroll lock)")
+	}
+}
+
+// TestMouseWheelNoopWhenListFits asserts scrolling does nothing when every
+// session already fits on screen — there's nothing to scroll.
+func TestMouseWheelNoopWhenListFits(t *testing.T) {
 	be := &fakeBackend{sessions: []session.Session{
 		{ID: "demo:one", Project: "demo", Name: "one"},
 		{ID: "demo:two", Project: "demo", Name: "two"},
 	}}
 	m := newTestModel(be)
+	m.View()
 
 	run(m, tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown})
-	if m.cursor != 1 {
-		t.Fatalf("after wheel down: cursor = %d, want 1", m.cursor)
-	}
-
-	run(m, tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown})
+	m.View()
 	if m.cursor != 0 {
-		t.Fatalf("after wheel down past the end: cursor = %d, want 0 (wrapped)", m.cursor)
+		t.Fatalf("after wheel down: cursor = %d, want 0 (unchanged)", m.cursor)
 	}
-
-	run(m, tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp})
-	if m.cursor != 1 {
-		t.Fatalf("after wheel up wrapping past the start: cursor = %d, want 1", m.cursor)
+	if m.scrollTop != 0 {
+		t.Fatalf("after wheel down: scrollTop = %d, want 0 (nothing to scroll)", m.scrollTop)
 	}
 }
 

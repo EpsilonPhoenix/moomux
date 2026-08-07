@@ -388,11 +388,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.Button {
 			case tea.MouseButtonWheelUp:
 				if len(m.sessions) > 0 {
-					m.cursor = (m.cursor - 1 + len(m.sessions)) % len(m.sessions)
+					m.scrollTop--
+					m.scrollLocked = true
 				}
 			case tea.MouseButtonWheelDown:
 				if len(m.sessions) > 0 {
-					m.cursor = (m.cursor + 1) % len(m.sessions)
+					m.scrollTop++
+					m.scrollLocked = true
 				}
 			}
 		}
