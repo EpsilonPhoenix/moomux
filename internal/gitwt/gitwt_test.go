@@ -115,12 +115,31 @@ func (f *erringRunner) Run(dir string, args ...string) (string, error) {
 
 func TestRemoveWorktreeGitFailureKeepsDirectory(t *testing.T) {
 	dir := t.TempDir() // stands in for a real repo the user still needs
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	c := &Client{Runner: &erringRunner{}}
 	if err := c.RemoveWorktree("/repo", dir); err == nil {
 		t.Fatal("expected the git error to surface")
 	}
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatalf("directory was deleted despite git failure: %v", err)
+	}
+}
+
+// TestRemoveWorktreeMissingGitSelfCleans covers a worktree directory that
+// was never linked to git at all (e.g. worktree creation died before `git
+// worktree add` ran, or something manually deleted the .git file). git
+// itself has no registration to lose track of, so RemoveWorktree must clean
+// it up rather than surface git's "not a working tree" error forever.
+func TestRemoveWorktreeMissingGitSelfCleans(t *testing.T) {
+	dir := t.TempDir()
+	c := &Client{Runner: &erringRunner{}}
+	if err := c.RemoveWorktree("/repo", dir); err != nil {
+		t.Fatalf("expected self-cleanup, got error: %v", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("expected directory to be removed, stat err = %v", err)
 	}
 }
 

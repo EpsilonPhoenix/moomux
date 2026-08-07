@@ -225,14 +225,18 @@ func (c *Client) RemoveWorktree(repoDir, worktreePath string) error {
 }
 
 // isOrphanedWorktreeCheckout reports whether path is a worktree checkout
-// whose git-side registration is already gone — its .git file points at a
-// worktrees/<name> gitdir that no longer exists. Real repos (a full .git
-// directory) and worktrees git still knows about return false, so callers
-// only treat the checkout as safe to delete themselves in the one case
-// where git has nothing left to lose track of.
+// whose git-side registration is already gone — either its .git file points
+// at a worktrees/<name> gitdir that no longer exists, or .git is missing
+// entirely (e.g. worktree creation died before `git worktree add` ran). Real
+// repos (a full .git directory) return false, so callers only treat the
+// checkout as safe to delete themselves when git has nothing left to lose
+// track of.
 func isOrphanedWorktreeCheckout(path string) bool {
 	info, err := os.Stat(path + "/.git")
-	if err != nil || info.IsDir() {
+	if err != nil {
+		return os.IsNotExist(err)
+	}
+	if info.IsDir() {
 		return false
 	}
 	data, err := os.ReadFile(path + "/.git")
