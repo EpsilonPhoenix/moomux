@@ -11,11 +11,18 @@ import (
 	"github.com/erickgnclvs/moomux/internal/watcher"
 )
 
+// newTestModel and newMultiProjectTestModel both force ModeList after
+// construction: New() now defaults to ModeMultiView (see model.go), but
+// these two are the shared single-project-view test fixtures — most callers
+// are exercising ModeList-specific dialogs/behavior and don't want every one
+// of them rewritten for a default that's orthogonal to what they're testing.
+// Tests that specifically want ModeMultiView set m.mode back explicitly.
 func newTestModel(be *fakeBackend) *Model {
 	cfg := &config.Config{Projects: map[string]config.Project{"demo": {Repo: "/tmp/demo"}}}
 	statusCh := make(chan watcher.Snapshot)
 	m := New(cfg, be, statusCh, func() {})
 	m.width, m.height = 80, 24
+	m.mode = ModeList
 	return m
 }
 
@@ -27,6 +34,7 @@ func newMultiProjectTestModel(be *fakeBackend) *Model {
 	statusCh := make(chan watcher.Snapshot)
 	m := New(cfg, be, statusCh, func() {})
 	m.width, m.height = 80, 24
+	m.mode = ModeList
 	return m
 }
 
@@ -178,32 +186,28 @@ func TestMoveSessionErrorSetsFlashWithoutReordering(t *testing.T) {
 	}
 }
 
-// TestAllSessionsSortsLiveStatusBeforeProject guards the all-sessions view's
-// sort priority: a live tmux session floats to the very top of the combined
-// list regardless of which project it belongs to, with project order only
-// breaking ties among sessions that share the same status.
-func TestAllSessionsSortsLiveStatusBeforeProject(t *testing.T) {
+// TestRefreshSessionsSortsLiveStatusFirst guards the active project's sort
+// order: a session with a live tmux window floats to the top of the list.
+func TestRefreshSessionsSortsLiveStatusFirst(t *testing.T) {
 	be := &fakeBackend{sessions: []session.Session{
-		{ID: "alpha:a1", Project: "alpha", Name: "a1"},
-		{ID: "alpha:a2", Project: "alpha", Name: "a2"},
-		{ID: "beta:b1", Project: "beta", Name: "b1"},
+		{ID: "demo:a1", Project: "demo", Name: "a1"},
+		{ID: "demo:a2", Project: "demo", Name: "a2"},
 	}}
-	m := newMultiProjectTestModel(be)
-	m.allSessions = true
-	m.tmuxAlive = map[string]bool{"beta:b1": true}
+	m := newTestModel(be)
+	m.tmuxAlive = map[string]bool{"demo:a2": true}
 	m.refreshSessions()
 
 	got := make([]string, len(m.sessions))
 	for i, s := range m.sessions {
 		got[i] = s.ID
 	}
-	want := []string{"beta:b1", "alpha:a1", "alpha:a2"}
+	want := []string{"demo:a2", "demo:a1"}
 	if len(got) != len(want) {
 		t.Fatalf("sessions = %v, want %v", got, want)
 	}
 	for i := range want {
 		if got[i] != want[i] {
-			t.Fatalf("sessions = %v, want %v (beta's live session should float above every non-live session)", got, want)
+			t.Fatalf("sessions = %v, want %v (the live session should float above the non-live one)", got, want)
 		}
 	}
 }

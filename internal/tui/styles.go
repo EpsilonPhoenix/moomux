@@ -19,7 +19,6 @@ var (
 	titleStyle lipgloss.Style
 	cowStyle   lipgloss.Style
 	muteStyle  lipgloss.Style
-	tabActive  lipgloss.Style
 
 	listRow         lipgloss.Style
 	listRowSelected lipgloss.Style
@@ -79,7 +78,6 @@ func buildStyles() {
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
 	cowStyle = lipgloss.NewStyle().Foreground(colMute)
 	muteStyle = lipgloss.NewStyle().Foreground(colMute)
-	tabActive = lipgloss.NewStyle().Bold(true).Foreground(colAccent).Padding(0, 1)
 
 	listRow = lipgloss.NewStyle().Padding(0, 1)
 	listRowSelected = lipgloss.NewStyle().Padding(0, 1).Background(colSelBg).Foreground(colFg).Bold(true)

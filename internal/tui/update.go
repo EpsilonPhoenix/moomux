@@ -169,6 +169,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setFlash("info", text)
 		// Remove from prompt cache so the next tick scans the new session.
 		delete(m.prompts, msg.Session.ID)
+		// A brand-new session is never archived — land on the active view so
+		// it's actually visible, regardless of which view was showing before.
+		m.showArchived = false
 		for i, name := range m.projects {
 			if name == msg.Session.Project {
 				m.activeProj = i
@@ -176,6 +179,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.refreshSessions()
+		// Multi-view only shows projects with something to display (see
+		// multiViewEligibleProjects); pin the new session's project so it's
+		// selected there too, the same as picking it from the project picker.
+		m.multiPinned = msg.Session.Project
+		if idx := indexOfProject(m.multiViewEligibleProjects(), msg.Session.Project); idx >= 0 {
+			m.multiFocus = idx
+			m.ensureMultiFocusVisible()
+		}
 		return m, refreshStatusCmd(m)
 
 	case SessionDeletedMsg:
@@ -221,7 +232,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		delete(m.prompts, msg.Session.ID)
-		m.mode = ModeList
+		m.mode = m.sessionDialogReturn
 		m.setFlash("info", "updated session "+msg.Session.Name)
 		return m, refreshStatusCmd(m)
 
@@ -348,68 +359,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseMsg:
-		if m.mode != ModeList {
+		// ModeMultiView's own multi-panel layout isn't clickable (see
+		// updateLinkHits) — it only reaches here via renderListView's
+		// single-project fallback, at which point it's the same clickable
+		// surface as ModeList.
+		if m.mode != ModeList && m.mode != ModeMultiView {
 			var cmd tea.Cmd
 			m.overlayViewport, cmd = m.overlayViewport.Update(msg)
 			return m, cmd
 		}
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-			if url, copyOnly := m.linkAt(msg.X, msg.Y); url != "" {
-				if copyOnly || m.isRemote() {
-					// Over SSH, `open` launches a browser on the remote
-					// machine, not the phone/laptop the user is actually
-					// looking at — and moomux's mouse tracking means the
-					// terminal never gets a chance to handle the tap as a
-					// link itself. Copy the URL instead: OSC 52 isn't tied
-					// to mouse mode, so it reaches the client's clipboard
-					// regardless.
-					//
-					// This runs synchronously (not as a tea.Cmd) because a
-					// Cmd executes in its own goroutine, concurrently with
-					// bubbletea's render loop — both writing to os.Stdout at
-					// once can interleave and corrupt the escape sequence
-					// before the terminal ever sees a well-formed one.
-					if err := browser.Copy(url); err != nil {
-						m.setError(err)
-						return m, nil
-					}
-					m.setFlash("info", "copied "+url)
-					return m, nil
-				}
-				return m, func() tea.Msg {
-					if err := browser.Open(url); err != nil {
-						return ErrorMsg{Err: err}
-					}
-					return LinkOpenedMsg{URL: url}
-				}
-			}
-			// Not a ticket/PR icon — a tap on the row itself selects and
-			// opens that session in one motion, since mobile clients (mosh
-			// over Moshi, etc.) have no keyboard focus to move a cursor with
-			// first.
-			if id, ok := m.sessionRowAt(msg.X, msg.Y); ok {
-				for i, s := range m.sessions {
-					if s.ID == id {
-						m.cursor = i
-						break
-					}
-				}
-				return m, m.openSessionCmd(id)
-			}
-		}
-		if msg.Action == tea.MouseActionPress {
-			switch msg.Button {
-			case tea.MouseButtonWheelUp:
-				if len(m.sessions) > 0 {
-					m.cursor = (m.cursor - 1 + len(m.sessions)) % len(m.sessions)
-				}
-			case tea.MouseButtonWheelDown:
-				if len(m.sessions) > 0 {
-					m.cursor = (m.cursor + 1) % len(m.sessions)
-				}
-			}
-		}
-		return m, nil
+		return m.handleListMouse(msg)
 
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
@@ -420,7 +379,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancelPoll()
 			return m, tea.Quit
 		}
-		if m.mode != ModeList && m.mode != ModeHelp && isOverlayScrollKey(msg) {
+		if m.mode != ModeList && m.mode != ModeHelp && m.mode != ModeMultiView && isOverlayScrollKey(msg) {
 			var cmd tea.Cmd
 			m.overlayViewport, cmd = m.overlayViewport.Update(msg)
 			return m, cmd
@@ -448,6 +407,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateProjectPicker(msg)
 		case ModeThemePicker:
 			return m.updateThemePicker(msg)
+		case ModeMultiView:
+			return m.updateMultiView(msg)
 		default:
 			return m.updateList(msg)
 		}
@@ -477,6 +438,7 @@ func (m *Model) resetOverlayViewport() {
 // so focus starts on the project selector instead of skipping past it.
 func (m *Model) openNewSessionForm() {
 	m.mode = ModeNewForm
+	m.sessionDialogReturn = ModeList
 	m.newFormErr = ""
 	if len(m.projects) > 1 {
 		m.newFormProjIdx = -1
@@ -523,6 +485,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case key.Matches(msg, m.keys.Help):
 		m.mode = ModeHelp
+		m.sessionDialogReturn = ModeList
 		m.resetOverlayViewport()
 		return m, nil
 	case key.Matches(msg, m.keys.Up):
@@ -641,6 +604,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirmAck = false
 			m.confirmChecking = true
 			m.mode = ModeConfirmDelete
+			m.sessionDialogReturn = ModeList
 			// Without this the dialog inherits the previous overlay's scroll
 			// offset and can open with the "what you're deleting" text
 			// scrolled off-screen, leaving only "y to confirm" visible.
@@ -662,14 +626,11 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showArchived = !m.showArchived
 		m.cursor = 0
 		m.refreshSessions()
-	case key.Matches(msg, m.keys.AllSessions):
-		m.allSessions = !m.allSessions
-		m.cursor = 0
-		m.refreshSessions()
 	case key.Matches(msg, m.keys.Tag):
 		if len(m.sessions) > 0 {
 			s := m.sessions[m.cursor]
 			m.mode = ModeTagForm
+			m.sessionDialogReturn = ModeList
 			m.tagForm = newTagForm(s.Ticket, s.PR)
 			m.resetOverlayViewport()
 			m.resizeFormInputs()
@@ -678,6 +639,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.sessions) > 0 {
 			s := m.sessions[m.cursor]
 			m.mode = ModeEditSession
+			m.sessionDialogReturn = ModeList
 			m.resetOverlayViewport()
 			m.sessionForm = sessionForm{
 				id:       s.ID,
@@ -693,6 +655,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// n to add one").
 		m.pickerCursor = m.activeProj
 		m.mode = ModeProjectPicker
+		m.sessionDialogReturn = ModeList
 		m.resetOverlayViewport()
 		return m, nil
 	case key.Matches(msg, m.keys.ThemePicker):
@@ -728,6 +691,89 @@ func (m *Model) switchProject(delta int) {
 	m.refreshSessions()
 }
 
+// handleListMouse handles a mouse event against the current single-project
+// list/detail view — ModeList, or ModeMultiView's single-project fallback
+// (see renderListView/renderMultiView). In the latter case any cursor
+// movement is folded back into the focused project's own multi-view panel
+// state before returning: renderMultiView's enterSingleProjectContext
+// resyncs m.cursor from that state on every render, so without this a
+// click/wheel-scroll would just get silently overwritten on the next frame.
+func (m *Model) handleListMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	var proj string
+	var hasFocus bool
+	if m.mode == ModeMultiView {
+		proj, hasFocus = m.focusedMultiProject()
+	}
+	sync := func() {
+		if hasFocus {
+			m.leaveSingleProjectContext(proj)
+		}
+	}
+
+	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		if url, copyOnly := m.linkAt(msg.X, msg.Y); url != "" {
+			if copyOnly || m.isRemote() {
+				// Over SSH, `open` launches a browser on the remote
+				// machine, not the phone/laptop the user is actually
+				// looking at — and moomux's mouse tracking means the
+				// terminal never gets a chance to handle the tap as a
+				// link itself. Copy the URL instead: OSC 52 isn't tied
+				// to mouse mode, so it reaches the client's clipboard
+				// regardless.
+				//
+				// This runs synchronously (not as a tea.Cmd) because a
+				// Cmd executes in its own goroutine, concurrently with
+				// bubbletea's render loop — both writing to os.Stdout at
+				// once can interleave and corrupt the escape sequence
+				// before the terminal ever sees a well-formed one.
+				if err := browser.Copy(url); err != nil {
+					m.setError(err)
+					sync()
+					return m, nil
+				}
+				m.setFlash("info", "copied "+url)
+				sync()
+				return m, nil
+			}
+			sync()
+			return m, func() tea.Msg {
+				if err := browser.Open(url); err != nil {
+					return ErrorMsg{Err: err}
+				}
+				return LinkOpenedMsg{URL: url}
+			}
+		}
+		// Not a ticket/PR icon — a tap on the row itself selects and
+		// opens that session in one motion, since mobile clients (mosh
+		// over Moshi, etc.) have no keyboard focus to move a cursor with
+		// first.
+		if id, ok := m.sessionRowAt(msg.X, msg.Y); ok {
+			for i, s := range m.sessions {
+				if s.ID == id {
+					m.cursor = i
+					break
+				}
+			}
+			sync()
+			return m, m.openSessionCmd(id)
+		}
+	}
+	if msg.Action == tea.MouseActionPress {
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			if len(m.sessions) > 0 {
+				m.cursor = (m.cursor - 1 + len(m.sessions)) % len(m.sessions)
+			}
+		case tea.MouseButtonWheelDown:
+			if len(m.sessions) > 0 {
+				m.cursor = (m.cursor + 1) % len(m.sessions)
+			}
+		}
+	}
+	sync()
+	return m, nil
+}
+
 // openSessionCmd returns a Cmd that opens/attaches the given session,
 // shared by the Enter/o key binding and a row click.
 func (m *Model) openSessionCmd(id string) tea.Cmd {
@@ -749,7 +795,7 @@ func (m *Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch {
 	case key.Matches(msg, m.keys.Help), key.Matches(msg, m.keys.Cancel), key.Matches(msg, m.keys.Quit):
-		m.mode = ModeList
+		m.mode = m.sessionDialogReturn
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -760,7 +806,7 @@ func (m *Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Cancel):
-		m.mode = ModeList
+		m.mode = m.sessionDialogReturn
 		return m, nil
 	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.ShiftTab):
 		if key.Matches(msg, m.keys.ShiftTab) {
@@ -834,7 +880,7 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		proj := m.projects[m.newFormProjIdx]
 		agent := agentChoices[m.newFormAgentIdx]
 		openTerminal := !m.newFormOpenInBackground
-		m.mode = ModeList
+		m.mode = m.sessionDialogReturn
 		label := name
 		if label == "" {
 			label = branch
@@ -964,7 +1010,7 @@ func (m *Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Confirm):
 		if len(m.sessions) == 0 {
-			m.mode = ModeList
+			m.mode = m.sessionDialogReturn
 			return m, nil
 		}
 		if m.confirmChecking {
@@ -980,7 +1026,7 @@ func (m *Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		id := m.sessions[m.cursor].ID
-		m.mode = ModeList
+		m.mode = m.sessionDialogReturn
 		return m, func() tea.Msg {
 			if err := m.backend.DeleteSession(id); err != nil {
 				return ErrorMsg{Err: err}
@@ -988,7 +1034,7 @@ func (m *Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return SessionDeletedMsg{ID: id}
 		}
 	case key.Matches(msg, m.keys.No), key.Matches(msg, m.keys.Cancel):
-		m.mode = ModeList
+		m.mode = m.sessionDialogReturn
 	}
 	return m, nil
 }
@@ -1106,13 +1152,13 @@ func (m *Model) updateEditSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// before this overlay opened); still let the user close the form
 		// instead of being stuck in an unresponsive modal.
 		if key.Matches(msg, m.keys.Cancel) {
-			m.mode = ModeList
+			m.mode = m.sessionDialogReturn
 		}
 		return m, nil
 	}
 	switch {
 	case key.Matches(msg, m.keys.Cancel):
-		m.mode = ModeList
+		m.mode = m.sessionDialogReturn
 	case key.Matches(msg, m.keys.Left):
 		m.sessionForm.agentIdx = (m.sessionForm.agentIdx - 1 + len(agentChoices)) % len(agentChoices)
 	case key.Matches(msg, m.keys.Right):
@@ -1226,7 +1272,7 @@ func (m *Model) updateEditProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) updateTagForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Cancel):
-		m.mode = ModeList
+		m.mode = m.sessionDialogReturn
 		return m, nil
 	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.FormDown), key.Matches(msg, m.keys.ShiftTab), key.Matches(msg, m.keys.FormUp):
 		forward := !(key.Matches(msg, m.keys.ShiftTab) || key.Matches(msg, m.keys.FormUp))
@@ -1234,13 +1280,13 @@ func (m *Model) updateTagForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, m.keys.Enter):
 		if len(m.sessions) == 0 {
-			m.mode = ModeList
+			m.mode = m.sessionDialogReturn
 			return m, nil
 		}
 		id := m.sessions[m.cursor].ID
 		ticket := m.tagForm.inputs[0].Value()
 		pr := m.tagForm.inputs[1].Value()
-		m.mode = ModeList
+		m.mode = m.sessionDialogReturn
 		return m, func() tea.Msg {
 			s, err := m.backend.SetSessionTags(id, ticket, pr)
 			if err != nil {
@@ -1343,7 +1389,7 @@ func (m *Model) updateConfirmDeleteProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 func (m *Model) updateProjectPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Cancel):
-		m.mode = ModeList
+		m.mode = m.sessionDialogReturn
 		return m, nil
 	case key.Matches(msg, m.keys.Up):
 		if len(m.projects) > 0 {
@@ -1432,8 +1478,18 @@ func (m *Model) updateProjectPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.activeProj = m.pickerCursor
 			m.cursor = 0
 			m.refreshSessions()
+			// Multi-view only shows projects with something to display (see
+			// multiViewEligibleProjects) — pin this one so picking it
+			// actually lands on it instead of returning to whatever was
+			// focused before, or nothing at all if it has no sessions yet.
+			proj := m.projects[m.activeProj]
+			m.multiPinned = proj
+			if idx := indexOfProject(m.multiViewEligibleProjects(), proj); idx >= 0 {
+				m.multiFocus = idx
+				m.ensureMultiFocusVisible()
+			}
 		}
-		m.mode = ModeList
+		m.mode = m.sessionDialogReturn
 	}
 	return m, nil
 }
@@ -1444,6 +1500,7 @@ func (m *Model) openThemePicker() {
 	m.themeCursor = themeIndex(m.cfg.Theme)
 	m.previewAppearance = m.cfg.Appearance
 	m.mode = ModeThemePicker
+	m.sessionDialogReturn = ModeList
 	m.resetOverlayViewport()
 }
 
@@ -1455,7 +1512,7 @@ func (m *Model) updateThemePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Cancel):
 		applyTheme(m.cfg.Theme)
 		applyAppearance(m.cfg.Appearance)
-		m.mode = ModeList
+		m.mode = m.sessionDialogReturn
 		return m, nil
 	case key.Matches(msg, m.keys.Up):
 		m.themeCursor = (m.themeCursor - 1 + len(themeNames)) % len(themeNames)
@@ -1472,7 +1529,7 @@ func (m *Model) updateThemePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Enter):
 		theme := themeNames[m.themeCursor]
 		appearance := m.previewAppearance
-		m.mode = ModeList
+		m.mode = m.sessionDialogReturn
 		return m, func() tea.Msg {
 			if err := m.backend.SetTheme(theme, appearance); err != nil {
 				return ErrorMsg{Err: err}

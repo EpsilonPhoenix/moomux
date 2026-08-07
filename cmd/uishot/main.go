@@ -45,8 +45,12 @@ var screens = map[string][]string{
 	"new-project":    {"/", "n"},
 	"tag":            {"t"},
 	"project-picker": {"/"},
-	"edit-session":   {"e"},
-	"edit-project":   {"/", "e"},
+	// Picks "spare" (the sessionless sample project) from the picker,
+	// confirming multi-view pins it in alongside "demo" instead of it
+	// staying invisible (see multiViewEligibleProjects/multiPinned).
+	"multi-view-pin-empty-project": {"/", "down", "enter"},
+	"edit-session":                 {"e"},
+	"edit-project":                 {"/", "e"},
 	// 3 tabs walks focus from repo (1) through base branch (2) and branch
 	// prefix (3) to land on the emoji selector, showing its focused/[glyph]
 	// state rather than the unfocused default the plain "edit-project" and
@@ -64,8 +68,6 @@ var screens = map[string][]string{
 	"confirm-delete-project": {"tab", "D"},
 	"delete-project-blocked": {"D"},
 	"archived":               {"A"},
-	"all-sessions":           {"G"},
-	"all-archived":           {"G", "A"},
 	"help":                   {"?"},
 	// needs-input has no keys of its own; renderScreen feeds it a
 	// StatusTickMsg marking the first sample session watcher.NeedsInput.
@@ -96,6 +98,12 @@ var screens = map[string][]string{
 	// a PR attached, so its detail panel shows the PR status row (see
 	// renderScreen's prStatus wiring below).
 	"pr-status": {"down"},
+	// ModeMultiView is the default now (see tui.New), so "list" above already
+	// captures it; these confirm normal session key bindings (delete/tag/
+	// archived) still work and render their dialog correctly on top of it.
+	"multi-view-delete":   {"d"},
+	"multi-view-tag":      {"t"},
+	"multi-view-archived": {"A"},
 }
 
 var namedKeys = map[string]tea.KeyType{

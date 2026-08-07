@@ -30,10 +30,6 @@ func (m *Model) helpGroups() []helpGroup {
 		archiveDesc = "restore session"
 		archivedDesc = "show active"
 	}
-	allSessionsDesc := "all projects"
-	if m.allSessions {
-		allSessionsDesc = "active project only"
-	}
 	linkDesc := "force-copy ticket/PR links: off"
 	if m.forceCopyLinks {
 		linkDesc = "force-copy ticket/PR links: on"
@@ -84,7 +80,6 @@ func (m *Model) helpGroups() []helpGroup {
 				{"?", "toggle this help"},
 				{"q", "quit"},
 				{"r", "refresh"},
-				{"G", allSessionsDesc},
 				{"T", "themes"},
 			},
 		},
