@@ -766,12 +766,22 @@ func (m *Model) handleListMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Action == tea.MouseActionPress {
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:
-			if len(m.sessions) > 0 {
-				m.cursor = (m.cursor - 1 + len(m.sessions)) % len(m.sessions)
+			if m.mode == ModeMultiView {
+				if len(m.sessions) > 0 {
+					m.cursor = (m.cursor - 1 + len(m.sessions)) % len(m.sessions)
+				}
+			} else if len(m.sessions) > 0 {
+				m.scrollTop--
+				m.scrollLocked = true
 			}
 		case tea.MouseButtonWheelDown:
-			if len(m.sessions) > 0 {
-				m.cursor = (m.cursor + 1) % len(m.sessions)
+			if m.mode == ModeMultiView {
+				if len(m.sessions) > 0 {
+					m.cursor = (m.cursor + 1) % len(m.sessions)
+				}
+			} else if len(m.sessions) > 0 {
+				m.scrollTop++
+				m.scrollLocked = true
 			}
 		}
 	}

@@ -163,9 +163,17 @@ type Model struct {
 	sessions     []session.Session
 	showArchived bool // when true, the list shows archived sessions instead of active ones
 	cursor       int
-	states       map[string]watcher.State
-	titleState   map[string]watcher.State // last status pushed as each session's tmux window title, by session id
-	tmuxAlive    map[string]bool
+	// scrollTop is the index of the first session row rendered by renderList,
+	// refreshed every render. scrollLocked pins it as the mouse wheel's own
+	// baseline instead of the default cursor-centering, until the cursor
+	// itself moves (see renderList) — so a wheel scroll moves the viewport
+	// without dragging the selection along with it.
+	scrollTop        int
+	scrollLocked     bool
+	lastScrollCursor int
+	states           map[string]watcher.State
+	titleState       map[string]watcher.State // last status pushed as each session's tmux window title, by session id
+	tmuxAlive        map[string]bool
 	// tmuxCheckedOnce becomes true once the first (async, startup) tmux-alive
 	// check resolves. Gates the startup fetchStaleGitStatusCmd call so it
 	// runs exactly once with real data — tmuxAlive is empty/unknown until
