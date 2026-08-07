@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/session"
@@ -26,6 +28,84 @@ func TestMultiViewProjectsFitsWidth(t *testing.T) {
 	got := m.multiViewProjects()
 	if len(got) != 2 || got[0] != "alpha" || got[1] != "beta" {
 		t.Fatalf("width=80: got %v, want [alpha beta]", got)
+	}
+}
+
+// TestMultiViewTicketIconsAreClickable is the regression test for the bug
+// report that multi-view's session-list icons stopped being clickable:
+// renderMultiView used to discard link hits entirely (m.linkHits = nil, never
+// repopulated) since its per-panel layout never fed updateLinkHits. Clicking
+// a ticket/PR icon in a visible panel must resolve to that session's URL.
+func TestMultiViewTicketIconsAreClickable(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1", Ticket: "https://ticket.example/a1"},
+		{ID: "b1", Project: "beta", Name: "b1", PR: "https://pr.example/b1"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.width, m.height = 80, 24
+	m.mode = ModeMultiView
+
+	frame := m.View()
+	lines := strings.Split(frame, "\n")
+	findCol := func(icon string) (line, col int) {
+		for li, l := range lines {
+			if idx := strings.Index(l, icon); idx >= 0 {
+				return li, lipgloss.Width(l[:idx])
+			}
+		}
+		t.Fatalf("icon %q not found in rendered frame:\n%s", icon, frame)
+		return -1, -1
+	}
+
+	ticketLine, ticketCol := findCol(iconTicket)
+	if got, _ := m.linkAt(ticketCol, ticketLine); got != be.sessions[0].Ticket {
+		t.Errorf("click on ticket icon at (%d,%d) = %q, want %q", ticketCol, ticketLine, got, be.sessions[0].Ticket)
+	}
+
+	prLine, prCol := findCol(iconPR)
+	if got, _ := m.linkAt(prCol, prLine); got != be.sessions[1].PR {
+		t.Errorf("click on pr icon at (%d,%d) = %q, want %q", prCol, prLine, got, be.sessions[1].PR)
+	}
+}
+
+// TestMultiViewTicketIconClickCopiesOverSSH asserts that a ticket icon click
+// inside the multi-panel grid still follows the mobile/SSH rule (see
+// TestLinkClickOverSSHCopiesInsteadOfOpening for the single-panel case):
+// copy the URL via OSC 52 rather than shelling out to `open`, since `open`
+// would launch a browser on the remote machine, not the phone/laptop the
+// user is actually looking at. handleListMouse applies this uniformly via
+// m.isRemote() regardless of how many panels are visible, so this should
+// hold without any multi-view-specific handling.
+func TestMultiViewTicketIconClickCopiesOverSSH(t *testing.T) {
+	t.Setenv("SSH_TTY", "/dev/ttys001")
+
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1", Ticket: "https://ticket.example/a1"},
+		{ID: "b1", Project: "beta", Name: "b1"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.width, m.height = 80, 24
+	m.mode = ModeMultiView
+	m.View() // populate m.linkHits
+
+	var hit resolvedLinkHit
+	for _, h := range m.linkHits {
+		if h.url == be.sessions[0].Ticket {
+			hit = h
+		}
+	}
+	if hit.url == "" {
+		t.Fatalf("ticket link hit not found among m.linkHits: %+v", m.linkHits)
+	}
+
+	updated, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: hit.x0, Y: hit.y})
+	m2 := updated.(*Model)
+
+	if cmd != nil {
+		t.Errorf("expected no async command for the copy path, got one")
+	}
+	if m2.flashKind != "info" || m2.flash != "copied "+be.sessions[0].Ticket {
+		t.Errorf("flash = (%q, %q), want (\"info\", %q)", m2.flashKind, m2.flash, "copied "+be.sessions[0].Ticket)
 	}
 }
 

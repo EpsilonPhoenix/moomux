@@ -359,10 +359,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseMsg:
-		// ModeMultiView's own multi-panel layout isn't clickable (see
-		// updateLinkHits) — it only reaches here via renderListView's
-		// single-project fallback, at which point it's the same clickable
-		// surface as ModeList.
+		// ModeMultiView's multi-panel layout records its own link/row hits
+		// (see renderMultiView) in the same m.linkHits/m.rowHits consulted
+		// below, so it's a clickable surface exactly like ModeList — this
+		// only excludes modes with an overlay on top (forms, dialogs),
+		// where a click should go to the overlay's viewport instead.
 		if m.mode != ModeList && m.mode != ModeMultiView {
 			var cmd tea.Cmd
 			m.overlayViewport, cmd = m.overlayViewport.Update(msg)
@@ -691,13 +692,17 @@ func (m *Model) switchProject(delta int) {
 	m.refreshSessions()
 }
 
-// handleListMouse handles a mouse event against the current single-project
-// list/detail view — ModeList, or ModeMultiView's single-project fallback
-// (see renderListView/renderMultiView). In the latter case any cursor
-// movement is folded back into the focused project's own multi-view panel
-// state before returning: renderMultiView's enterSingleProjectContext
-// resyncs m.cursor from that state on every render, so without this a
-// click/wheel-scroll would just get silently overwritten on the next frame.
+// handleListMouse handles a mouse event against the current list/detail
+// view — ModeList, ModeMultiView's single-project fallback, or ModeMultiView's
+// real multi-panel grid (see renderListView/renderMultiView). In the
+// single-project-fallback case any cursor movement is folded back into the
+// focused project's own multi-view panel state before returning:
+// renderMultiView's enterSingleProjectContext resyncs m.cursor from that
+// state on every render, so without this a click/wheel-scroll would just get
+// silently overwritten on the next frame. Ticket/PR icon clicks (via
+// m.linkAt) and row taps (via m.sessionRowAt) work identically in all three
+// cases — copy-vs-open over SSH (m.isRemote) isn't mode-specific, so mobile
+// clients see the same behavior whether one panel or several are visible.
 func (m *Model) handleListMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	var proj string
 	var hasFocus bool

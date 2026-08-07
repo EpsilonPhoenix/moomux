@@ -312,8 +312,10 @@ func (m *Model) leaveSingleProjectContext(proj string) {
 // renderMultiView is ModeMultiView's whole-screen render, replacing the
 // normal single-project body with one panel per visible project — the base
 // View() dispatches straight here instead of computing the usual list+detail
-// layout. Panels aren't clickable (no link/row hits recorded): mouse support
-// there can follow once the static layout has proven out.
+// layout. It records its own link/row hits directly into m.linkHits/
+// m.rowHits (in absolute terminal coordinates, one panel-local origin per
+// panel) rather than going through updateLinkHits, which only knows how to
+// place a single list+detail pair.
 func (m *Model) renderMultiView() string {
 	m.ensureMultiFocusVisible()
 
@@ -360,17 +362,42 @@ func (m *Model) renderMultiView() string {
 		n := len(projs)
 		widths := multiViewPanelWidths(m.width, n)
 		panels := make([]string, n)
+		panelY := lipgloss.Height(header) + panelBorder.GetBorderTopSize()
+		panelX := 0
 		for i, proj := range projs {
 			w := widths[i]
 			focused := offset+i == m.multiFocus
 			sessions := m.multiViewSessionsFor(proj)
 			cursor := m.multiCursorFor(proj)
-			content := m.renderMultiPanel(proj, sessions, cursor, w-2, bodyHeight, focused)
+			content, hits, rows := m.renderMultiPanel(proj, sessions, cursor, w-2, bodyHeight, focused)
 			border := panelBorder
 			if focused {
 				border = border.BorderForeground(colAccent)
 			}
 			panels[i] = border.Width(w).Height(bodyHeight).Render(content)
+			originX := panelX + panelBorder.GetBorderLeftSize() + panelBorder.GetPaddingLeft()
+			for _, h := range hits {
+				m.linkHits = append(m.linkHits, resolvedLinkHit{
+					sessionID: h.sessionID,
+					url:       h.url,
+					copyOnly:  h.copyOnly,
+					y:         panelY + h.line,
+					x0:        originX + h.col0,
+					x1:        originX + h.col1,
+				})
+			}
+			for _, r := range rows {
+				m.rowHits = append(m.rowHits, resolvedRowHit{
+					sessionID: r.sessionID,
+					y:         panelY + r.line,
+					x0:        originX,
+					x1:        originX + w - 2,
+				})
+			}
+			// +2 for this panel's own border, matching the +2*n reserved by
+			// multiViewPanelWidths so successive panels' origins line up
+			// with where lipgloss.JoinHorizontal actually places them.
+			panelX += w + 2
 		}
 		body = lipgloss.JoinHorizontal(lipgloss.Top, panels...)
 	}
@@ -422,7 +449,7 @@ const minMultiDetailHeight = 5
 // project's own selection is visible without needing to tab to it first.
 // The two are divided by a thin separator line rather than a "DETAIL"
 // title, mirroring the narrow single-project layout's own treatment.
-func (m *Model) renderMultiPanel(proj string, sessions []session.Session, cursor int, width, height int, focused bool) string {
+func (m *Model) renderMultiPanel(proj string, sessions []session.Session, cursor int, width, height int, focused bool) (string, []linkHit, []rowHit) {
 	avail := height - 1 // reserve one row for the separator
 	detailH := avail / 3
 	if detailH < minMultiDetailHeight {
@@ -432,23 +459,33 @@ func (m *Model) renderMultiPanel(proj string, sessions []session.Session, cursor
 	if listH < minStackedPaneHeight {
 		return m.renderSessionPanel(proj, sessions, cursor, width, height, focused)
 	}
-	list := m.renderSessionPanel(proj, sessions, cursor, width, listH, focused)
+	list, hits, rows := m.renderSessionPanel(proj, sessions, cursor, width, listH, focused)
 
 	var sel session.Session
 	hasSel := cursor < len(sessions)
 	if hasSel {
 		sel = sessions[cursor]
 	}
-	detail, _ := m.renderDetailFor(sel, hasSel, width, detailH, false)
+	detail, detailHits := m.renderDetailFor(sel, hasSel, width, detailH, false)
+	// detail sits below the list and its one-row separator, so its hits
+	// (relative to the detail panel's own top) need that offset folded in
+	// to land in the combined panel's coordinates.
+	detailOffset := listH + 1
+	for _, h := range detailHits {
+		h.line += detailOffset
+		hits = append(hits, h)
+	}
 	separator := lipgloss.NewStyle().Foreground(colBorder).Render(strings.Repeat("─", width))
-	return lipgloss.JoinVertical(lipgloss.Left, list, separator, detail)
+	return lipgloss.JoinVertical(lipgloss.Left, list, separator, detail), hits, rows
 }
 
 // renderSessionPanel renders one project's session list for ModeMultiView.
-// It mirrors renderList's row styling but is driven by explicit
-// sessions/cursor arguments instead of the model's single active-project
-// state, since multi-view shows several projects' lists at once.
-func (m *Model) renderSessionPanel(proj string, sessions []session.Session, cursor int, width, height int, focused bool) string {
+// It mirrors renderList's row styling (and, like renderList, returns the
+// ticket/PR icon and row hitboxes in panel-local coordinates) but is driven
+// by explicit sessions/cursor arguments instead of the model's single
+// active-project state, since multi-view shows several projects' lists at
+// once.
+func (m *Model) renderSessionPanel(proj string, sessions []session.Session, cursor int, width, height int, focused bool) (string, []linkHit, []rowHit) {
 	var b strings.Builder
 	title := m.projectEmoji(proj) + " " + proj
 	compact := m.compactScreen()
@@ -464,7 +501,7 @@ func (m *Model) renderSessionPanel(proj string, sessions []session.Session, curs
 	}
 	if len(sessions) == 0 {
 		b.WriteString(muteStyle.Render("  no sessions"))
-		return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String())
+		return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), nil, nil
 	}
 
 	visible := height - titleRows
@@ -485,10 +522,22 @@ func (m *Model) renderSessionPanel(proj string, sessions []session.Session, curs
 	if end > len(sessions) {
 		end = len(sessions)
 	}
+	var hits []linkHit
+	var rows []rowHit
 	for i := start; i < end; i++ {
 		s := sessions[i]
 		selected := focused && i == cursor
-		row, _ := renderRow(s, m.effectiveState(s), width-2, selected, "", m.gitStatus[s.ID])
+		line := titleRows + (i - start)
+		rows = append(rows, rowHit{sessionID: s.ID, line: line})
+		row, iconHits := renderRow(s, m.effectiveState(s), width-2, selected, "", m.gitStatus[s.ID])
+		for _, h := range iconHits {
+			h.sessionID = s.ID
+			h.line = line
+			// +1 column for the row style's own left padding.
+			h.col0++
+			h.col1++
+			hits = append(hits, h)
+		}
 		if selected {
 			row = listRowSelected.Render(row)
 		} else {
@@ -497,5 +546,5 @@ func (m *Model) renderSessionPanel(proj string, sessions []session.Session, curs
 		b.WriteString(row)
 		b.WriteString("\n")
 	}
-	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String())
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), hits, rows
 }
