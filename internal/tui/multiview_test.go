@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -69,15 +70,15 @@ func TestMultiViewTicketIconsAreClickable(t *testing.T) {
 }
 
 // TestMultiViewPanelShowsCowWhenListIsShort is the regression test for the
-// bug report that the detail panel's cow art was always hidden off the
-// bottom of a multi-view panel: renderMultiPanel used to split list/detail
-// height as a flat 1/3 ratio of the whole panel regardless of how many
-// sessions were actually in the list, so a project with only a couple of
+// bug report that the detail panel's cow art was hidden off the bottom of a
+// multi-view panel: renderMultiPanel used to split list/detail height as a
+// flat 1/3 ratio of the whole panel regardless of how much room the detail
+// section's own content actually needed, so a project with only a couple of
 // sessions still starved its detail section down to minMultiDetailHeight —
 // nowhere near enough rows for the detail fields plus the multi-line cowsay
-// art beneath them. Sizing the list off its actual session count instead
-// (mirroring the narrow single-project stacked layout) frees the rest of the
-// panel for detail, letting the cow's fixed closing lines fit on screen.
+// art beneath them. Sizing detail off detailContentHeight instead frees the
+// rest of the panel for detail, letting the cow's fixed closing lines fit on
+// screen.
 func TestMultiViewPanelShowsCowWhenListIsShort(t *testing.T) {
 	be := &fakeBackend{sessions: []session.Session{
 		{ID: "a1", Project: "alpha", Name: "a1"},
@@ -90,6 +91,38 @@ func TestMultiViewPanelShowsCowWhenListIsShort(t *testing.T) {
 	frame := m.View()
 	if !strings.Contains(frame, "||     ||") {
 		t.Fatalf("detail panel's cow art got clipped off the bottom despite its short session list:\n%s", frame)
+	}
+}
+
+// TestMultiViewPanelShowsCowWhenListIsLong is the second half of the same
+// bug report: sizing the list off its own session count (an earlier attempt
+// at this fix) solved the short-list panels but not the long-list one —
+// which is the common case in practice, since a project worth watching in
+// multi-view usually has more sessions than a couple. A long list still ate
+// nearly all of a tall panel's height before detail got a look-in, so detail
+// (and its cow) stayed starved down to minMultiDetailHeight exactly as
+// before. Sizing detail off its actual rendered content (detailContentHeight)
+// instead — and letting the list simply scroll further to make room — fixes
+// this regardless of how many sessions the focused project has. This calls
+// renderMultiPanel directly (rather than going through a two-panel m.View())
+// so the assertion is scoped to the one panel actually under test — a
+// same-frame sibling panel with a short list of its own would otherwise show
+// a full cow regardless, masking a clipped one right next to it.
+func TestMultiViewPanelShowsCowWhenListIsLong(t *testing.T) {
+	var sessions []session.Session
+	for i := 0; i < 20; i++ {
+		sessions = append(sessions, session.Session{
+			ID: fmt.Sprintf("eg%d", i), Project: "alpha", Name: fmt.Sprintf("sess-%d", i),
+			Ticket: "https://ticket.example/x", PR: "https://pr.example/x",
+			Prompt: "a long enough prompt that it wraps across a few lines like a real session's would",
+		})
+	}
+	be := &fakeBackend{sessions: sessions}
+	m := newTestModel(be)
+
+	content, _, _ := m.renderMultiPanel("alpha", sessions, 19, 40, 33, true)
+	if !strings.Contains(content, "||     ||") {
+		t.Fatalf("detail panel's cow art got clipped off the bottom despite the panel being tall enough, just because its session list is long:\n%s", content)
 	}
 }
 
