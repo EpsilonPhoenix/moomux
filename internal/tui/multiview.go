@@ -165,7 +165,8 @@ func (m *Model) focusedMultiProject() (string, bool) {
 }
 
 // updateMultiView handles ModeMultiView's own panel/focus navigation (Tab/
-// Shift-Tab sliding between projects) and hands everything else — every
+// Shift-Tab or Left/Right arrows sliding between projects) and hands
+// everything else — every
 // ordinary session key binding (new/delete/archive/tag/edit/park/refresh/
 // reorder/…) — to delegateToList, so those don't need a second, parallel
 // implementation. ModeMultiView is the app's primary/root mode (see New()),
@@ -176,10 +177,10 @@ func (m *Model) updateMultiView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Quit):
 		m.cancelPoll()
 		return m, tea.Quit
-	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.NextProject):
+	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.NextProject), key.Matches(msg, m.keys.Right):
 		m.advanceMultiFocus(1)
 		return m, nil
-	case key.Matches(msg, m.keys.ShiftTab), key.Matches(msg, m.keys.PrevProject):
+	case key.Matches(msg, m.keys.ShiftTab), key.Matches(msg, m.keys.PrevProject), key.Matches(msg, m.keys.Left):
 		m.advanceMultiFocus(-1)
 		return m, nil
 	}

@@ -57,8 +57,8 @@ func (m *Model) helpGroups() []helpGroup {
 				// for; the chords need terminal extended-keys support, the letters
 				// don't. Keep these labels short — the overlay is height-limited.
 				{"shift+↑↓ / KJ", "reorder session"},
-				{"tab / ]", "next project"},
-				{"shift+tab / [", "prev project"},
+				{"tab / ] / →", "next project"},
+				{"shift+tab / [ / ←", "prev project"},
 				{"} / {", "...incl. empty ones"},
 				{"shift+←→ / HL", "reorder project"},
 				{"R", linkDesc},

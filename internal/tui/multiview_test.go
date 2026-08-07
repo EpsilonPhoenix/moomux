@@ -53,6 +53,30 @@ func TestMultiViewTabWrapsFocusAmongVisiblePanels(t *testing.T) {
 	}
 }
 
+func TestMultiViewArrowKeysSlideFocusBetweenProjects(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+		{ID: "b1", Project: "beta", Name: "b1"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.mode = ModeMultiView
+
+	if _, cmd := m.updateMultiView(tea.KeyMsg{Type: tea.KeyRight}); cmd != nil {
+		t.Fatalf("unexpected cmd from Right")
+	}
+	if m.multiFocus != 1 {
+		t.Fatalf("after one Right: multiFocus = %d, want 1", m.multiFocus)
+	}
+	m.updateMultiView(tea.KeyMsg{Type: tea.KeyRight})
+	if m.multiFocus != 0 {
+		t.Fatalf("after wrapping Right: multiFocus = %d, want 0 (wrap)", m.multiFocus)
+	}
+	m.updateMultiView(tea.KeyMsg{Type: tea.KeyLeft})
+	if m.multiFocus != 1 {
+		t.Fatalf("after Left wrap-back: multiFocus = %d, want 1", m.multiFocus)
+	}
+}
+
 // TestMultiViewCursorIsPerProject is the regression test for the bug this
 // per-project map fixes: without it, moving the cursor in one panel would
 // have to share a single index with every other panel (as m.cursor does for
