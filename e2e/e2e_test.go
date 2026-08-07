@@ -119,7 +119,7 @@ func TestCreateSession_GitProject_NewBranch(t *testing.T) {
 		t.Fatalf("AddProject: %v", err)
 	}
 
-	s, hint, err := a.CreateSession("demo", "feature-x", "", "", "TICK-1")
+	s, hint, err := a.CreateSession("demo", "feature-x", "", "", "TICK-1", true)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestCreateSession_ExistingBranch_DeleteKeepsBranch(t *testing.T) {
 		t.Fatalf("AddProject: %v", err)
 	}
 
-	s, _, err := a.CreateSession("demo", "", "", "feature-y", "")
+	s, _, err := a.CreateSession("demo", "", "", "feature-y", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestCreateSession_NameCollisionAutoSuffix(t *testing.T) {
 		t.Fatalf("AddProject: %v", err)
 	}
 
-	s1, _, err := a.CreateSession("demo", "", "", "feature/login", "")
+	s1, _, err := a.CreateSession("demo", "", "", "feature/login", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession 1: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestCreateSession_NameCollisionAutoSuffix(t *testing.T) {
 		t.Fatalf("s1 name = %q, want login", s1.Name)
 	}
 
-	s2, _, err := a.CreateSession("demo", "", "", "hotfix/login", "")
+	s2, _, err := a.CreateSession("demo", "", "", "hotfix/login", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession 2: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestCreateSession_PlainProject(t *testing.T) {
 		t.Fatalf("AddPlainProject: %v", err)
 	}
 
-	s, _, err := a.CreateSession("scratch", "work", "", "", "")
+	s, _, err := a.CreateSession("scratch", "work", "", "", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -284,10 +284,10 @@ func TestCreateSession_Errors(t *testing.T) {
 		t.Fatalf("AddProject: %v", err)
 	}
 
-	if _, _, err := a.CreateSession("missing-project", "x", "", "", ""); err == nil {
+	if _, _, err := a.CreateSession("missing-project", "x", "", "", "", true); err == nil {
 		t.Fatalf("expected error for unknown project")
 	}
-	if _, _, err := a.CreateSession("demo", "", "", "", ""); err == nil {
+	if _, _, err := a.CreateSession("demo", "", "", "", "", true); err == nil {
 		t.Fatalf("expected error when name and existingBranch are both empty")
 	}
 }
@@ -299,7 +299,7 @@ func TestCreateSession_OpenCodePortAllocation(t *testing.T) {
 		t.Fatalf("AddProject: %v", err)
 	}
 
-	s1, _, err := a.CreateSession("demo", "oc1", "opencode", "", "")
+	s1, _, err := a.CreateSession("demo", "oc1", "opencode", "", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession 1: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestCreateSession_OpenCodePortAllocation(t *testing.T) {
 		t.Fatalf("s1 port = %d, want 4096", s1.AgentPort)
 	}
 
-	s2, _, err := a.CreateSession("demo", "oc2", "opencode", "", "")
+	s2, _, err := a.CreateSession("demo", "oc2", "opencode", "", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession 2: %v", err)
 	}
@@ -322,7 +322,7 @@ func TestOpenSession_RecreatesKilledSession(t *testing.T) {
 	if err := a.AddProject("demo", config.Project{Repo: repo, BaseBranch: "main"}); err != nil {
 		t.Fatalf("AddProject: %v", err)
 	}
-	s, _, err := a.CreateSession("demo", "feature", "", "", "")
+	s, _, err := a.CreateSession("demo", "feature", "", "", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -351,7 +351,7 @@ func TestOpenSession_RecreatesOnCwdMismatch(t *testing.T) {
 	if err := a.AddProject("demo", config.Project{Repo: repo, BaseBranch: "main"}); err != nil {
 		t.Fatalf("AddProject: %v", err)
 	}
-	s, _, err := a.CreateSession("demo", "feature", "", "", "")
+	s, _, err := a.CreateSession("demo", "feature", "", "", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -381,7 +381,7 @@ func TestKillTmux_PreservesStoreAndWorktree(t *testing.T) {
 	if err := a.AddProject("demo", config.Project{Repo: repo, BaseBranch: "main"}); err != nil {
 		t.Fatalf("AddProject: %v", err)
 	}
-	s, _, err := a.CreateSession("demo", "feature", "", "", "")
+	s, _, err := a.CreateSession("demo", "feature", "", "", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -413,11 +413,11 @@ func TestTmuxAliveAll(t *testing.T) {
 	if err := a.AddProject("demo", config.Project{Repo: repo, BaseBranch: "main"}); err != nil {
 		t.Fatalf("AddProject: %v", err)
 	}
-	s1, _, err := a.CreateSession("demo", "alive", "", "", "")
+	s1, _, err := a.CreateSession("demo", "alive", "", "", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession 1: %v", err)
 	}
-	s2, _, err := a.CreateSession("demo", "dead", "", "", "")
+	s2, _, err := a.CreateSession("demo", "dead", "", "", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession 2: %v", err)
 	}
@@ -440,7 +440,7 @@ func TestSessionTagsAndArchive(t *testing.T) {
 	if err := a.AddProject("demo", config.Project{Repo: repo, BaseBranch: "main"}); err != nil {
 		t.Fatalf("AddProject: %v", err)
 	}
-	s, _, err := a.CreateSession("demo", "feature", "", "", "")
+	s, _, err := a.CreateSession("demo", "feature", "", "", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -481,11 +481,11 @@ func TestMoveSessionAndMoveProject(t *testing.T) {
 		t.Fatalf("AddPlainProject other: %v", err)
 	}
 
-	sA, _, err := a.CreateSession("demo", "a", "", "", "")
+	sA, _, err := a.CreateSession("demo", "a", "", "", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession a: %v", err)
 	}
-	sB, _, err := a.CreateSession("demo", "b", "", "", "")
+	sB, _, err := a.CreateSession("demo", "b", "", "", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession b: %v", err)
 	}
@@ -527,7 +527,7 @@ func TestDeleteSession_GitProject_RemovesWorktreeAndBranch(t *testing.T) {
 	if err := a.AddProject("demo", config.Project{Repo: repo, BaseBranch: "main"}); err != nil {
 		t.Fatalf("AddProject: %v", err)
 	}
-	s, _, err := a.CreateSession("demo", "feature", "", "", "")
+	s, _, err := a.CreateSession("demo", "feature", "", "", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -561,7 +561,7 @@ func TestRemoveProject_ActiveSessionsBlocked(t *testing.T) {
 	if err := a.AddProject("demo", config.Project{Repo: repo, BaseBranch: "main"}); err != nil {
 		t.Fatalf("AddProject: %v", err)
 	}
-	s, _, err := a.CreateSession("demo", "feature", "", "", "")
+	s, _, err := a.CreateSession("demo", "feature", "", "", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -612,7 +612,7 @@ func TestProjectLifecycle_AddInitPlainAndValidationErrors(t *testing.T) {
 		{"has space", config.Project{Repo: existing}},
 		{"has/slash", config.Project{Repo: existing}},
 		{"existing", config.Project{Repo: existing}}, // duplicate name
-		{"norepo", config.Project{}},                  // missing repo
+		{"norepo", config.Project{}},                 // missing repo
 		{"notarepo", config.Project{Repo: t.TempDir()}},
 	}
 	for _, tc := range cases {
@@ -637,15 +637,15 @@ func TestFullLifecycle_EndToEnd(t *testing.T) {
 		t.Fatalf("AddPlainProject: %v", err)
 	}
 
-	claudeS, _, err := a.CreateSession("backend", "auth", "claude", "", "TICK-1")
+	claudeS, _, err := a.CreateSession("backend", "auth", "claude", "", "TICK-1", true)
 	if err != nil {
 		t.Fatalf("CreateSession claude: %v", err)
 	}
-	codexS, _, err := a.CreateSession("backend", "billing", "codex", "", "")
+	codexS, _, err := a.CreateSession("backend", "billing", "codex", "", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession codex: %v", err)
 	}
-	plainS, _, err := a.CreateSession("scripts", "cleanup", "", "", "")
+	plainS, _, err := a.CreateSession("scripts", "cleanup", "", "", "", true)
 	if err != nil {
 		t.Fatalf("CreateSession plain: %v", err)
 	}

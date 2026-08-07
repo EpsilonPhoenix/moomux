@@ -9,6 +9,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -17,6 +19,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/browser"
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/prompt"
+	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/watcher"
 )
@@ -27,7 +30,7 @@ type Backend interface {
 	// CreateSession's hint, when non-empty, is a user-facing instruction
 	// (e.g. "run: tmux attach -t ...") to show alongside success — it is
 	// not an error.
-	CreateSession(project, name, agent, existingBranch, ticket string) (s session.Session, hint string, err error)
+	CreateSession(project, name, agent, existingBranch, ticket string, openTerminal bool) (s session.Session, hint string, err error)
 	// StartFirstPrompt waits for a freshly created session's agent pane to
 	// be ready, then types prompt into it and starts the agent working on
 	// it. No-op if prompt is empty.
@@ -37,11 +40,15 @@ type Backend interface {
 	// WorktreeStatus reports id's worktree as dirty/unpushed; ok is false if
 	// status can't be determined (unknown session, or not a git repo).
 	WorktreeStatus(id string) (dirty, unpushed, ok bool)
+	// PRStatus reports the merge/CI status of id's attached PR; ok is false
+	// if the session has no PR attached or the lookup fails.
+	PRStatus(id string) (info prstatus.Info, ok bool)
 	KillTmux(id string) error
 	// SetSessionStatusTitle renames id's tmux window to reflect st, so
 	// terminals tracking the window name as their tab title show it live.
 	SetSessionStatusTitle(id string, st watcher.State) error
 	SetSessionTags(id, ticket, pr string) (session.Session, error)
+	SetSessionPrompt(id, prompt string) (session.Session, error)
 	SetSessionAgent(id, agent string) (session.Session, error)
 	// SetSessionArchived hides (or restores) a session from the default
 	// list without touching its tmux session or worktree.
@@ -78,6 +85,7 @@ const (
 	ModeEditProject
 	ModeProjectPicker
 	ModeThemePicker
+	ModeMultiView
 )
 
 var agentChoices = []string{"claude", "codex", "opencode"}
@@ -154,7 +162,6 @@ type Model struct {
 	activeProj   int
 	sessions     []session.Session
 	showArchived bool // when true, the list shows archived sessions instead of active ones
-	allSessions  bool // when true, the list shows every project's sessions, grouped by project, instead of just the active one
 	cursor       int
 	// scrollTop is the index of the first session row rendered by renderList,
 	// refreshed every render. scrollLocked pins it as the mouse wheel's own
@@ -165,8 +172,8 @@ type Model struct {
 	scrollLocked     bool
 	lastScrollCursor int
 	states           map[string]watcher.State
-	titleState   map[string]watcher.State // last status pushed as each session's tmux window title, by session id
-	tmuxAlive    map[string]bool
+	titleState       map[string]watcher.State // last status pushed as each session's tmux window title, by session id
+	tmuxAlive        map[string]bool
 	// tmuxCheckedOnce becomes true once the first (async, startup) tmux-alive
 	// check resolves. Gates the startup fetchStaleGitStatusCmd call so it
 	// runs exactly once with real data — tmuxAlive is empty/unknown until
@@ -179,25 +186,29 @@ type Model struct {
 	// in flight, so staleGitStatusIDs doesn't pile up duplicate concurrent
 	// fetches for a session whose `git status` call is just running long.
 	gitStatusPending map[string]bool
-	prompts          map[string]string
-	statusCh         <-chan watcher.Snapshot
-	cancelPoll       context.CancelFunc
+	prStatus         map[string]prStatusInfo // by session id, only populated for sessions with a PR attached; see prStatusStaleAfter
+	// prStatusPending mirrors gitStatusPending for fetchPRStatusCmd.
+	prStatusPending map[string]bool
+	prompts         map[string]string
+	statusCh        <-chan watcher.Snapshot
+	cancelPoll      context.CancelFunc
 
-	mode            Mode
-	nameInput       textinput.Model
-	branchInput     textinput.Model
-	ticketInput     textinput.Model
-	prInput         textinput.Model
-	promptInput     textinput.Model
-	newFormFocus    int // 0=project selector, 1=nameInput, 2=branchInput, 3=agent selector, 4=ticketInput, 5=prInput, 6=promptInput
-	newFormErr      string
-	newFormAgentIdx int // agent selector in the new-session form; -1 means "not chosen yet"
-	newFormProjIdx  int // project selector in the new-session form; index into m.projects
-	projForm        projectForm
-	sessionForm     sessionForm
-	editProjectName string
-	tagForm         tagForm
-	pickerCursor    int // index into m.projects while ModeProjectPicker is open
+	mode                    Mode
+	nameInput               textinput.Model
+	branchInput             textinput.Model
+	ticketInput             textinput.Model
+	prInput                 textinput.Model
+	promptInput             textarea.Model
+	newFormFocus            int // 0=project selector, 1=nameInput, 2=branchInput, 3=promptInput, 4=ticketInput, 5=prInput, 6=agent selector, 7=open-terminal toggle
+	newFormErr              string
+	newFormAgentIdx         int  // agent selector in the new-session form; -1 means "not chosen yet"
+	newFormProjIdx          int  // project selector in the new-session form; index into m.projects
+	newFormOpenInBackground bool // whether to skip opening a terminal window for the new session; off by default
+	projForm                projectForm
+	sessionForm             sessionForm
+	editProjectName         string
+	tagForm                 tagForm
+	pickerCursor            int // index into m.projects while ModeProjectPicker is open
 	// confirmGit starts out as whatever's cached in m.gitStatus (possibly
 	// stale or empty) the instant ModeConfirmDelete opens, so the dialog
 	// never pauses. confirmChecking is true while a fresh fetchGitStatusCmd
@@ -221,6 +232,12 @@ type Model struct {
 	// decide whether a successful add returns to the picker or opens the
 	// new-session form.
 	projectDialogReturn Mode
+	// sessionDialogReturn is where a session-level dialog (new/delete/tag/
+	// edit-session, help) sends the user back to once it closes — ModeList
+	// normally, or ModeMultiView when it was opened from there (see
+	// updateMultiView's delegation to updateList). Mirrors
+	// projectDialogReturn's role for the project dialogs.
+	sessionDialogReturn Mode
 	pending             pendingProject
 	flash               string
 	flashKind           string // "info" or "error"
@@ -234,6 +251,30 @@ type Model struct {
 	// on the host. Toggled with R; there's no "force open" counterpart —
 	// if auto-detection isn't already saying remote, links just open.
 	forceCopyLinks bool
+
+	// multiFocus is a global index into m.projects — which project Tab/
+	// Shift-Tab and Up/Down/Open act on while ModeMultiView is active. It can
+	// point outside the currently visible window (see multiOffset); that's
+	// exactly what tells ensureMultiFocusVisible to slide the window.
+	multiFocus int
+	// multiOffset is the index of the first project shown in ModeMultiView's
+	// side-by-side panels — panning this is how focus moving past either
+	// edge of the visible window "slides" the view instead of the focused
+	// project just going off-screen.
+	multiOffset int
+	// multiCursors is each project's selected row within its own panel in
+	// ModeMultiView, keyed by project name so it survives switching focus
+	// away and back. Unlike m.cursor (a single index into the one active
+	// project's m.sessions), multi-view shows several projects' lists at
+	// once and each needs its own independent selection.
+	multiCursors map[string]int
+	// multiPinned is a project name multiViewEligibleProjects() shows even
+	// though it wouldn't otherwise qualify — set when the project picker
+	// jumps to a project with nothing to show yet (see updateProjectPicker),
+	// so multi-view actually lands on it instead of leaving it invisible.
+	// Cleared as soon as focus moves elsewhere (Tab/Shift-Tab); it's a
+	// one-shot "show me this one," not a standing exception.
+	multiPinned string
 
 	width, height int
 
@@ -276,10 +317,13 @@ type resolvedRowHit struct {
 
 // updateLinkHits recomputes m.linkHits and m.rowHits in absolute terminal
 // coordinates from the list- and detail-local hits produced during
-// rendering. It's a no-op (clearing hits) outside ModeList, since panels
-// aren't clickable behind an overlay.
+// rendering. It's a no-op (clearing hits) outside ModeList and ModeMultiView,
+// since panels aren't clickable behind an overlay. ModeMultiView only ever
+// reaches here via renderListView's own single-project fallback (see
+// renderMultiView) — its actual multi-panel layout computes and appends its
+// own hits directly (one origin per panel) and never calls this.
 func (m *Model) updateLinkHits(header string, listHits, detailHits []linkHit, detailX, detailY int, listRows []rowHit, listWidth int) {
-	if m.mode != ModeList {
+	if m.mode != ModeList && m.mode != ModeMultiView {
 		m.linkHits = nil
 		m.rowHits = nil
 		return
@@ -366,10 +410,17 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 	pri.CharLimit = 256
 	pri.Width = 40
 
-	pi := textinput.New()
+	pi := textarea.New()
 	pi.Placeholder = "first prompt (optional)"
 	pi.CharLimit = 4096
-	pi.Width = 40
+	pi.ShowLineNumbers = false
+	pi.Prompt = "> "
+	pi.SetHeight(4)
+	pi.SetWidth(40)
+	// Enter is reserved as the form's global submit key (see updateNewForm),
+	// so it never reaches the textarea — ctrl+j is the only way to insert a
+	// newline while typing a multi-line prompt.
+	pi.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("ctrl+j"), key.WithHelp("ctrl+j", "newline"))
 
 	m := &Model{
 		cfg:              cfg,
@@ -380,6 +431,8 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 		tmuxAlive:        map[string]bool{},
 		gitStatus:        map[string]gitStatusInfo{},
 		gitStatusPending: map[string]bool{},
+		prStatus:         map[string]prStatusInfo{},
+		prStatusPending:  map[string]bool{},
 		prompts:          map[string]string{},
 		statusCh:         statusCh,
 		cancelPoll:       cancel,
@@ -391,8 +444,18 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 		overlayViewport:  viewport.New(1, 1),
 		overlayMode:      ModeList,
 		overlayFocus:     -1,
+		multiCursors:     map[string]int{},
 	}
 	m.projects = cfg.OrderedProjectNames()
+	// Land on the first project with active sessions rather than always
+	// project 0 — a config-order project with nothing going on isn't a
+	// useful thing to open on by default when another one has active work.
+	for i, name := range m.projects {
+		if m.projectHasSessions(name) {
+			m.activeProj = i
+			break
+		}
+	}
 	m.refreshSessions()
 	// tmuxAlive is deliberately left empty here — populated asynchronously by
 	// Init()'s refreshStatusCmd instead of a synchronous TmuxAliveAll() call,
@@ -404,6 +467,15 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 	if len(m.projects) == 0 {
 		m.mode = ModeNewProject
 		m.projForm = newProjectForm()
+	} else {
+		// Multi-view is the primary view now — it already collapses to the
+		// classic single-project layout whenever only one project would show
+		// (see renderMultiView), so this costs nothing when there's just one
+		// project and surfaces the rest at a glance when there's more.
+		m.mode = ModeMultiView
+		if idx := indexOfProject(m.multiViewEligibleProjects(), m.projects[m.activeProj]); idx >= 0 {
+			m.multiFocus = idx
+		}
 	}
 	return m
 }
@@ -453,11 +525,43 @@ type gitStatusInfo struct {
 // "fresh" from call to call) without needing to store anything extra per
 // session.
 func gitStatusStaleThreshold(id string) time.Duration {
+	return jitteredStaleThreshold(id, gitStatusStaleAfter, gitStatusStaleJitter)
+}
+
+// jitteredStaleThreshold is the shared math behind gitStatusStaleThreshold
+// and prStatusStaleThreshold: a deterministic value in
+// [base*(1-jitter), base*(1+jitter)], derived from id so it's stable across
+// repeated calls for the same id.
+func jitteredStaleThreshold(id string, base time.Duration, jitter float64) time.Duration {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(id))
 	frac := float64(h.Sum32()) / float64(math.MaxUint32) // deterministic, in [0,1)
-	mult := 1 + gitStatusStaleJitter*(2*frac-1)          // in [1-J, 1+J]
-	return time.Duration(float64(gitStatusStaleAfter) * mult)
+	mult := 1 + jitter*(2*frac-1)                        // in [1-J, 1+J]
+	return time.Duration(float64(base) * mult)
+}
+
+// prStatusStaleAfter bounds how long a cached prStatusInfo is trusted before
+// it's worth another `gh pr view` call. Longer than gitStatusStaleAfter since
+// a PR's merge/CI status changes less often than a worktree's dirty state,
+// and gh hits the network (slower, rate-limited) rather than a local git
+// call.
+const prStatusStaleAfter = 2 * time.Minute
+
+const prStatusStaleJitter = 0.2
+
+// prStatusInfo is a session's PR status. ok is false when it couldn't be
+// determined (no PR attached, gh unavailable, or the PR couldn't be
+// resolved), in which case Info is meaningless. checkedAt is when this was
+// fetched — zero if never — and is what stalePRStatusIDs compares against
+// prStatusStaleThreshold.
+type prStatusInfo struct {
+	info      prstatus.Info
+	ok        bool
+	checkedAt time.Time
+}
+
+func prStatusStaleThreshold(id string) time.Duration {
+	return jitteredStaleThreshold(id, prStatusStaleAfter, prStatusStaleJitter)
 }
 
 // refreshStatusCmd returns a tea.Cmd that computes the tmux-alive map and
@@ -544,6 +648,50 @@ func (m *Model) fetchStaleGitStatusCmd() tea.Cmd {
 		m.gitStatusPending[id] = true
 	}
 	return fetchGitStatusCmd(m.backend, ids)
+}
+
+// fetchPRStatusCmd computes PR status for ids off the event-loop goroutine —
+// each is a network-bound `gh pr view` call, mirroring fetchGitStatusCmd.
+func fetchPRStatusCmd(backend Backend, ids []string) tea.Cmd {
+	return func() tea.Msg {
+		now := time.Now()
+		status := make(map[string]prStatusInfo, len(ids))
+		for _, id := range ids {
+			info, ok := backend.PRStatus(id)
+			status[id] = prStatusInfo{info: info, ok: ok, checkedAt: now}
+		}
+		return PRStatusMsg{Status: status}
+	}
+}
+
+// stalePRStatusIDs returns every session with a PR attached whose cached
+// status is missing or older than its jittered prStatusStaleThreshold,
+// mirroring staleGitStatusIDs.
+func (m *Model) stalePRStatusIDs() []string {
+	var ids []string
+	for _, s := range m.backend.Sessions() {
+		if s.PR == "" || m.prStatusPending[s.ID] {
+			continue
+		}
+		st, ok := m.prStatus[s.ID]
+		if !ok || time.Since(st.checkedAt) > prStatusStaleThreshold(s.ID) {
+			ids = append(ids, s.ID)
+		}
+	}
+	return ids
+}
+
+// fetchStalePRStatusCmd wraps stalePRStatusIDs as a tea.Cmd, mirroring
+// fetchStaleGitStatusCmd. Returns nil if nothing needs checking.
+func (m *Model) fetchStalePRStatusCmd() tea.Cmd {
+	ids := m.stalePRStatusIDs()
+	if len(ids) == 0 {
+		return nil
+	}
+	for _, id := range ids {
+		m.prStatusPending[id] = true
+	}
+	return fetchPRStatusCmd(m.backend, ids)
 }
 
 // effectiveState returns the state to display: if tmux is dead the
@@ -649,11 +797,14 @@ func (m *Model) projectSessionCountFor(proj string) int {
 	return n
 }
 
-// projectHasSessions reports whether the named project has any session at
-// all (archived or not) — used to skip empty projects when cycling.
+// projectHasSessions reports whether the named project has any session
+// matching the current archived/active view — used to skip empty projects
+// when cycling. It must respect m.showArchived: a project with only
+// archived sessions is "empty" while viewing the active list, else cycling
+// lands you on a project whose list renders empty anyway.
 func (m *Model) projectHasSessions(name string) bool {
 	for _, s := range m.backend.Sessions() {
-		if s.Project == name {
+		if s.Project == name && s.Archived == m.showArchived {
 			return true
 		}
 	}
@@ -709,35 +860,18 @@ func (m *Model) refreshSessions() {
 		selectedID = m.sessions[m.cursor].ID
 	}
 
-	// In the all-sessions view, projs is every project; otherwise it's just
-	// the active one. Sessions with a live tmux window float to the top
-	// across the whole list regardless of project, with project order as
-	// the tiebreaker among sessions sharing the same status — that
-	// tiebreaker is also what keeps a single project's view (projs has one
-	// entry, so it never affects ordering) in its existing (Order-based)
-	// place.
-	projs := m.projects
-	if !m.allSessions {
-		projs = m.projects[m.activeProj : m.activeProj+1]
-	}
-	projIndex := make(map[string]int, len(projs))
-	for i, p := range projs {
-		projIndex[p] = i
-	}
+	// Sessions with a live tmux window float to the top of the active
+	// project's list regardless of order otherwise.
+	proj := m.projects[m.activeProj]
 	all := m.backend.Sessions()
 	out := make([]session.Session, 0, len(all))
-	for _, proj := range projs {
-		for _, s := range all {
-			if s.Project == proj && s.Archived == m.showArchived {
-				out = append(out, s)
-			}
+	for _, s := range all {
+		if s.Project == proj && s.Archived == m.showArchived {
+			out = append(out, s)
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		if ai, aj := m.tmuxAlive[out[i].ID], m.tmuxAlive[out[j].ID]; ai != aj {
-			return ai && !aj
-		}
-		return projIndex[out[i].Project] < projIndex[out[j].Project]
+		return m.tmuxAlive[out[i].ID] && !m.tmuxAlive[out[j].ID]
 	})
 	m.sessions = out
 

@@ -35,29 +35,19 @@ func (m *Model) renderList(width, height int) (string, []linkHit, []rowHit) {
 	var b strings.Builder
 	title := "SESSIONS"
 	empty := "  no sessions — press n to create"
-	if m.allSessions {
-		title = "ALL SESSIONS"
-		empty = "  no sessions — press n to create"
-	}
 	if len(m.projects) == 0 {
 		empty = "  no projects yet — press / then n to add one"
 	} else if m.showArchived {
 		title = "ARCHIVED"
-		if m.allSessions {
-			title = "ALL ARCHIVED"
-		}
 		empty = "  no archived sessions"
-	} else if !m.allSessions {
-		if n := m.archivedCount(); n > 0 {
-			title += superscript(n)
-		}
+	} else if n := m.archivedCount(); n > 0 {
+		title += superscript(n)
 	}
 	// On small screens the title (plus its blank line beneath) costs two
-	// rows that are worth more as extra visible sessions than as a label.
-	// ARCHIVED is exempt: it's the only signal telling the archived view
-	// apart from the normal one, so hiding it would leave archived sessions
-	// looking indistinguishable from active ones.
-	compact := m.compactScreen() && !m.showArchived
+	// rows that are worth more as extra visible sessions than as a label —
+	// including ARCHIVED, even though that means mobile has no on-screen
+	// signal telling the archived view apart from the active one.
+	compact := m.compactScreen()
 	titleRows := 0
 	if !compact {
 		b.WriteString(titleStyle.Render(title))
@@ -100,15 +90,11 @@ func (m *Model) renderList(width, height int) (string, []linkHit, []rowHit) {
 	for i := start; i < end; i++ {
 		s := m.sessions[i]
 		selected := i == m.cursor
-		projectLabel := ""
-		if m.allSessions {
-			projectLabel = m.projectEmoji(s.Project)
-		}
 		// titleRows lines for the "SESSIONS" title and blank line above (0 on
 		// short terminals, where it's hidden).
 		line := titleRows + (i - start)
 		rows = append(rows, rowHit{sessionID: s.ID, line: line})
-		row, iconHits := renderRow(s, m.effectiveState(s), width-4, selected, projectLabel, m.gitStatus[s.ID])
+		row, iconHits := renderRow(s, m.effectiveState(s), width-2, selected, "", m.gitStatus[s.ID])
 		for _, h := range iconHits {
 			h.sessionID = s.ID
 			h.line = line

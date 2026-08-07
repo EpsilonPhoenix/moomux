@@ -15,6 +15,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/codexhook"
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/gitwt"
+	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/terminal"
 	"github.com/erickgnclvs/moomux/internal/tmux"
@@ -28,6 +29,7 @@ type App struct {
 	Tmux         *tmux.Client
 	Terminal     terminal.TerminalOpener
 	Git          *gitwt.Client
+	PR           *prstatus.Client
 	WorktreeRoot string
 }
 
@@ -198,8 +200,9 @@ func (a *App) tmuxSessionUsingWorktree(path string) (string, error) {
 
 // CreateSession's hint, when non-empty, is a user-facing instruction
 // (e.g. "run: tmux attach -t ...") to show alongside success — it is
-// not an error.
-func (a *App) CreateSession(project, name, agent, existingBranch, ticket string) (session.Session, string, error) {
+// not an error. When openTerminal is false, the tmux session is started
+// detached and no terminal window is opened.
+func (a *App) CreateSession(project, name, agent, existingBranch, ticket string, openTerminal bool) (session.Session, string, error) {
 	proj, ok := a.Cfg.Projects[project]
 	if !ok {
 		return session.Session{}, "", fmt.Errorf("unknown project %q", project)
@@ -313,18 +316,24 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string)
 		return session.Session{}, "", fmt.Errorf("tmux new-session: %w", err)
 	}
 	slog.Info("tmux session created", "name", tmuxName)
-	tabID, hint, err := a.openTerminal("", tmuxName, name)
-	if err != nil {
-		// The worktree and tmux session already exist at this point;
-		// failing would strand them outside the store. Degrade to a
-		// manual-attach hint instead.
-		slog.Error("terminal open failed", "tmux_session", tmuxName, "name", name, "err", err)
-		hint = fmt.Sprintf("couldn't open a terminal (%v) — attach yourself: tmux attach -t %s", err, tmuxName)
+	var tabID, hint string
+	if openTerminal {
+		var err error
+		tabID, hint, err = a.openTerminal("", tmuxName, name)
+		if err != nil {
+			// The worktree and tmux session already exist at this point;
+			// failing would strand them outside the store. Degrade to a
+			// manual-attach hint instead.
+			slog.Error("terminal open failed", "tmux_session", tmuxName, "name", name, "err", err)
+			hint = fmt.Sprintf("couldn't open a terminal (%v) — attach yourself: tmux attach -t %s", err, tmuxName)
+		}
+		if hooksHint != "" {
+			hint = joinHints(hooksHint, hint)
+		}
+		slog.Info("terminal opened", "tmux_session", tmuxName)
+	} else {
+		hint = joinHints(hooksHint, fmt.Sprintf("tmux session started in background — attach with: tmux attach -t %s", tmuxName))
 	}
-	if hooksHint != "" {
-		hint = joinHints(hooksHint, hint)
-	}
-	slog.Info("terminal opened", "tmux_session", tmuxName)
 
 	s := session.Session{
 		ID:           session.MakeID(project, name),
@@ -507,6 +516,18 @@ func (a *App) SetSessionTags(id, ticket, pr string) (session.Session, error) {
 	}
 	s.Ticket = ticket
 	s.PR = pr
+	if err := a.Store.Put(s); err != nil {
+		return s, fmt.Errorf("store: %w", err)
+	}
+	return s, nil
+}
+
+func (a *App) SetSessionPrompt(id, prompt string) (session.Session, error) {
+	s, ok := a.Store.Get(id)
+	if !ok {
+		return session.Session{}, fmt.Errorf("unknown session %q", id)
+	}
+	s.Prompt = prompt
 	if err := a.Store.Put(s); err != nil {
 		return s, fmt.Errorf("store: %w", err)
 	}
@@ -909,6 +930,21 @@ func (a *App) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
 		return !clean, false, true
 	}
 	return !clean, hasUnpushed, true
+}
+
+// PRStatus reports the merge/CI status of id's attached PR. ok is false when
+// the session has no PR attached, or the lookup fails (gh not installed, not
+// authenticated, or the PR can't be resolved).
+func (a *App) PRStatus(id string) (prstatus.Info, bool) {
+	s, exists := a.Store.Get(id)
+	if !exists || s.PR == "" {
+		return prstatus.Info{}, false
+	}
+	info, err := a.PR.Fetch(s.PR)
+	if err != nil {
+		return prstatus.Info{}, false
+	}
+	return info, true
 }
 
 func (a *App) DeleteSession(id string) error {

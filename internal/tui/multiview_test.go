@@ -1,0 +1,464 @@
+package tui
+
+import (
+	"strings"
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
+	"github.com/erickgnclvs/moomux/internal/config"
+	"github.com/erickgnclvs/moomux/internal/session"
+	"github.com/erickgnclvs/moomux/internal/watcher"
+)
+
+func TestMultiViewProjectsFitsWidth(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+		{ID: "b1", Project: "beta", Name: "b1"},
+	}}
+	m := newMultiProjectTestModel(be) // alpha, beta
+
+	m.width = 40 // one panel fits (40/34 = 1)
+	if got := m.multiViewProjects(); len(got) != 1 {
+		t.Fatalf("width=40: got %d panels, want 1: %v", len(got), got)
+	}
+
+	m.width = 80 // both panels fit (80/34 = 2)
+	got := m.multiViewProjects()
+	if len(got) != 2 || got[0] != "alpha" || got[1] != "beta" {
+		t.Fatalf("width=80: got %v, want [alpha beta]", got)
+	}
+}
+
+// TestMultiViewTicketIconsAreClickable is the regression test for the bug
+// report that multi-view's session-list icons stopped being clickable:
+// renderMultiView used to discard link hits entirely (m.linkHits = nil, never
+// repopulated) since its per-panel layout never fed updateLinkHits. Clicking
+// a ticket/PR icon in a visible panel must resolve to that session's URL.
+func TestMultiViewTicketIconsAreClickable(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1", Ticket: "https://ticket.example/a1"},
+		{ID: "b1", Project: "beta", Name: "b1", PR: "https://pr.example/b1"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.width, m.height = 80, 24
+	m.mode = ModeMultiView
+
+	frame := m.View()
+	lines := strings.Split(frame, "\n")
+	findCol := func(icon string) (line, col int) {
+		for li, l := range lines {
+			if idx := strings.Index(l, icon); idx >= 0 {
+				return li, lipgloss.Width(l[:idx])
+			}
+		}
+		t.Fatalf("icon %q not found in rendered frame:\n%s", icon, frame)
+		return -1, -1
+	}
+
+	ticketLine, ticketCol := findCol(iconTicket)
+	if got, _ := m.linkAt(ticketCol, ticketLine); got != be.sessions[0].Ticket {
+		t.Errorf("click on ticket icon at (%d,%d) = %q, want %q", ticketCol, ticketLine, got, be.sessions[0].Ticket)
+	}
+
+	prLine, prCol := findCol(iconPR)
+	if got, _ := m.linkAt(prCol, prLine); got != be.sessions[1].PR {
+		t.Errorf("click on pr icon at (%d,%d) = %q, want %q", prCol, prLine, got, be.sessions[1].PR)
+	}
+}
+
+// TestMultiViewTicketIconClickCopiesOverSSH asserts that a ticket icon click
+// inside the multi-panel grid still follows the mobile/SSH rule (see
+// TestLinkClickOverSSHCopiesInsteadOfOpening for the single-panel case):
+// copy the URL via OSC 52 rather than shelling out to `open`, since `open`
+// would launch a browser on the remote machine, not the phone/laptop the
+// user is actually looking at. handleListMouse applies this uniformly via
+// m.isRemote() regardless of how many panels are visible, so this should
+// hold without any multi-view-specific handling.
+func TestMultiViewTicketIconClickCopiesOverSSH(t *testing.T) {
+	t.Setenv("SSH_TTY", "/dev/ttys001")
+
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1", Ticket: "https://ticket.example/a1"},
+		{ID: "b1", Project: "beta", Name: "b1"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.width, m.height = 80, 24
+	m.mode = ModeMultiView
+	m.View() // populate m.linkHits
+
+	var hit resolvedLinkHit
+	for _, h := range m.linkHits {
+		if h.url == be.sessions[0].Ticket {
+			hit = h
+		}
+	}
+	if hit.url == "" {
+		t.Fatalf("ticket link hit not found among m.linkHits: %+v", m.linkHits)
+	}
+
+	updated, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: hit.x0, Y: hit.y})
+	m2 := updated.(*Model)
+
+	if cmd != nil {
+		t.Errorf("expected no async command for the copy path, got one")
+	}
+	if m2.flashKind != "info" || m2.flash != "copied "+be.sessions[0].Ticket {
+		t.Errorf("flash = (%q, %q), want (\"info\", %q)", m2.flashKind, m2.flash, "copied "+be.sessions[0].Ticket)
+	}
+}
+
+func TestMultiViewTabWrapsFocusAmongVisiblePanels(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+		{ID: "b1", Project: "beta", Name: "b1"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.mode = ModeMultiView
+
+	if _, cmd := m.updateMultiView(tea.KeyMsg{Type: tea.KeyTab}); cmd != nil {
+		t.Fatalf("unexpected cmd from Tab")
+	}
+	if m.multiFocus != 1 {
+		t.Fatalf("after one Tab: multiFocus = %d, want 1", m.multiFocus)
+	}
+	m.updateMultiView(tea.KeyMsg{Type: tea.KeyTab})
+	if m.multiFocus != 0 {
+		t.Fatalf("after wrapping Tab: multiFocus = %d, want 0 (wrap)", m.multiFocus)
+	}
+	m.updateMultiView(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if m.multiFocus != 1 {
+		t.Fatalf("after Shift-Tab wrap-back: multiFocus = %d, want 1", m.multiFocus)
+	}
+}
+
+// TestMultiViewCursorIsPerProject is the regression test for the bug this
+// per-project map fixes: without it, moving the cursor in one panel would
+// have to share a single index with every other panel (as m.cursor does for
+// the single-project list), so switching focus to another project's panel
+// would carry over a cursor position that has nothing to do with that
+// project's own session list.
+func TestMultiViewCursorIsPerProject(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+		{ID: "a2", Project: "alpha", Name: "a2"},
+		{ID: "b1", Project: "beta", Name: "b1"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.mode = ModeMultiView
+	m.multiFocus = 0 // alpha
+
+	m.updateMultiView(tea.KeyMsg{Type: tea.KeyDown})
+	if got := m.multiCursorFor("alpha"); got != 1 {
+		t.Fatalf("alpha cursor = %d, want 1", got)
+	}
+
+	// Switching focus to beta (only one session) must not be affected by
+	// alpha's cursor position, and moving there must not disturb alpha's.
+	m.updateMultiView(tea.KeyMsg{Type: tea.KeyTab})
+	if got := m.multiCursorFor("beta"); got != 0 {
+		t.Fatalf("beta cursor = %d, want 0", got)
+	}
+	m.updateMultiView(tea.KeyMsg{Type: tea.KeyDown})
+	if got := m.multiCursorFor("beta"); got != 0 {
+		t.Fatalf("beta cursor after Down (only 1 session) = %d, want 0", got)
+	}
+	if got := m.multiCursorFor("alpha"); got != 1 {
+		t.Fatalf("alpha cursor changed after moving beta's: got %d, want 1", got)
+	}
+}
+
+// TestMultiViewTabSlidesWindowWhenFocusLeaves is the regression test for the
+// bug this fixes: previously multiViewProjects() always showed the first N
+// projects and Tab only cycled among those, so focus could never reach a
+// project that didn't fit in the initial window — it just silently refused
+// to move once it hit the last visible panel.
+func TestMultiViewTabSlidesWindowWhenFocusLeaves(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+		{ID: "b1", Project: "beta", Name: "b1"},
+		{ID: "g1", Project: "gamma", Name: "g1"},
+	}}
+	cfg := &config.Config{Projects: map[string]config.Project{
+		"alpha": {Repo: "/tmp/alpha"},
+		"beta":  {Repo: "/tmp/beta"},
+		"gamma": {Repo: "/tmp/gamma"},
+	}}
+	statusCh := make(chan watcher.Snapshot)
+	m := New(cfg, be, statusCh, func() {})
+	m.width, m.height = 40, 24 // multiPanelMinWidth=34: only 1 panel fits
+	m.mode = ModeMultiView
+
+	if n := m.multiViewPanelCount(); n != 1 {
+		t.Fatalf("panel count = %d, want 1", n)
+	}
+	if got := m.multiViewProjects(); len(got) != 1 || got[0] != "alpha" {
+		t.Fatalf("initial window = %v, want [alpha]", got)
+	}
+
+	m.updateMultiView(tea.KeyMsg{Type: tea.KeyTab})
+	if m.multiFocus != 1 {
+		t.Fatalf("multiFocus after Tab = %d, want 1", m.multiFocus)
+	}
+	if got := m.multiViewProjects(); len(got) != 1 || got[0] != "beta" {
+		t.Fatalf("window after Tab = %v, want [beta] (should have slid)", got)
+	}
+
+	m.updateMultiView(tea.KeyMsg{Type: tea.KeyTab})
+	if got := m.multiViewProjects(); len(got) != 1 || got[0] != "gamma" {
+		t.Fatalf("window after 2nd Tab = %v, want [gamma]", got)
+	}
+
+	// Wrapping back to alpha must slide the window all the way back too.
+	m.updateMultiView(tea.KeyMsg{Type: tea.KeyTab})
+	if got := m.multiViewProjects(); len(got) != 1 || got[0] != "alpha" {
+		t.Fatalf("window after wrap = %v, want [alpha]", got)
+	}
+}
+
+// TestMultiViewHidesProjectsWithoutActiveSessions is the regression test for
+// the requirement that multi-view skip projects with nothing active going
+// on — an empty or all-archived project isn't worth a panel in a view whose
+// whole point is surveying active work across projects at a glance.
+func TestMultiViewHidesProjectsWithoutActiveSessions(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+		{ID: "b1", Project: "beta", Name: "b1", Archived: true},
+	}}
+	m := newMultiProjectTestModel(be) // alpha, beta
+	m.width = 200                     // plenty of room for both, if both were eligible
+
+	got := m.multiViewEligibleProjects()
+	if len(got) != 1 || got[0] != "alpha" {
+		t.Fatalf("eligible projects = %v, want [alpha] (beta has no non-archived sessions)", got)
+	}
+	if got := m.multiViewProjects(); len(got) != 1 || got[0] != "alpha" {
+		t.Fatalf("visible panels = %v, want [alpha]", got)
+	}
+}
+
+// TestMultiViewPanelWidthsSumToTerminalWidth is the regression test for the
+// bug behind the rightmost pane's right border getting clipped: each panel's
+// panelBorder.Width(w) call actually renders at w+2 (the border adds 2
+// columns beyond what's passed to Width()), so naively splitting m.width by
+// n and using that directly made n panels' real widths sum to
+// m.width+2n — silently truncated off the right edge by renderMultiView's
+// final MaxWidth(m.width). multiViewPanelWidths must reserve that overhead so
+// the real rendered total lands exactly on width, never over it.
+func TestMultiViewPanelWidthsSumToTerminalWidth(t *testing.T) {
+	for _, tc := range []struct{ width, n int }{
+		{68, 2}, {80, 2}, {100, 2}, {101, 2}, {103, 3}, {102, 3},
+	} {
+		widths := multiViewPanelWidths(tc.width, tc.n)
+		if len(widths) != tc.n {
+			t.Fatalf("width=%d n=%d: got %d widths, want %d", tc.width, tc.n, len(widths), tc.n)
+		}
+		sum := 0
+		for _, w := range widths {
+			sum += w + 2 // +2 per panel: the actual rendered width via panelBorder.Width(w)
+		}
+		if sum > tc.width {
+			t.Fatalf("width=%d n=%d: real rendered total = %d, overflows terminal width", tc.width, tc.n, sum)
+		}
+	}
+}
+
+// TestMultiViewSessionKeysActOnFocusedPanel is the regression test for the
+// core bug report: before delegateToList existed, updateMultiView only
+// handled a handful of navigation keys (Tab/Shift-Tab/Up/Down/Open/Cancel) —
+// every ordinary session key binding (d, a, t, e, x, r, …) fell through
+// unmatched and did nothing at all. It also guards the trickier part of the
+// fix: the focused session must be identified by ID, not position, since
+// multiViewSessionsFor (what the panel renders) and refreshSessions'
+// m.sessions (what updateList's handlers act on) can order a project's
+// sessions differently.
+func TestMultiViewSessionKeysActOnFocusedPanel(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+		{ID: "b1", Project: "beta", Name: "b1"},
+		{ID: "b2", Project: "beta", Name: "b2"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.mode = ModeMultiView
+	m.multiFocus = 1           // beta
+	m.multiCursors["beta"] = 1 // b2
+
+	run(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	if m.mode != ModeConfirmDelete {
+		t.Fatalf("mode after 'd' = %v, want ModeConfirmDelete", m.mode)
+	}
+	run(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	if len(be.deleteCalls) != 1 || be.deleteCalls[0] != "b2" {
+		t.Fatalf("deleteCalls = %v, want [b2] (the focused panel's selected session)", be.deleteCalls)
+	}
+	if m.mode != ModeMultiView {
+		t.Fatalf("mode after delete = %v, want back to ModeMultiView", m.mode)
+	}
+}
+
+// TestMultiViewArchiveStaysInMultiView is the regression test confirming an
+// immediate (non-dialog) session action — archive — both reaches the right
+// session and doesn't kick the user out of ModeMultiView, since it never
+// opens an overlay to begin with.
+func TestMultiViewArchiveStaysInMultiView(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+		{ID: "b1", Project: "beta", Name: "b1"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.mode = ModeMultiView
+	m.multiFocus = 1 // beta
+
+	_, cmd := m.updateMultiView(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	if cmd == nil {
+		t.Fatal("expected an archive command")
+	}
+	drainCmd(m, cmd)
+	if len(be.archiveCalls) != 1 || be.archiveCalls[0].id != "b1" {
+		t.Fatalf("archiveCalls = %v, want [{b1 true}]", be.archiveCalls)
+	}
+	if m.mode != ModeMultiView {
+		t.Fatalf("mode = %v, want to stay in ModeMultiView", m.mode)
+	}
+}
+
+// TestMultiViewTagFormRoundTripsToMultiView checks the tag dialog (opened
+// with 't') both prefills from the focused panel's session and returns to
+// ModeMultiView, not ModeList, once submitted.
+func TestMultiViewTagFormRoundTripsToMultiView(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+		{ID: "b1", Project: "beta", Name: "b1", Ticket: "https://tracker/OLD"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.mode = ModeMultiView
+	m.multiFocus = 1 // beta
+
+	m.updateMultiView(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	if m.mode != ModeTagForm {
+		t.Fatalf("mode after 't' = %v, want ModeTagForm", m.mode)
+	}
+	if got := m.tagForm.inputs[0].Value(); got != "https://tracker/OLD" {
+		t.Fatalf("tag form ticket = %q, want prefilled from b1", got)
+	}
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(be.tagCalls) != 1 || be.tagCalls[0].id != "b1" {
+		t.Fatalf("tagCalls = %v, want [{b1 ...}]", be.tagCalls)
+	}
+	if m.mode != ModeMultiView {
+		t.Fatalf("mode after tag submit = %v, want back to ModeMultiView", m.mode)
+	}
+}
+
+// TestMultiViewEligibilityFollowsShowArchived is the regression test for
+// switching the archived toggle: multiViewEligibleProjects must flip which
+// projects qualify along with it — a project with only archived sessions is
+// eligible while viewing the archived list, and a project with only active
+// ones drops out, the mirror image of the default (active) view.
+func TestMultiViewEligibilityFollowsShowArchived(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},                // active only
+		{ID: "b1", Project: "beta", Name: "b1", Archived: true}, // archived only
+	}}
+	m := newMultiProjectTestModel(be) // alpha, beta
+	m.width = 200
+
+	if got := m.multiViewEligibleProjects(); len(got) != 1 || got[0] != "alpha" {
+		t.Fatalf("active view: eligible = %v, want [alpha]", got)
+	}
+
+	m.showArchived = true
+	if got := m.multiViewEligibleProjects(); len(got) != 1 || got[0] != "beta" {
+		t.Fatalf("archived view: eligible = %v, want [beta]", got)
+	}
+}
+
+// TestProjectPickerSelectionPinsProjectInMultiView is the regression test
+// for picking a project with nothing to show yet (no sessions matching the
+// current archived view): without pinning it, multi-view's eligible-project
+// filter would just leave it invisible, silently discarding the picker's
+// selection instead of landing on it.
+func TestProjectPickerSelectionPinsProjectInMultiView(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+	}}
+	m := newMultiProjectTestModel(be) // alpha (has a session), beta (empty)
+	m.mode = ModeMultiView
+	m.multiFocus = 0 // alpha
+
+	if got := m.multiViewEligibleProjects(); len(got) != 1 || got[0] != "alpha" {
+		t.Fatalf("eligible before picking = %v, want [alpha] (beta has no sessions)", got)
+	}
+
+	m.Update(slashKey())
+	if m.mode != ModeProjectPicker {
+		t.Fatalf("mode after / = %v, want ModeProjectPicker", m.mode)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyDown}) // beta
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if m.mode != ModeMultiView {
+		t.Fatalf("mode after picking beta = %v, want back to ModeMultiView", m.mode)
+	}
+	projs := m.multiViewEligibleProjects()
+	if len(projs) != 2 || projs[1] != "beta" {
+		t.Fatalf("eligible after picking beta = %v, want [alpha beta] (beta pinned)", projs)
+	}
+	if got, ok := m.focusedMultiProject(); !ok || got != "beta" {
+		t.Fatalf("focused project = %q (ok=%v), want beta", got, ok)
+	}
+
+	// Tab away from the pinned, still-empty beta: it must drop back out of
+	// the eligible list, and focus must land on a real project (alpha) —
+	// not wherever beta's now-removed index used to point.
+	m.updateMultiView(tea.KeyMsg{Type: tea.KeyTab})
+	if got := m.multiViewEligibleProjects(); len(got) != 1 || got[0] != "alpha" {
+		t.Fatalf("eligible after tabbing away = %v, want [alpha] (beta unpinned)", got)
+	}
+	if got, ok := m.focusedMultiProject(); !ok || got != "alpha" {
+		t.Fatalf("focused project after tab = %q (ok=%v), want alpha", got, ok)
+	}
+}
+
+// TestSessionCreatedSwitchesToActiveViewAndSelectsItsProject is the
+// regression test for a new session getting lost after creation: if the
+// user was viewing archived sessions, or focused on some other project, the
+// brand-new (necessarily non-archived) session needs to actually be visible
+// — both by switching back to the active view and by selecting/pinning its
+// project in multi-view, the same as picking it from the project picker.
+func TestSessionCreatedSwitchesToActiveViewAndSelectsItsProject(t *testing.T) {
+	be := &fakeBackend{}
+	m := newMultiProjectTestModel(be) // alpha, beta — both empty
+	m.mode = ModeMultiView
+	m.showArchived = true
+	m.multiFocus = 1 // beta
+
+	m.Update(SessionCreatedMsg{Session: session.Session{ID: "alpha:new", Project: "alpha", Name: "new"}})
+
+	if m.showArchived {
+		t.Fatal("showArchived is still true after creating a session")
+	}
+	if got, ok := m.focusedMultiProject(); !ok || got != "alpha" {
+		t.Fatalf("focused project = %q (ok=%v), want alpha (the new session's project)", got, ok)
+	}
+}
+
+func TestMultiViewOpenUsesFocusedPanelSession(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+		{ID: "b1", Project: "beta", Name: "b1"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.mode = ModeMultiView
+	m.multiFocus = 1 // beta
+
+	_, cmd := m.updateMultiView(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected an open command")
+	}
+	drainCmd(m, cmd)
+	if len(be.openCalls) != 1 || be.openCalls[0] != "b1" {
+		t.Fatalf("openCalls = %v, want [b1]", be.openCalls)
+	}
+}

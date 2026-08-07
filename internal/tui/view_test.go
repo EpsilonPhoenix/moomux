@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/watcher"
@@ -47,7 +48,7 @@ func TestNarrowShortLayoutShowsOnlySessionList(t *testing.T) {
 	}
 }
 
-func TestNarrowHeaderHidesWordmark(t *testing.T) {
+func TestHeaderNeverShowsWordmark(t *testing.T) {
 	m := layoutTestModel(1)
 
 	m.width = narrowWidthBreak - 1
@@ -56,8 +57,8 @@ func TestNarrowHeaderHidesWordmark(t *testing.T) {
 	}
 
 	m.width = narrowWidthBreak
-	if header := m.renderHeader(); !strings.Contains(header, "moomux") {
-		t.Fatalf("wide header does not contain wordmark:\n%s", header)
+	if header := m.renderHeader(); strings.Contains(header, "moomux") {
+		t.Fatalf("wide header unexpectedly contains wordmark:\n%s", header)
 	}
 }
 
@@ -75,65 +76,33 @@ func TestHeaderEyesShowNeedsInputForSelectedSession(t *testing.T) {
 	}
 }
 
-func TestNarrowHeaderShowsOnlyCurrentProject(t *testing.T) {
-	m := layoutTestModel(1)
-	m.width = 50
-	m.projects = []string{"alpha", "beta", "gamma"}
-	m.activeProj = 1
+// TestHeaderNeverShowsProjectName guards the header's project-tabs slot
+// being retired entirely: the picker (/) is the way to see and jump to any
+// project, and ModeMultiView's own panel titles already name each one, so
+// naming the active project a second time up top was just noise. Covers
+// both the narrow and wide layouts, since the slot used to differ between
+// them (a single active tab either way, prior to this test).
+func TestHeaderNeverShowsProjectName(t *testing.T) {
+	for _, width := range []int{50, 100} {
+		m := layoutTestModel(1)
+		m.width = width
+		m.projects = []string{
+			"a-very-long-project-name-one",
+			"a-very-long-project-name-two",
+			"a-very-long-project-name-three",
+		}
+		m.activeProj = 1
 
-	header := m.renderHeader()
+		header := m.renderHeader()
 
-	if !strings.Contains(header, "beta") {
-		t.Fatalf("narrow header does not contain current project:\n%s", header)
-	}
-	if strings.Contains(header, "alpha") || strings.Contains(header, "gamma") {
-		t.Fatalf("narrow header contains inactive projects:\n%s", header)
-	}
-	if got := lipgloss.Width(header); got > m.width {
-		t.Fatalf("header width = %d, terminal width = %d:\n%s", got, m.width, header)
-	}
-}
-
-func TestNarrowHeaderTruncatesLongCurrentProject(t *testing.T) {
-	m := layoutTestModel(1)
-	m.width = 24
-	m.projects = []string{"a-very-long-current-project-name"}
-	m.activeProj = 0
-
-	header := m.renderHeader()
-
-	if got := lipgloss.Width(header); got > m.width {
-		t.Fatalf("header width = %d, terminal width = %d:\n%s", got, m.width, header)
-	}
-	if !strings.Contains(header, "…") {
-		t.Fatalf("long current project was not truncated:\n%s", header)
-	}
-}
-
-// TestWideHeaderShowsOnlyCurrentProject covers the header on wide terminals
-// too: it now shows only the active project everywhere, the same as the
-// narrow layout, rather than a row of tabs for every project — the picker
-// (/) is the way to see and jump to the rest.
-func TestWideHeaderShowsOnlyCurrentProject(t *testing.T) {
-	m := layoutTestModel(1)
-	m.width = 100
-	m.projects = []string{
-		"a-very-long-project-name-one",
-		"a-very-long-project-name-two",
-		"a-very-long-project-name-three",
-	}
-	m.activeProj = 1
-
-	header := m.renderHeader()
-
-	if !strings.Contains(header, "a-very-long-project-name-two") {
-		t.Fatalf("wide header does not contain current project:\n%s", header)
-	}
-	if strings.Contains(header, "-one") || strings.Contains(header, "-three") {
-		t.Fatalf("wide header contains inactive projects — tabs should be gone:\n%s", header)
-	}
-	if got := lipgloss.Width(header); got > m.width {
-		t.Fatalf("header width = %d, terminal width = %d:\n%s", got, m.width, header)
+		for _, name := range m.projects {
+			if strings.Contains(header, name) {
+				t.Fatalf("width=%d: header unexpectedly contains project name %q:\n%s", width, name, header)
+			}
+		}
+		if got := lipgloss.Width(header); got > width {
+			t.Fatalf("width=%d: header width = %d:\n%s", width, got, header)
+		}
 	}
 }
 
@@ -233,7 +202,7 @@ func TestNarrowLayoutRestoresDetailAfterResize(t *testing.T) {
 	m := layoutTestModel(3)
 	// "DETAIL" itself is hidden at this narrow width regardless of the
 	// stacked/list-only split, so check for a detail-pane field instead.
-	m.Update(tea.WindowSizeMsg{Width: 50, Height: 24})
+	m.Update(tea.WindowSizeMsg{Width: 50, Height: 10})
 	if view := m.View(); strings.Contains(view, "status:") {
 		t.Fatalf("detail visible before resize:\n%s", view)
 	}
@@ -241,6 +210,37 @@ func TestNarrowLayoutRestoresDetailAfterResize(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 50, Height: 40})
 	if view := m.View(); !strings.Contains(view, "status:") {
 		t.Fatalf("detail not restored after resize:\n%s", view)
+	}
+}
+
+// TestNarrowStackedListGrowsBeforeDetailClips is the regression test for the
+// stacked layout's size priority: the session list gets enough room to show
+// every session without scrolling, and the detail pane clips from the
+// bottom if that doesn't leave it enough room — not the other way around,
+// where a long session list would be forced to scroll just to protect the
+// detail pane's own size.
+func TestNarrowStackedListGrowsBeforeDetailClips(t *testing.T) {
+	few := layoutTestModel(2)
+	few.width, few.height = 60, 40
+	fewView := few.View()
+	if !strings.Contains(fewView, "||     ||") {
+		t.Fatalf("few sessions: detail's cow got clipped when it shouldn't have:\n%s", fewView)
+	}
+
+	many := layoutTestModel(25)
+	many.width, many.height = 60, 40
+	manyView := many.View()
+	if strings.Contains(manyView, "||     ||") {
+		t.Fatalf("many sessions: detail's cow should be clipped to make room for the list:\n%s", manyView)
+	}
+	if !strings.Contains(manyView, "status:") {
+		t.Fatalf("many sessions: detail should still partially show, just clipped:\n%s", manyView)
+	}
+	for i := 0; i < len(many.sessions); i++ {
+		name := many.sessions[i].Name
+		if !strings.Contains(manyView, name) {
+			t.Fatalf("many sessions: session %d (%q) not visible — list should show all of them without scrolling:\n%s", i, name, manyView)
+		}
 	}
 }
 
@@ -276,6 +276,23 @@ func TestViewNeverExceedsTerminalHeight(t *testing.T) {
 				t.Fatalf("rendered height = %d, terminal height = %d", got, tc.height)
 			}
 		})
+	}
+}
+
+func TestWideLayoutKeepsRightBorder(t *testing.T) {
+	m := layoutTestModel(10)
+	m.width, m.height = 100, 24
+
+	for _, raw := range strings.Split(m.View(), "\n") {
+		line := ansi.Strip(raw)
+		if !strings.ContainsRune(line, '│') && !strings.ContainsRune(line, '┌') && !strings.ContainsRune(line, '└') {
+			continue
+		}
+		runes := []rune(line)
+		last := runes[len(runes)-1]
+		if last != '│' && last != '┐' && last != '┘' {
+			t.Fatalf("line missing right border, want trailing │/┐/┘, got %q: %q", last, line)
+		}
 	}
 }
 
@@ -365,11 +382,13 @@ func TestShortFormViewportKeepsFocusedInputVisible(t *testing.T) {
 	m.mode = ModeNewForm
 	m.nameInput.SetValue("unique-name")
 	m.branchInput.SetValue("unique-branch")
+	m.promptInput.SetValue("unique-prompt")
 	m.ticketInput.SetValue("unique-ticket")
+	m.prInput.SetValue("unique-pr")
 	m.resizeFormInputs()
 
-	values := []string{"[demo]", "unique-name", "unique-branch", "[claude]", "unique-ticket"}
-	hints := []string{"which project", "worktree folder", "existing branch", "←→ to choose", "clickable ticket"}
+	values := []string{"[demo]", "unique-name", "unique-branch", "unique-prompt", "unique-ticket", "unique-pr", "[claude]", "[off]"}
+	hints := []string{"which project", "worktree folder", "existing branch", "agent's first task", "clickable ticket", "clickable PR", "←→ to choose", "background"}
 	for focus, value := range values {
 		m.newFormBlurAll()
 		m.newFormFocus = focus
@@ -384,6 +403,45 @@ func TestShortFormViewportKeepsFocusedInputVisible(t *testing.T) {
 		}
 		if !strings.Contains(view, hints[focus]) {
 			t.Fatalf("contextual hint %q is not visible:\n%s", hints[focus], view)
+		}
+	}
+}
+
+// TestFocusedOverlayLineCoversEveryNewFormField guards against
+// focusedOverlayLine silently falling through to nameInput's line for a
+// focus value it doesn't recognize — which happened for the prompt/PR/
+// open-terminal fields after the new-session form was reordered, and made
+// the overlay viewport scroll to the wrong spot (visible as the dialog
+// jumping/"resizing") whenever one of those fields was focused.
+func TestFocusedOverlayLineCoversEveryNewFormField(t *testing.T) {
+	m := layoutTestModel(1)
+	m.mode = ModeNewForm
+	m.nameInput.SetValue("tok-name")
+	m.branchInput.SetValue("tok-branch")
+	m.promptInput.SetValue("tok-firstprompt")
+	m.ticketInput.SetValue("tok-ticket")
+	m.prInput.SetValue("tok-prurl")
+	m.newFormAgentIdx = 0
+	content := m.compactOverlayContent(m.renderNewForm())
+
+	cases := []struct {
+		focus  int
+		marker string
+	}{
+		{newFormProjFocus, "project:"},
+		{1, "tok-name"},
+		{2, "tok-branch"},
+		{3, "tok-firstprompt"},
+		{4, "tok-ticket"},
+		{5, "tok-prurl"},
+		{newFormAgentFocus, "agent:"},
+		{newFormOpenTerminalFocus, "open in background:"},
+	}
+	for _, tc := range cases {
+		m.newFormFocus = tc.focus
+		want := lineContaining(content, tc.marker)
+		if got := m.focusedOverlayLine(content); got != want {
+			t.Fatalf("focus %d: focusedOverlayLine = %d, want %d (line containing %q)", tc.focus, got, want, tc.marker)
 		}
 	}
 }

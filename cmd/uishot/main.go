@@ -19,6 +19,7 @@ import (
 
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/gitwt"
+	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/tui"
 	"github.com/erickgnclvs/moomux/internal/watcher"
@@ -33,13 +34,23 @@ import (
 var screens = map[string][]string{
 	"list":        {},
 	"new-session": {"n"},
+	// "right" picks the first (of two sample) projects, since the form
+	// forces an explicit choice when there's more than one; 3 tabs from
+	// there lands on the first-prompt textarea (see newFormFieldCount) —
+	// ctrl+j inserts a newline there since Enter is reserved for submit.
+	"new-session-multiline": {"n", "right", "tab", "tab", "tab", "first line", "ctrl+j", "second line"},
+	"new-session-wide-line": {"n", "right", "tab", "tab", "tab", "this is a single long line typed into the first prompt field that should only wrap once it actually reaches the right edge of the box on a wide terminal"},
 	// Adding/editing a project only happens inside the picker now (P/E were
 	// removed from the main list), so these open it first.
 	"new-project":    {"/", "n"},
 	"tag":            {"t"},
 	"project-picker": {"/"},
-	"edit-session":   {"e"},
-	"edit-project":   {"/", "e"},
+	// Picks "spare" (the sessionless sample project) from the picker,
+	// confirming multi-view pins it in alongside "demo" instead of it
+	// staying invisible (see multiViewEligibleProjects/multiPinned).
+	"multi-view-pin-empty-project": {"/", "down", "enter"},
+	"edit-session":                 {"e"},
+	"edit-project":                 {"/", "e"},
 	// 3 tabs walks focus from repo (1) through base branch (2) and branch
 	// prefix (3) to land on the emoji selector, showing its focused/[glyph]
 	// state rather than the unfocused default the plain "edit-project" and
@@ -57,8 +68,6 @@ var screens = map[string][]string{
 	"confirm-delete-project": {"tab", "D"},
 	"delete-project-blocked": {"D"},
 	"archived":               {"A"},
-	"all-sessions":           {"G"},
-	"all-archived":           {"G", "A"},
 	"help":                   {"?"},
 	// needs-input has no keys of its own; renderScreen feeds it a
 	// StatusTickMsg marking the first sample session watcher.NeedsInput.
@@ -85,6 +94,16 @@ var screens = map[string][]string{
 	// guard), hence the dedicated single-project config below.
 	"project-picker-emptied": {"/", "d", "y"},
 	"theme-picker":           {"T"},
+	// "down" moves the cursor onto "bugfix-timeout", the sample session with
+	// a PR attached, so its detail panel shows the PR status row (see
+	// renderScreen's prStatus wiring below).
+	"pr-status": {"down"},
+	// ModeMultiView is the default now (see tui.New), so "list" above already
+	// captures it; these confirm normal session key bindings (delete/tag/
+	// archived) still work and render their dialog correctly on top of it.
+	"multi-view-delete":   {"d"},
+	"multi-view-tag":      {"t"},
+	"multi-view-archived": {"A"},
 }
 
 var namedKeys = map[string]tea.KeyType{
@@ -97,6 +116,7 @@ var namedKeys = map[string]tea.KeyType{
 	"left":      tea.KeyLeft,
 	"right":     tea.KeyRight,
 	"ctrl+u":    tea.KeyCtrlU,
+	"ctrl+j":    tea.KeyCtrlJ,
 }
 
 func keyMsgFor(s string) tea.KeyMsg {
@@ -145,9 +165,13 @@ type fakeBackend struct {
 	// that need to show the dirty/unpushed delete warning; a missing entry
 	// means "unknown" (ok=false), matching every other scenario's default.
 	worktreeStatus map[string]struct{ dirty, unpushed bool }
+	// prStatus, keyed by session id, backs PRStatus for scenarios that need
+	// to show the detail panel's PR status row; a missing entry means
+	// "unknown" (ok=false), matching every other scenario's default.
+	prStatus map[string]prstatus.Info
 }
 
-func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket string) (session.Session, string, error) {
+func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket string, openTerminal bool) (session.Session, string, error) {
 	return session.Session{}, "", nil
 }
 func (f *fakeBackend) StartFirstPrompt(tmuxSession, prompt string) error { return nil }
@@ -160,6 +184,10 @@ func (f *fakeBackend) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
 	}
 	return st.dirty, st.unpushed, true
 }
+func (f *fakeBackend) PRStatus(id string) (prstatus.Info, bool) {
+	info, present := f.prStatus[id]
+	return info, present
+}
 func (f *fakeBackend) KillTmux(id string) error                                { return nil }
 func (f *fakeBackend) SetSessionStatusTitle(id string, st watcher.State) error { return nil }
 func (f *fakeBackend) MoveSession(id string, delta int) error                  { return nil }
@@ -168,6 +196,9 @@ func (f *fakeBackend) SetSessionTags(id, ticket, pr string) (session.Session, er
 	return session.Session{}, nil
 }
 func (f *fakeBackend) SetSessionAgent(id, agent string) (session.Session, error) {
+	return session.Session{}, nil
+}
+func (f *fakeBackend) SetSessionPrompt(id, prompt string) (session.Session, error) {
 	return session.Session{}, nil
 }
 func (f *fakeBackend) SetSessionArchived(id string, archived bool) (session.Session, error) {
@@ -217,6 +248,7 @@ func sampleSessions() []session.Session {
 			CreatedAt:    now,
 			Agent:        "claude",
 			Ticket:       "https://tracker.example/TICK-123",
+			Prompt:       "add JWT-based auth to the login flow, including refresh token rotation, session revocation on logout, and rate limiting on the token endpoint so we don't get hammered by retries",
 		},
 		{
 			ID:           "demo:bugfix-timeout",
@@ -286,6 +318,14 @@ func renderScreen(screenName string, width, height int, theme, appearance string
 		// lands the cursor on.
 		be.worktreeStatus = map[string]struct{ dirty, unpushed bool }{
 			sessions[0].ID: {dirty: true, unpushed: true},
+		}
+	}
+	if screenName == "pr-status" && len(sessions) > 1 {
+		// Must be set before drive() below, for the same reason as
+		// confirm-delete's worktreeStatus above: PR status is swept for
+		// every PR-attached session up front.
+		be.prStatus = map[string]prstatus.Info{
+			sessions[1].ID: {State: "OPEN", Mergeable: "CONFLICTING", CI: "FAILING"},
 		}
 	}
 	// Closed immediately: nothing in this synthetic harness ever sends on it,

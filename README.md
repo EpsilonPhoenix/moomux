@@ -100,9 +100,6 @@ Each session can be tagged with a ticket and/or PR link (`t`), shown as icons in
 
 SSH is auto-detected. Other transports (e.g. mosh) don't set anything moomux can detect, so press `R` to force copy mode on (or back off, toggling) — the current state is shown in the `?` help overlay.
 
-## Demo
-
-https://github.com/user-attachments/assets/6a3aec4e-6c30-4cdf-89fa-fdadf02c6f3a
 
 ## Install
 

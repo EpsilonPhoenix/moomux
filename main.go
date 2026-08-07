@@ -20,6 +20,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/codexhook"
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/gitwt"
+	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/terminal"
 	"github.com/erickgnclvs/moomux/internal/tmux"
@@ -233,6 +234,7 @@ func newApp() (*app.App, error) {
 		Tmux:         tmux.New(),
 		Terminal:     terminal.Detect(),
 		Git:          gitwt.New(),
+		PR:           prstatus.New(),
 		WorktreeRoot: app.WorktreeRootDefault(),
 	}, nil
 }
@@ -261,7 +263,7 @@ func runSpawn(args []string) error {
 		return err
 	}
 
-	s, hint, err := a.CreateSession(*project, *name, *agent, *branch, *ticket)
+	s, hint, err := a.CreateSession(*project, *name, *agent, *branch, *ticket, true)
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}

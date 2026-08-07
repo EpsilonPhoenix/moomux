@@ -188,3 +188,47 @@ func TestRemoveWorktreeCleansLeftoverDir(t *testing.T) {
 		t.Fatalf("expected prune, calls = %v", fr.calls)
 	}
 }
+
+func TestRemoveWorktreeOrphanedCheckout(t *testing.T) {
+	// git worktree remove fails because the worktree's gitdir registration
+	// under the main repo is already gone (e.g. someone ran `git worktree
+	// prune` directly), but the checkout directory itself is still on disk.
+	// RemoveWorktree must recognize the orphaned .git pointer and finish the
+	// cleanup itself instead of leaving it stuck forever.
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := Init(repo, "main"); err != nil {
+		t.Fatal(err)
+	}
+	c := New()
+	wt := filepath.Join(t.TempDir(), "wt")
+	if err := c.AddWorktree(repo, wt, "feat", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(repo, ".git", "worktrees", "wt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.RemoveWorktree(repo, wt); err != nil {
+		t.Fatalf("expected orphaned checkout to be cleaned up, got: %v", err)
+	}
+	if _, err := os.Stat(wt); !os.IsNotExist(err) {
+		t.Fatalf("orphaned worktree dir still present: %v", err)
+	}
+}
+
+func TestRemoveWorktreeRefusesRealRepo(t *testing.T) {
+	// git refuses to remove it (fake runner) and the directory is a real
+	// repo, not an orphaned worktree checkout — RemoveWorktree must not
+	// delete it, or a stale session entry could wipe a real repository.
+	dir := filepath.Join(t.TempDir(), "realrepo")
+	if err := Init(dir, "main"); err != nil {
+		t.Fatal(err)
+	}
+	fr := &failRunner{failOn: map[string]bool{"worktree remove " + dir + " --force": true}}
+	c := &Client{Runner: fr}
+	if err := c.RemoveWorktree("/repo", dir); err == nil {
+		t.Fatal("expected error, real repo should not be deleted")
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("real repo directory was deleted: %v", err)
+	}
+}

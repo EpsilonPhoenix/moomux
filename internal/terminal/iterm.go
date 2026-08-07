@@ -97,8 +97,8 @@ tell application "iTerm2"
 		create window with default profile
 	end if
 	tell current window
-		create tab with default profile
-		tell current session of current tab%s
+		set newTab to (create tab with default profile)
+		tell current session of newTab%s
 			write text "tmux attach -t '%s'"
 			return id
 		end tell

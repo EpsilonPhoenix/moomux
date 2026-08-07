@@ -7,20 +7,40 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/erickgnclvs/moomux/internal/prstatus"
+	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/watcher"
 )
 
 func (m *Model) renderDetail(width, height int) (string, []linkHit) {
+	// The side-by-side layout's list pane reserves 2 rows for its own
+	// "SESSIONS" title (see renderList's compact check) whenever
+	// !m.compactScreen() — matching that here, gap but no text, keeps both
+	// columns' content starting on the same row instead of drifting out of
+	// alignment now that neither pane prints a title.
+	titleGap := !m.compactScreen()
+	if len(m.sessions) == 0 {
+		return m.renderDetailFor(session.Session{}, false, width, height, titleGap)
+	}
+	return m.renderDetailFor(m.sessions[m.cursor], true, width, height, titleGap)
+}
+
+// renderDetailFor is renderDetail's body, parameterized on an explicit
+// session instead of always reading m.sessions[m.cursor] — shared by the
+// normal list+detail layout and ModeMultiView's per-project detail panel,
+// which each have their own notion of "the selected session". There's no
+// "DETAIL" title text anywhere; titleGap only controls whether its blank-row
+// spacing is still reserved (see renderDetail) — ModeMultiView's panels
+// never need it, having no side-by-side sibling column to line up with.
+func (m *Model) renderDetailFor(s session.Session, hasSelection bool, width, height int, titleGap bool) (string, []linkHit) {
 	var b strings.Builder
-	if !m.compactScreen() {
-		b.WriteString(titleStyle.Render("DETAIL"))
+	if titleGap {
 		b.WriteString("\n\n")
 	}
-	if len(m.sessions) == 0 {
+	if !hasSelection {
 		b.WriteString(muteStyle.Render("nothing selected"))
 		return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), nil
 	}
-	s := m.sessions[m.cursor]
 	st := m.effectiveState(s)
 	dot := dotParked
 	label := "in the barn"
@@ -63,27 +83,64 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 	if valueWidth < 8 {
 		valueWidth = 8
 	}
+	// Ordered most-to-least useful for "what's this session and does it need
+	// me": identity/state first, then actionable links, then reference
+	// details a user only needs occasionally.
+	row("project", truncate(s.Project, valueWidth), "")
 	row("status", dot+"  "+label, "")
-	if s.Archived {
-		row("archived", "yes", "")
-	}
-	row("agent", s.AgentName(), "")
 	row("name", truncate(s.Name, valueWidth), "")
-	row("worktree", truncateLeft(s.WorktreePath, valueWidth), "")
+	row("agent", s.AgentName(), "")
 	if git := m.gitStatus[s.ID]; git.ok {
 		row("git", gitStatusLabel(git), "")
 	}
-	rowLink("tmux", truncate(s.TmuxSession, valueWidth), "tmux attach -t "+s.TmuxSession, true)
-	row("created", humanizeAge(time.Since(s.CreatedAt)), "")
 	if s.Ticket != "" {
 		row("ticket", truncateLeft(s.Ticket, valueWidth), s.Ticket)
 	}
 	if s.PR != "" {
 		row("pr", truncateLeft(s.PR, valueWidth), s.PR)
+		if pr := m.prStatus[s.ID]; pr.ok {
+			row("pr status", prStatusLabel(pr.info), "")
+		}
 	}
-	if prompt := m.prompts[s.ID]; prompt != "" {
+	rowLink("tmux", truncate(s.TmuxSession, valueWidth), "tmux attach -t "+s.TmuxSession, true)
+	// worktree/created are reference details rarely needed at a glance —
+	// on mobile they cost rows better spent on the prompt/cow below, which
+	// is more often what you'd scroll for.
+	if !m.compactScreen() {
+		row("worktree", truncateLeft(s.WorktreePath, valueWidth), "")
+		row("created", humanizeAge(time.Since(s.CreatedAt)), "")
+	}
+	prompt := m.prompts[s.ID]
+	if prompt == "" {
+		prompt = s.Prompt
+	}
+	if prompt != "" {
 		oneline := strings.ReplaceAll(strings.ReplaceAll(prompt, "\r\n", " "), "\n", " ")
-		row("prompt", truncate(oneline, valueWidth), "")
+		const maxPromptLines = 3
+		lines := wrapLines(oneline, valueWidth)
+		if len(lines) > maxPromptLines {
+			lines = lines[:maxPromptLines]
+			last := []rune(lines[maxPromptLines-1])
+			if len(last) > valueWidth-1 {
+				last = last[:valueWidth-1]
+			}
+			lines[maxPromptLines-1] = string(last) + "…"
+		}
+		key := muteStyle.Render(fmt.Sprintf("%-10s", "prompt:"))
+		blank := muteStyle.Render(fmt.Sprintf("%-10s", ""))
+		for i, ln := range lines {
+			label := blank
+			if i == 0 {
+				label = key
+			}
+			line := lipgloss.Height(lipgloss.NewStyle().Width(width).Render(b.String())) - 1
+			col0 := lipgloss.Width(label) + 1
+			col1 := min(width, col0+lipgloss.Width(ln))
+			if line < height && col0 < col1 {
+				hits = append(hits, linkHit{sessionID: s.ID, url: oneline, copyOnly: true, line: line, col0: col0, col1: col1})
+			}
+			b.WriteString(fmt.Sprintf("%s %s\n", label, detailLinkStyle.Render(ln)))
+		}
 	}
 	b.WriteString("\n")
 	var cowMsg string
@@ -115,6 +172,34 @@ func gitStatusLabel(git gitStatusInfo) string {
 		return "clean, pushed"
 	}
 	return strings.Join(parts, ", ")
+}
+
+// prStatusLabel renders a prstatus.Info (pr.ok must already be true) as the
+// short text shown in the detail panel's "pr status" row. Merged/closed wins
+// outright since mergeable/CI stop meaning anything once the PR is done.
+func prStatusLabel(info prstatus.Info) string {
+	switch info.State {
+	case "MERGED":
+		return "merged"
+	case "CLOSED":
+		return "closed"
+	}
+	var parts []string
+	if info.Mergeable == "CONFLICTING" {
+		parts = append(parts, "conflicts")
+	}
+	switch info.CI {
+	case "FAILING":
+		parts = append(parts, "CI failing")
+	case "PENDING":
+		parts = append(parts, "CI running")
+	case "PASSING":
+		parts = append(parts, "CI passing")
+	}
+	if len(parts) == 0 {
+		return "open"
+	}
+	return "open, " + strings.Join(parts, ", ")
 }
 
 func cowsay(msg string, maxWidth int, st watcher.State) string {

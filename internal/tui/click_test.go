@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/erickgnclvs/moomux/internal/config"
+	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/watcher"
 )
@@ -68,6 +69,11 @@ type fakeBackend struct {
 	worktreeStatus      map[string]gitStatusInfo
 	worktreeStatusCalls []string
 
+	// prStatus, keyed by session id, backs PRStatus. A missing entry means
+	// "unknown" (ok=false), mirroring worktreeStatus.
+	prStatus      map[string]prStatusInfo
+	prStatusCalls []string
+
 	// tmuxAlive backs TmuxAliveAll; nil (the zero value) reads as "nothing
 	// alive", same as the map[string]bool{} every other test relies on.
 	tmuxAlive map[string]bool
@@ -75,7 +81,10 @@ type fakeBackend struct {
 
 type setThemeCall struct{ theme, appearance string }
 
-type createCall struct{ project, name, agent, branch, ticket string }
+type createCall struct {
+	project, name, agent, branch, ticket string
+	openTerminal                         bool
+}
 type sendPromptCall struct{ tmuxSession, prompt string }
 type tagCall struct{ id, ticket, pr string }
 type sessionAgentCall struct{ id, agent string }
@@ -98,8 +107,8 @@ type moveProjectCall struct {
 	delta int
 }
 
-func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket string) (session.Session, string, error) {
-	f.createCalls = append(f.createCalls, createCall{project, name, agent, existingBranch, ticket})
+func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket string, openTerminal bool) (session.Session, string, error) {
+	f.createCalls = append(f.createCalls, createCall{project, name, agent, existingBranch, ticket, openTerminal})
 	if f.createErr != nil {
 		return session.Session{}, "", f.createErr
 	}
@@ -131,6 +140,14 @@ func (f *fakeBackend) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
 	}
 	return st.dirty, st.unpushed, st.ok
 }
+func (f *fakeBackend) PRStatus(id string) (prstatus.Info, bool) {
+	f.prStatusCalls = append(f.prStatusCalls, id)
+	st, present := f.prStatus[id]
+	if !present {
+		return prstatus.Info{}, false
+	}
+	return st.info, st.ok
+}
 func (f *fakeBackend) KillTmux(id string) error {
 	f.killCalls = append(f.killCalls, id)
 	return nil
@@ -148,6 +165,15 @@ func (f *fakeBackend) SetSessionTags(id, ticket, pr string) (session.Session, er
 		}
 	}
 	return session.Session{ID: id, Ticket: ticket, PR: pr}, nil
+}
+func (f *fakeBackend) SetSessionPrompt(id, prompt string) (session.Session, error) {
+	for i, s := range f.sessions {
+		if s.ID == id {
+			f.sessions[i].Prompt = prompt
+			return f.sessions[i], nil
+		}
+	}
+	return session.Session{ID: id, Prompt: prompt}, nil
 }
 func (f *fakeBackend) SetSessionAgent(id, agent string) (session.Session, error) {
 	f.sessionAgentCalls = append(f.sessionAgentCalls, sessionAgentCall{id, agent})
@@ -299,12 +325,16 @@ func TestClippedDetailURLsDoNotLeaveClickTargets(t *testing.T) {
 		},
 	}})
 
-	_, clippedHits := m.renderDetail(36, 5)
+	// No "DETAIL" title text, but its 2-row gap is still reserved (to stay
+	// aligned with the list pane's "SESSIONS" title next to it): blank,
+	// blank, project, status, name, agent, ticket, pr — height 6 cuts off
+	// before either link row, height 8 fits both.
+	_, clippedHits := m.renderDetail(36, 6)
 	if len(clippedHits) != 0 {
 		t.Fatalf("clipped detail returned link hits: %+v", clippedHits)
 	}
 
-	_, visibleHits := m.renderDetail(36, 10)
+	_, visibleHits := m.renderDetail(36, 8)
 	if len(visibleHits) != 2 {
 		t.Fatalf("visible detail returned %d link hits, want 2: %+v", len(visibleHits), visibleHits)
 	}
