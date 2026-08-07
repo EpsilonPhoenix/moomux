@@ -312,9 +312,8 @@ type resolvedRowHit struct {
 // rendering. It's a no-op (clearing hits) outside ModeList and ModeMultiView,
 // since panels aren't clickable behind an overlay. ModeMultiView only ever
 // reaches here via renderListView's own single-project fallback (see
-// renderMultiView) — its actual multi-panel layout clears the hits itself
-// and never calls this, so allowing the mode through doesn't make the
-// unclickable multi-panel rows clickable.
+// renderMultiView) — its actual multi-panel layout computes and appends its
+// own hits directly (one origin per panel) and never calls this.
 func (m *Model) updateLinkHits(header string, listHits, detailHits []linkHit, detailX, detailY int, listRows []rowHit, listWidth int) {
 	if m.mode != ModeList && m.mode != ModeMultiView {
 		m.linkHits = nil
