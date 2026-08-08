@@ -474,7 +474,7 @@ func (m *Model) newFormApplyProjectDefaults() {
 	if p.PromptAgent {
 		m.newFormAgentIdx = -1
 	} else {
-		m.newFormAgentIdx = agentChoiceIndex(p.AgentName())
+		m.newFormAgentIdx = agentChoiceIndex(p.AgentName(), p.Dangerous)
 	}
 }
 
@@ -645,7 +645,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				id:       s.ID,
 				project:  s.Project,
 				name:     s.Name,
-				agentIdx: agentChoiceIndex(s.AgentName()),
+				agentIdx: agentChoiceIndex(s.AgentName(), s.Dangerous),
 			}
 		}
 	case key.Matches(msg, m.keys.ProjectPicker):
@@ -892,7 +892,7 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.newFormErr = ""
 		proj := m.projects[m.newFormProjIdx]
-		agent := agentChoices[m.newFormAgentIdx]
+		agent, dangerous := agentChoiceParts(agentChoices[m.newFormAgentIdx])
 		openTerminal := !m.newFormOpenInBackground
 		m.mode = m.sessionDialogReturn
 		label := name
@@ -902,7 +902,7 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.setFlash("info", "creating "+label+"…")
 		m.busy = true
 		return m, func() tea.Msg {
-			s, hint, err := m.backend.CreateSession(proj, name, agent, branch, ticket, openTerminal)
+			s, hint, err := m.backend.CreateSession(proj, name, agent, branch, ticket, openTerminal, dangerous)
 			if err != nil {
 				return ErrorMsg{Err: err}
 			}
@@ -1088,13 +1088,15 @@ func cycleProjectAgentIdx(idx, delta int) int {
 	return pos
 }
 
-// projectAgentFields returns the Agent and PromptAgent values a submitted
-// project form should store, given its agentIdx (possibly askAgentIdx).
-func projectAgentFields(agentIdx int) (agent string, promptAgent bool) {
+// projectAgentFields returns the Agent, Dangerous and PromptAgent values a
+// submitted project form should store, given its agentIdx (possibly
+// askAgentIdx).
+func projectAgentFields(agentIdx int) (agent string, dangerous, promptAgent bool) {
 	if agentIdx == askAgentIdx {
-		return "", true
+		return "", false, true
 	}
-	return agentChoices[agentIdx], false
+	agent, dangerous = agentChoiceParts(agentChoices[agentIdx])
+	return agent, dangerous, false
 }
 
 func (m *Model) updateNewProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1145,8 +1147,8 @@ func (m *Model) updateNewProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if base == "" {
 			base = "main"
 		}
-		agent, promptAgent := projectAgentFields(m.projForm.agentIdx)
-		p := config.Project{Repo: repo, BaseBranch: base, BranchPrefix: prefix, Emoji: emoji, Agent: agent, PromptAgent: promptAgent, NoWorktree: m.projForm.noWorktree}
+		agent, dangerous, promptAgent := projectAgentFields(m.projForm.agentIdx)
+		p := config.Project{Repo: repo, BaseBranch: base, BranchPrefix: prefix, Emoji: emoji, Agent: agent, Dangerous: dangerous, PromptAgent: promptAgent, NoWorktree: m.projForm.noWorktree}
 		return m, func() tea.Msg {
 			err := m.backend.AddProject(name, p)
 			return ProjectAddedMsg{Kind: "add", Name: name, Project: p, Err: err}
@@ -1179,11 +1181,11 @@ func (m *Model) updateEditSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sessionForm.agentIdx = (m.sessionForm.agentIdx + 1) % len(agentChoices)
 	case key.Matches(msg, m.keys.Enter):
 		id := m.sessionForm.id
-		agent := agentChoices[m.sessionForm.agentIdx]
+		agent, dangerous := agentChoiceParts(agentChoices[m.sessionForm.agentIdx])
 		m.busy = true
 		m.sessionForm.err = ""
 		return m, func() tea.Msg {
-			s, err := m.backend.SetSessionAgent(id, agent)
+			s, err := m.backend.SetSessionAgent(id, agent, dangerous)
 			return SessionAgentUpdatedMsg{Session: s, Err: err}
 		}
 	}
@@ -1261,7 +1263,7 @@ func (m *Model) updateEditProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Enter):
 		project.Repo = m.projForm.inputs[1].Value()
 		project.Emoji = projectEmojiFieldValue(m.projForm.emojiChoices, m.projForm.emojiIdx)
-		project.Agent, project.PromptAgent = projectAgentFields(m.projForm.agentIdx)
+		project.Agent, project.Dangerous, project.PromptAgent = projectAgentFields(m.projForm.agentIdx)
 		if !project.IsPlain() {
 			project.BaseBranch = m.projForm.inputs[2].Value()
 			project.BranchPrefix = m.projForm.inputs[3].Value()

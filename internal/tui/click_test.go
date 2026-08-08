@@ -83,11 +83,14 @@ type setThemeCall struct{ theme, appearance string }
 
 type createCall struct {
 	project, name, agent, branch, ticket string
-	openTerminal                         bool
+	openTerminal, dangerous              bool
 }
 type sendPromptCall struct{ tmuxSession, prompt string }
 type tagCall struct{ id, ticket, pr string }
-type sessionAgentCall struct{ id, agent string }
+type sessionAgentCall struct {
+	id, agent string
+	dangerous bool
+}
 type archiveCall struct {
 	id       string
 	archived bool
@@ -107,8 +110,8 @@ type moveProjectCall struct {
 	delta int
 }
 
-func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket string, openTerminal bool) (session.Session, string, error) {
-	f.createCalls = append(f.createCalls, createCall{project, name, agent, existingBranch, ticket, openTerminal})
+func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket string, openTerminal, dangerous bool) (session.Session, string, error) {
+	f.createCalls = append(f.createCalls, createCall{project, name, agent, existingBranch, ticket, openTerminal, dangerous})
 	if f.createErr != nil {
 		return session.Session{}, "", f.createErr
 	}
@@ -116,7 +119,7 @@ func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket
 	if label == "" {
 		label = existingBranch
 	}
-	s := session.Session{ID: session.MakeID(project, label), Project: project, Name: label, Agent: agent, Ticket: ticket}
+	s := session.Session{ID: session.MakeID(project, label), Project: project, Name: label, Agent: agent, Dangerous: dangerous, Ticket: ticket}
 	f.sessions = append(f.sessions, s)
 	return s, f.createHint, nil
 }
@@ -175,18 +178,19 @@ func (f *fakeBackend) SetSessionPrompt(id, prompt string) (session.Session, erro
 	}
 	return session.Session{ID: id, Prompt: prompt}, nil
 }
-func (f *fakeBackend) SetSessionAgent(id, agent string) (session.Session, error) {
-	f.sessionAgentCalls = append(f.sessionAgentCalls, sessionAgentCall{id, agent})
+func (f *fakeBackend) SetSessionAgent(id, agent string, dangerous bool) (session.Session, error) {
+	f.sessionAgentCalls = append(f.sessionAgentCalls, sessionAgentCall{id, agent, dangerous})
 	if f.sessionAgentErr != nil {
 		return session.Session{}, f.sessionAgentErr
 	}
 	for i, s := range f.sessions {
 		if s.ID == id {
 			f.sessions[i].Agent = agent
+			f.sessions[i].Dangerous = dangerous
 			return f.sessions[i], nil
 		}
 	}
-	return session.Session{ID: id, Agent: agent}, nil
+	return session.Session{ID: id, Agent: agent, Dangerous: dangerous}, nil
 }
 func (f *fakeBackend) SetSessionArchived(id string, archived bool) (session.Session, error) {
 	f.archiveCalls = append(f.archiveCalls, archiveCall{id, archived})

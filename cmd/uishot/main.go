@@ -171,7 +171,7 @@ type fakeBackend struct {
 	prStatus map[string]prstatus.Info
 }
 
-func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket string, openTerminal bool) (session.Session, string, error) {
+func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket string, openTerminal, dangerous bool) (session.Session, string, error) {
 	return session.Session{}, "", nil
 }
 func (f *fakeBackend) StartFirstPrompt(tmuxSession, prompt string) error { return nil }
@@ -195,7 +195,7 @@ func (f *fakeBackend) MoveProject(name string, delta int) error                {
 func (f *fakeBackend) SetSessionTags(id, ticket, pr string) (session.Session, error) {
 	return session.Session{}, nil
 }
-func (f *fakeBackend) SetSessionAgent(id, agent string) (session.Session, error) {
+func (f *fakeBackend) SetSessionAgent(id, agent string, dangerous bool) (session.Session, error) {
 	return session.Session{}, nil
 }
 func (f *fakeBackend) SetSessionPrompt(id, prompt string) (session.Session, error) {

@@ -168,7 +168,7 @@ func TestNarrowEditSessionShowsCompactSelectedAgent(t *testing.T) {
 	m.sessionForm = sessionForm{
 		project:  "demo",
 		name:     "session",
-		agentIdx: 2,
+		agentIdx: 4, // opencode
 	}
 
 	view := m.View()

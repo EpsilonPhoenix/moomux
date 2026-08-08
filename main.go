@@ -248,6 +248,7 @@ func runSpawn(args []string) error {
 	project := fs.String("project", "", "project name (required)")
 	name := fs.String("name", "", "session name (derived from -branch if omitted)")
 	agent := fs.String("agent", "", "agent override (claude, codex, opencode)")
+	dangerous := fs.Bool("dangerous", false, "run the agent with its permission-skipping flag (claude: --dangerously-skip-permissions, codex: --yolo)")
 	branch := fs.String("branch", "", "existing branch to check out, instead of creating a new one")
 	ticket := fs.String("ticket", "", "ticket URL to attach to the session")
 	prompt := fs.String("prompt", "", "initial prompt to type into the new session's agent pane")
@@ -263,7 +264,7 @@ func runSpawn(args []string) error {
 		return err
 	}
 
-	s, hint, err := a.CreateSession(*project, *name, *agent, *branch, *ticket, true)
+	s, hint, err := a.CreateSession(*project, *name, *agent, *branch, *ticket, true, *dangerous)
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}

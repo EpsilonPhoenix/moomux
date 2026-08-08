@@ -53,9 +53,11 @@ func TestNewSessionFormFlow(t *testing.T) {
 		press(m, tea.KeyTab) // branch -> prompt -> ticket -> PR -> agent selector
 	}
 	press(m, tea.KeyRight)
+	press(m, tea.KeyRight) // claude -> claude (dangerous) -> codex
 	if agentChoices[m.newFormAgentIdx] != "codex" {
 		t.Fatalf("agent = %q", agentChoices[m.newFormAgentIdx])
 	}
+	press(m, tea.KeyLeft)
 	press(m, tea.KeyLeft)     // back to claude
 	press(m, tea.KeyShiftTab) // agent -> PR
 	press(m, tea.KeyShiftTab) // PR -> ticket
@@ -843,8 +845,9 @@ func TestNewProjectFlow(t *testing.T) {
 
 	// walk focus to the agent selector and worktree toggle
 	m.projForm.focus = projFormInputCount + 1
-	press(m, tea.KeyRight) // agent claude -> codex
-	if m.projForm.agentIdx != 1 {
+	press(m, tea.KeyRight)
+	press(m, tea.KeyRight) // agent claude -> claude (dangerous) -> codex
+	if m.projForm.agentIdx != 2 {
 		t.Fatalf("agentIdx = %d", m.projForm.agentIdx)
 	}
 	m.projForm.focus = projFormInputCount + 2
@@ -926,7 +929,7 @@ func TestEditSessionFlow(t *testing.T) {
 	press(m, tea.KeyRight)
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if len(be.sessionAgentCalls) != 1 ||
-		be.sessionAgentCalls[0] != (sessionAgentCall{"demo:a", "opencode"}) {
+		be.sessionAgentCalls[0] != (sessionAgentCall{"demo:a", "codex", true}) {
 		t.Fatalf("sessionAgentCalls = %v", be.sessionAgentCalls)
 	}
 	if m.mode != ModeList || !strings.Contains(m.flash, "updated session a") {
@@ -986,7 +989,7 @@ func TestEditProjectFlow(t *testing.T) {
 	m.projForm.inputs[1].SetValue("/tmp/renamed")
 	m.projForm.inputs[2].SetValue("trunk")
 	m.projForm.inputs[3].SetValue("alan")
-	m.projForm.agentIdx = 2
+	m.projForm.agentIdx = 4 // opencode
 	m.projForm.noWorktree = true
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
 
@@ -1049,7 +1052,7 @@ func TestEditPlainProjectShowsOnlyRepoAndAgent(t *testing.T) {
 	if m.projForm.focus != projFormInputCount+1 {
 		t.Fatalf("focus = %d, want agent selector", m.projForm.focus)
 	}
-	m.projForm.agentIdx = agentChoiceIndex("codex")
+	m.projForm.agentIdx = agentChoiceIndex("codex", false)
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if len(be.updateProjectCalls) != 1 {
 		t.Fatalf("updateProjectCalls = %v", be.updateProjectCalls)
