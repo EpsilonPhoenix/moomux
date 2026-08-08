@@ -158,6 +158,14 @@ func (s *Store) SetArchived(id string, archived bool) (Session, error) {
 	return sess, nil
 }
 
+// Reload re-reads the store file from disk, picking up sessions written by
+// another moomux process (e.g. `moomux spawn`) since this Store last loaded.
+func (s *Store) Reload() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reloadLocked()
+}
+
 func (s *Store) Get(id string) (Session, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

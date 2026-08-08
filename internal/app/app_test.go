@@ -1143,6 +1143,35 @@ func TestUpdateProjectAcceptsDefaultAgent(t *testing.T) {
 	}
 }
 
+// TestSessionsPicksUpExternallySpawnedSession covers `moomux spawn`: a
+// second process shares the same sessions.json and writes a new session via
+// its own *Store while this App's Store is already loaded in memory.
+// Sessions() must see it without requiring a mutating call (archive,
+// delete, reorder) on this App's Store first.
+func TestSessionsPicksUpExternallySpawnedSession(t *testing.T) {
+	a, _, _, _ := newTestApp(t, gitProject("/repo"))
+
+	other := &session.Store{Path: a.Store.Path}
+	if err := other.Load(); err != nil {
+		t.Fatal(err)
+	}
+	spawned := session.Session{ID: "demo:spawned", Project: "demo", Name: "spawned"}
+	if err := other.Put(spawned); err != nil {
+		t.Fatal(err)
+	}
+
+	got := a.Sessions()
+	found := false
+	for _, s := range got {
+		if s.ID == spawned.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Sessions() = %v, want it to include externally spawned session %q", got, spawned.ID)
+	}
+}
+
 func TestSetSessionStatusTitle(t *testing.T) {
 	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
 	s := session.Session{ID: "demo:a", Project: "demo", Name: "a", TmuxSession: "moomux-a"}
