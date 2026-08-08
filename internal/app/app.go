@@ -132,7 +132,15 @@ func (a *App) MoveProject(name string, delta int) error {
 	return nil
 }
 
-func (a *App) Sessions() []session.Session { return a.Store.All() }
+// Sessions returns every known session, reloading the store from disk first
+// so sessions written by another moomux process (e.g. `moomux spawn`) show
+// up on the TUI's next routine status tick instead of waiting for a
+// mutating action (archive, delete, reorder) to trigger a reload as a side
+// effect.
+func (a *App) Sessions() []session.Session {
+	_ = a.Store.Reload()
+	return a.Store.All()
+}
 
 // sanitizeName collapses anything that isn't alphanumeric/-/_ to "-", so the
 // result is safe as a git branch name, filesystem path component, and tmux
