@@ -46,8 +46,15 @@ func Open(rawURL string) error {
 // machine instead of the user's own. Other transports (e.g. mosh, which
 // doesn't route through sshd) set none of these and can't be detected this
 // way — the TUI's R key lets a user override the auto-detection for those.
+//
+// Only SSH_TTY is checked. SSH_CONNECTION and SSH_CLIENT are set by sshd but,
+// on macOS, get cached into the per-user launchd environment on first SSH
+// login and then persist for every process (including local Terminal/iTerm
+// windows) until logout — so checking them false-positives as "remote" long
+// after the SSH session ended. SSH_TTY is tied to the actual pty and isn't
+// cached that way.
 func Remote() bool {
-	return os.Getenv("SSH_TTY") != "" || os.Getenv("SSH_CONNECTION") != "" || os.Getenv("SSH_CLIENT") != ""
+	return os.Getenv("SSH_TTY") != ""
 }
 
 // Copy writes text to the user's local clipboard via an OSC 52 escape
