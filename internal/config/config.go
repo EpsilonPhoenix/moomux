@@ -19,6 +19,10 @@ type Project struct {
 	BranchPrefix string `toml:"branch_prefix,omitempty"`
 	BaseBranch   string `toml:"base_branch,omitempty"`
 	Agent        string `toml:"agent,omitempty"` // "claude" (default), "codex", "opencode"
+	// Dangerous, when true, runs Agent with its permission-skipping flag
+	// (claude: --dangerously-skip-permissions, codex: --yolo); no-op for
+	// opencode. Applies as the default for new sessions of this project.
+	Dangerous bool `toml:"dangerous,omitempty"`
 	// PromptAgent, when true, skips preselecting Agent as the default in the
 	// new-session form — the user must explicitly pick an agent before the
 	// form can be submitted.

@@ -45,6 +45,31 @@ func agentCmd(agent string) string {
 	}
 }
 
+// dangerousFlag returns the CLI flag that skips permission prompts for the
+// given agent, or "" if it doesn't have one (opencode).
+func dangerousFlag(agent string) string {
+	switch agent {
+	case "codex":
+		return "--yolo"
+	case "claude":
+		return "--dangerously-skip-permissions"
+	default:
+		return ""
+	}
+}
+
+// buildAgentCmd returns the shell command that launches agent in its tmux
+// pane, appending its dangerous flag when requested and supported.
+func buildAgentCmd(agent string, dangerous bool) string {
+	cmd := agentCmd(agent)
+	if dangerous {
+		if flag := dangerousFlag(agent); flag != "" {
+			cmd += " " + flag
+		}
+	}
+	return cmd
+}
+
 // needsInputInstallers maps an agent name to the function that wires its
 // "needs input" hooks into the user's global config. Agents with no entry
 // here (opencode) don't support the needs-input state yet — add a sibling
@@ -210,7 +235,7 @@ func (a *App) tmuxSessionUsingWorktree(path string) (string, error) {
 // (e.g. "run: tmux attach -t ...") to show alongside success — it is
 // not an error. When openTerminal is false, the tmux session is started
 // detached and no terminal window is opened.
-func (a *App) CreateSession(project, name, agent, existingBranch, ticket string, openTerminal bool) (session.Session, string, error) {
+func (a *App) CreateSession(project, name, agent, existingBranch, ticket string, openTerminal, dangerous bool) (session.Session, string, error) {
 	proj, ok := a.Cfg.Projects[project]
 	if !ok {
 		return session.Session{}, "", fmt.Errorf("unknown project %q", project)
@@ -312,7 +337,7 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string,
 			slog.Warn("claude trust write failed", "path", wt, "err", err)
 		}
 	}
-	cmd := agentCmd(agent)
+	cmd := buildAgentCmd(agent, dangerous)
 	agentPort := 0
 	if agent == "opencode" {
 		agentPort = a.nextOpenCodePort()
@@ -353,6 +378,7 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string,
 		TmuxSession:  tmuxName,
 		CreatedAt:    time.Now().UTC(),
 		Agent:        agent,
+		Dangerous:    dangerous,
 		AgentPort:    agentPort,
 		Ticket:       ticket,
 		TermTabID:    tabID,
@@ -542,7 +568,7 @@ func (a *App) SetSessionPrompt(id, prompt string) (session.Session, error) {
 	return s, nil
 }
 
-func (a *App) SetSessionAgent(id, agent string) (session.Session, error) {
+func (a *App) SetSessionAgent(id, agent string, dangerous bool) (session.Session, error) {
 	if err := validateAgent(agent); err != nil {
 		return session.Session{}, err
 	}
@@ -552,6 +578,7 @@ func (a *App) SetSessionAgent(id, agent string) (session.Session, error) {
 	}
 	previous := s
 	s.Agent = agent
+	s.Dangerous = dangerous
 	if err := a.Store.Put(s); err != nil {
 		_ = a.Store.Put(previous)
 		return session.Session{}, fmt.Errorf("store: %w", err)
@@ -665,7 +692,7 @@ func (a *App) OpenSession(id string) (string, error) {
 			}
 		}
 		slog.Info("tmux session absent, recreating", "tmux_session", s.TmuxSession, "cwd", s.WorktreePath)
-		cmd := agentCmd(s.AgentName())
+		cmd := buildAgentCmd(s.AgentName(), s.Dangerous)
 		if s.AgentName() == "opencode" {
 			if s.AgentPort == 0 {
 				s.AgentPort = a.nextOpenCodePort()

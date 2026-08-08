@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -30,7 +31,7 @@ type Backend interface {
 	// CreateSession's hint, when non-empty, is a user-facing instruction
 	// (e.g. "run: tmux attach -t ...") to show alongside success — it is
 	// not an error.
-	CreateSession(project, name, agent, existingBranch, ticket string, openTerminal bool) (s session.Session, hint string, err error)
+	CreateSession(project, name, agent, existingBranch, ticket string, openTerminal, dangerous bool) (s session.Session, hint string, err error)
 	// StartFirstPrompt waits for a freshly created session's agent pane to
 	// be ready, then types prompt into it and starts the agent working on
 	// it. No-op if prompt is empty.
@@ -49,7 +50,7 @@ type Backend interface {
 	SetSessionStatusTitle(id string, st watcher.State) error
 	SetSessionTags(id, ticket, pr string) (session.Session, error)
 	SetSessionPrompt(id, prompt string) (session.Session, error)
-	SetSessionAgent(id, agent string) (session.Session, error)
+	SetSessionAgent(id, agent string, dangerous bool) (session.Session, error)
 	// SetSessionArchived hides (or restores) a session from the default
 	// list without touching its tmux session or worktree.
 	SetSessionArchived(id string, archived bool) (session.Session, error)
@@ -88,7 +89,33 @@ const (
 	ModeMultiView
 )
 
-var agentChoices = []string{"claude", "codex", "opencode"}
+// agentChoices lists every agent selector entry. The "(dangerous)" suffix
+// marks the variant that runs with its permission-skipping flag (see
+// agentChoiceParts) — opencode has no such flag, so it gets no dangerous
+// entry.
+var agentChoices = []string{"claude", "claude (dangerous)", "codex", "codex (dangerous)", "opencode"}
+
+// dangerousSuffix marks an agentChoices entry as the flag-skipping variant;
+// see agentChoiceLabel/agentChoiceParts.
+const dangerousSuffix = " (dangerous)"
+
+// agentChoiceLabel builds the agentChoices entry for an (agent, dangerous)
+// pair — the inverse of agentChoiceParts.
+func agentChoiceLabel(agent string, dangerous bool) string {
+	if dangerous {
+		return agent + dangerousSuffix
+	}
+	return agent
+}
+
+// agentChoiceParts splits an agentChoices entry into the underlying agent
+// name and whether it's the dangerous variant.
+func agentChoiceParts(choice string) (agent string, dangerous bool) {
+	if rest, ok := strings.CutSuffix(choice, dangerousSuffix); ok {
+		return rest, true
+	}
+	return choice, false
+}
 
 // askAgentIdx is a sentinel projectForm.agentIdx value, one past the real
 // agentChoices, selected as an extra "ask each time" entry in the project
@@ -285,9 +312,10 @@ type Model struct {
 	overlayFocus    int
 }
 
-func agentChoiceIndex(agent string) int {
+func agentChoiceIndex(agent string, dangerous bool) int {
+	label := agentChoiceLabel(agent, dangerous)
 	for i, choice := range agentChoices {
-		if choice == agent {
+		if choice == label {
 			return i
 		}
 	}
@@ -769,7 +797,7 @@ func editProjectForm(name string, p config.Project) projectForm {
 	if p.PromptAgent {
 		pf.agentIdx = askAgentIdx
 	} else {
-		pf.agentIdx = agentChoiceIndex(p.AgentName())
+		pf.agentIdx = agentChoiceIndex(p.AgentName(), p.Dangerous)
 	}
 	pf.noWorktree = p.NoWorktree
 	return pf
