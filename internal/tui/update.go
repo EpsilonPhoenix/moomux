@@ -831,9 +831,14 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, m.keys.FormDown), key.Matches(msg, m.keys.FormUp):
 		// The prompt field is a multi-line textarea — leave ↑/↓ to it for
-		// moving the cursor between lines instead of switching fields.
+		// moving the cursor between lines. But if you're on the first 
+		// or last line, let it switch fields!
 		if m.newFormFocus == 3 {
-			break
+			atTop := m.promptInput.Line() == 0
+			atBottom := m.promptInput.Line() == m.promptInput.LineCount()-1
+			if (key.Matches(msg, m.keys.FormUp) && !atTop) || (key.Matches(msg, m.keys.FormDown) && !atBottom) {
+				break
+			}
 		}
 		if key.Matches(msg, m.keys.FormUp) {
 			m.newFormMoveFocus(-1)
