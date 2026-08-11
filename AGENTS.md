@@ -20,6 +20,12 @@ Send the resulting PNG(s) to the user so they can see the change, the same way y
 
 Forms like the new-session dialog track focus as a plain int (`newFormFocus`) and key several independent switches off it — tab-cycling, typing/left-right handling, and focus-in in `internal/tui/update.go`, but also `focusedOverlayLine` in `internal/tui/view.go` (which decides where the overlay viewport scrolls to keep the focused field visible). When adding, removing, or reordering a field, `grep -rn "newFormFocus" internal/tui/*.go` and update every hit, not just the ones in the file you're already touching — a stale `default:` case doesn't fail to compile, it just silently scrolls to the wrong field at runtime, which reads to a user as the whole dialog "resizing" or jumping.
 
+## Releases and commit messages
+
+Every merge to `main` auto-tags and deploys a new version (`.github/workflows/deploy.yml` computes the next tag via `scripts/next_version.sh`, then `release.yml` builds and publishes it) — there's no manual release step, and no way to land a commit on `main` without it shipping.
+
+The version bump is inferred from commit subjects since the last tag: an explicit breaking-change marker (`type!:` or a `BREAKING CHANGE` footer) bumps major; everything else (`feat:`, `fix:`, `chore:`, ...) is a patch bump. `feat:` used to bump minor, but it's the de facto default prefix for nearly every commit in this repo, so that rule fired on almost every release and minor-bumped constantly (0.2.x -> 0.3.0 -> 0.4.0 -> 0.5.0 within days) — see `scripts/next_version.sh` and `scripts/next_version_test.sh`. Don't reintroduce a "feat: -> minor" rule; a minor bump is a manual tag now, not something to infer from commit type.
+
 ## Bug fixes and logic changes
 
 Every bug fix or non-trivial logic change needs a test that fails without the fix and passes with it — check this by temporarily reverting the fix and confirming the test goes red before restoring it. Add the test in the same commit/PR as the fix, not as a follow-up. Skip only for pure UI/copy tweaks (covered by the screenshot rule above) or one-line changes with no meaningful branch/edge case.
