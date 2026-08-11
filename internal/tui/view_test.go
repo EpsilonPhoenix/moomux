@@ -213,13 +213,14 @@ func TestNarrowLayoutRestoresDetailAfterResize(t *testing.T) {
 	}
 }
 
-// TestNarrowStackedListGrowsBeforeDetailClips is the regression test for the
-// stacked layout's size priority: the session list gets enough room to show
-// every session without scrolling, and the detail pane clips from the
-// bottom if that doesn't leave it enough room — not the other way around,
-// where a long session list would be forced to scroll just to protect the
-// detail pane's own size.
-func TestNarrowStackedListGrowsBeforeDetailClips(t *testing.T) {
+// TestNarrowStackedDetailGrowsBeforeListClips is the regression test for the
+// stacked layout's size priority: detail is sized around what its own
+// content actually needs (fields plus the closing cowsay art), and the list
+// gets whatever's left, scrolling to keep the cursor visible if that isn't
+// enough room to show every session — not the other way around, where a long
+// session list used to claim priority and squeeze detail's cow off the
+// bottom of the screen (see AGENTS.md's mobile-width guidance).
+func TestNarrowStackedDetailGrowsBeforeListClips(t *testing.T) {
 	few := layoutTestModel(2)
 	few.width, few.height = 60, 40
 	fewView := few.View()
@@ -230,17 +231,14 @@ func TestNarrowStackedListGrowsBeforeDetailClips(t *testing.T) {
 	many := layoutTestModel(25)
 	many.width, many.height = 60, 40
 	manyView := many.View()
-	if strings.Contains(manyView, "||     ||") {
-		t.Fatalf("many sessions: detail's cow should be clipped to make room for the list:\n%s", manyView)
+	if !strings.Contains(manyView, "||     ||") {
+		t.Fatalf("many sessions: detail's cow should never be clipped, regardless of list length:\n%s", manyView)
 	}
 	if !strings.Contains(manyView, "status:") {
-		t.Fatalf("many sessions: detail should still partially show, just clipped:\n%s", manyView)
+		t.Fatalf("many sessions: detail should be fully visible:\n%s", manyView)
 	}
-	for i := 0; i < len(many.sessions); i++ {
-		name := many.sessions[i].Name
-		if !strings.Contains(manyView, name) {
-			t.Fatalf("many sessions: session %d (%q) not visible — list should show all of them without scrolling:\n%s", i, name, manyView)
-		}
+	if strings.Contains(manyView, many.sessions[len(many.sessions)-1].Name) {
+		t.Fatalf("many sessions: list should scroll rather than shrink detail to fit every session:\n%s", manyView)
 	}
 }
 
