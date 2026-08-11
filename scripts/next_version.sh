@@ -6,8 +6,11 @@
 #
 # Bump rules, checked against every commit subject since the last tag:
 #   - "type!: ..." or a "BREAKING CHANGE" footer -> major
-#   - "feat: ..." (or "feat(scope): ...")         -> minor
-#   - anything else (fix:, chore:, docs:, ...)    -> patch
+#   - anything else (feat:, fix:, chore:, ...)    -> patch
+#
+# feat: used to bump minor, but nearly every commit here is written as
+# feat:, so that rule was firing on almost every release. Minor bumps are
+# now a manual call (tag/push vX.Y.0 yourself) instead of inferred.
 set -euo pipefail
 
 if [ -n "$(git tag --points-at HEAD)" ]; then
@@ -41,8 +44,6 @@ bodies=$(git log $range --pretty=%B)
 bump=patch
 if echo "$subjects" | grep -qE '^[a-zA-Z]+(\([^)]+\))?!:' || echo "$bodies" | grep -qE '^BREAKING CHANGE:'; then
   bump=major
-elif echo "$subjects" | grep -qE '^feat(\([^)]+\))?:'; then
-  bump=minor
 fi
 
 IFS='.' read -r major minor patch <<<"$version"
