@@ -177,8 +177,8 @@ func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket
 func (f *fakeBackend) StartFirstPrompt(tmuxSession, prompt string, autoSubmit bool) error {
 	return nil
 }
-func (f *fakeBackend) OpenSession(id string) (string, error)             { return "", nil }
-func (f *fakeBackend) DeleteSession(id string) error                     { return nil }
+func (f *fakeBackend) OpenSession(id string) (string, error) { return "", nil }
+func (f *fakeBackend) DeleteSession(id string) error         { return nil }
 func (f *fakeBackend) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
 	st, present := f.worktreeStatus[id]
 	if !present {
