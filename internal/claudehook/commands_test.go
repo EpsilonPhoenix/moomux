@@ -7,28 +7,42 @@ import (
 	"time"
 )
 
-func TestEnsureKillCommandInstalledCreatesFile(t *testing.T) {
+func TestEnsureKillCommandCreatesFile(t *testing.T) {
 	home := t.TempDir()
-	changed, err := EnsureKillCommandInstalled(home)
+	changed, err := EnsureKillCommand(home)
 	if err != nil {
-		t.Fatalf("EnsureKillCommandInstalled: %v", err)
+		t.Fatal(err)
 	}
 	if !changed {
-		t.Fatal("expected changed=true for a brand-new install")
+		t.Fatal("expected changed=true on first install")
 	}
 	data, err := os.ReadFile(filepath.Join(home, ".claude", "commands", "kill.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(data) != killCommand {
-		t.Fatalf("kill.md content = %q, want %q", data, killCommand)
+		t.Fatalf("unexpected content: %s", data)
 	}
 }
 
-func TestEnsureKillCommandInstalledSkipsNoopWrite(t *testing.T) {
+func TestEnsureKillCommandIsIdempotent(t *testing.T) {
 	home := t.TempDir()
-	if _, err := EnsureKillCommandInstalled(home); err != nil {
-		t.Fatalf("first EnsureKillCommandInstalled: %v", err)
+	if _, err := EnsureKillCommand(home); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := EnsureKillCommand(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Fatal("second install should be a no-op")
+	}
+}
+
+func TestEnsureKillCommandSkipsNoopWrite(t *testing.T) {
+	home := t.TempDir()
+	if _, err := EnsureKillCommand(home); err != nil {
+		t.Fatal(err)
 	}
 	path := filepath.Join(home, ".claude", "commands", "kill.md")
 	before, err := os.Stat(path)
@@ -40,11 +54,9 @@ func TestEnsureKillCommandInstalledSkipsNoopWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	changed, err := EnsureKillCommandInstalled(home)
-	if err != nil {
-		t.Fatalf("second EnsureKillCommandInstalled: %v", err)
-	}
-	if changed {
+	if changed, err := EnsureKillCommand(home); err != nil {
+		t.Fatal(err)
+	} else if changed {
 		t.Fatal("expected changed=false for a no-op call")
 	}
 	after, err := os.Stat(path)
@@ -56,7 +68,7 @@ func TestEnsureKillCommandInstalledSkipsNoopWrite(t *testing.T) {
 	}
 }
 
-func TestEnsureKillCommandInstalledOverwritesStaleContent(t *testing.T) {
+func TestEnsureKillCommandOverwritesStaleContent(t *testing.T) {
 	home := t.TempDir()
 	path := filepath.Join(home, ".claude", "commands", "kill.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -66,9 +78,9 @@ func TestEnsureKillCommandInstalledOverwritesStaleContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	changed, err := EnsureKillCommandInstalled(home)
+	changed, err := EnsureKillCommand(home)
 	if err != nil {
-		t.Fatalf("EnsureKillCommandInstalled: %v", err)
+		t.Fatal(err)
 	}
 	if !changed {
 		t.Fatal("expected changed=true when existing content differs")
@@ -78,31 +90,6 @@ func TestEnsureKillCommandInstalledOverwritesStaleContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(data) != killCommand {
-		t.Fatalf("kill.md content = %q, want %q", data, killCommand)
-	}
-}
-
-func TestEnsureAllInstalledInstallsHooksAndCommand(t *testing.T) {
-	home := t.TempDir()
-	changed, err := EnsureAllInstalled(home)
-	if err != nil {
-		t.Fatalf("EnsureAllInstalled: %v", err)
-	}
-	if !changed {
-		t.Fatal("expected changed=true for a brand-new install")
-	}
-	if _, err := os.Stat(filepath.Join(home, ".claude", "settings.json")); err != nil {
-		t.Fatalf("expected settings.json to be installed: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(home, ".claude", "commands", "kill.md")); err != nil {
-		t.Fatalf("expected kill.md to be installed: %v", err)
-	}
-
-	changed, err = EnsureAllInstalled(home)
-	if err != nil {
-		t.Fatalf("second EnsureAllInstalled: %v", err)
-	}
-	if changed {
-		t.Fatal("expected changed=false once both are already installed")
+		t.Fatalf("unexpected content: %s", data)
 	}
 }

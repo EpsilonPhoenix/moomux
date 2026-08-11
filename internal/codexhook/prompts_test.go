@@ -7,28 +7,42 @@ import (
 	"time"
 )
 
-func TestEnsureKillPromptInstalledCreatesFile(t *testing.T) {
+func TestEnsureKillPromptCreatesFile(t *testing.T) {
 	home := t.TempDir()
-	changed, err := EnsureKillPromptInstalled(home)
+	changed, err := EnsureKillPrompt(home)
 	if err != nil {
-		t.Fatalf("EnsureKillPromptInstalled: %v", err)
+		t.Fatal(err)
 	}
 	if !changed {
-		t.Fatal("expected changed=true for a brand-new install")
+		t.Fatal("expected changed=true on first install")
 	}
 	data, err := os.ReadFile(filepath.Join(home, ".codex", "prompts", "kill.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(data) != killPrompt {
-		t.Fatalf("kill.md content = %q, want %q", data, killPrompt)
+		t.Fatalf("unexpected content: %s", data)
 	}
 }
 
-func TestEnsureKillPromptInstalledSkipsNoopWrite(t *testing.T) {
+func TestEnsureKillPromptIsIdempotent(t *testing.T) {
 	home := t.TempDir()
-	if _, err := EnsureKillPromptInstalled(home); err != nil {
-		t.Fatalf("first EnsureKillPromptInstalled: %v", err)
+	if _, err := EnsureKillPrompt(home); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := EnsureKillPrompt(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Fatal("second install should be a no-op")
+	}
+}
+
+func TestEnsureKillPromptSkipsNoopWrite(t *testing.T) {
+	home := t.TempDir()
+	if _, err := EnsureKillPrompt(home); err != nil {
+		t.Fatal(err)
 	}
 	path := filepath.Join(home, ".codex", "prompts", "kill.md")
 	before, err := os.Stat(path)
@@ -40,11 +54,9 @@ func TestEnsureKillPromptInstalledSkipsNoopWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	changed, err := EnsureKillPromptInstalled(home)
-	if err != nil {
-		t.Fatalf("second EnsureKillPromptInstalled: %v", err)
-	}
-	if changed {
+	if changed, err := EnsureKillPrompt(home); err != nil {
+		t.Fatal(err)
+	} else if changed {
 		t.Fatal("expected changed=false for a no-op call")
 	}
 	after, err := os.Stat(path)
@@ -56,7 +68,7 @@ func TestEnsureKillPromptInstalledSkipsNoopWrite(t *testing.T) {
 	}
 }
 
-func TestEnsureKillPromptInstalledOverwritesStaleContent(t *testing.T) {
+func TestEnsureKillPromptOverwritesStaleContent(t *testing.T) {
 	home := t.TempDir()
 	path := filepath.Join(home, ".codex", "prompts", "kill.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -66,9 +78,9 @@ func TestEnsureKillPromptInstalledOverwritesStaleContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	changed, err := EnsureKillPromptInstalled(home)
+	changed, err := EnsureKillPrompt(home)
 	if err != nil {
-		t.Fatalf("EnsureKillPromptInstalled: %v", err)
+		t.Fatal(err)
 	}
 	if !changed {
 		t.Fatal("expected changed=true when existing content differs")
@@ -78,31 +90,6 @@ func TestEnsureKillPromptInstalledOverwritesStaleContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(data) != killPrompt {
-		t.Fatalf("kill.md content = %q, want %q", data, killPrompt)
-	}
-}
-
-func TestEnsureAllInstalledInstallsHooksAndPrompt(t *testing.T) {
-	home := t.TempDir()
-	changed, err := EnsureAllInstalled(home)
-	if err != nil {
-		t.Fatalf("EnsureAllInstalled: %v", err)
-	}
-	if !changed {
-		t.Fatal("expected changed=true for a brand-new install")
-	}
-	if _, err := os.Stat(filepath.Join(home, ".codex", "hooks.json")); err != nil {
-		t.Fatalf("expected hooks.json to be installed: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(home, ".codex", "prompts", "kill.md")); err != nil {
-		t.Fatalf("expected kill.md to be installed: %v", err)
-	}
-
-	changed, err = EnsureAllInstalled(home)
-	if err != nil {
-		t.Fatalf("second EnsureAllInstalled: %v", err)
-	}
-	if changed {
-		t.Fatal("expected changed=false once both are already installed")
+		t.Fatalf("unexpected content: %s", data)
 	}
 }
