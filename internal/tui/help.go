@@ -151,5 +151,9 @@ func (m *Model) renderHelp() string {
 	b.WriteString(hintStyle.Width(tableWidth).Render(
 		"tip: /kill inside a Claude or Codex session parks it too, same as x",
 	))
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Width(tableWidth).Render(
+		"tip: run /tag inside Claude Code or Codex to tag this session's PR (and ticket) without leaving the agent",
+	))
 	return b.String()
 }
