@@ -556,6 +556,23 @@ func (a *App) SetSessionTags(id, ticket, pr string) (session.Session, error) {
 	return s, nil
 }
 
+// SessionForPath finds the session whose worktree is path or an ancestor of
+// path, letting `moomux tag` identify "the session we're in" from the
+// caller's cwd without needing an explicit session ID.
+func (a *App) SessionForPath(path string) (session.Session, bool) {
+	path = filepath.Clean(path)
+	for _, s := range a.Store.All() {
+		wt := filepath.Clean(s.WorktreePath)
+		if path == wt {
+			return s, true
+		}
+		if rel, err := filepath.Rel(wt, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return s, true
+		}
+	}
+	return session.Session{}, false
+}
+
 func (a *App) SetSessionPrompt(id, prompt string) (session.Session, error) {
 	s, ok := a.Store.Get(id)
 	if !ok {

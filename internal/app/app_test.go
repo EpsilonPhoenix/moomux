@@ -1039,6 +1039,25 @@ func TestSetSessionTags(t *testing.T) {
 	}
 }
 
+func TestSessionForPath(t *testing.T) {
+	a, _, _, _ := newTestApp(t, gitProject("/repo"))
+	wt := filepath.Join(a.WorktreeRoot, "a")
+	_ = a.Store.Put(session.Session{ID: "demo:a", Project: "demo", Name: "a", WorktreePath: wt})
+
+	if s, ok := a.SessionForPath(wt); !ok || s.ID != "demo:a" {
+		t.Fatalf("exact match: s=%+v ok=%v", s, ok)
+	}
+	if s, ok := a.SessionForPath(filepath.Join(wt, "sub", "dir")); !ok || s.ID != "demo:a" {
+		t.Fatalf("subdirectory match: s=%+v ok=%v", s, ok)
+	}
+	if _, ok := a.SessionForPath(filepath.Join(a.WorktreeRoot, "b")); ok {
+		t.Fatal("sibling worktree must not match")
+	}
+	if _, ok := a.SessionForPath(filepath.Dir(a.WorktreeRoot)); ok {
+		t.Fatal("worktree's own parent must not match")
+	}
+}
+
 func TestSetSessionArchived(t *testing.T) {
 	a, _, _, _ := newTestApp(t, gitProject("/repo"))
 	_ = a.Store.Put(session.Session{ID: "demo:a", Project: "demo", Name: "a"})
