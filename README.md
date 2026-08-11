@@ -175,9 +175,11 @@ Keys: `?` help (full command list) · `n` new · `enter` open · `x` park · `d`
 
 Press `?` at any time on the list screen to open a command palette with every keybinding grouped by category, so you don't have to memorize the footer.
 
-### Parking a session from inside Claude
+### Parking a session from inside Claude or Codex
 
-Every Claude Code session moomux opens gets a personal `/kill` slash command installed automatically (`~/.claude/commands/kill.md`) — say `/kill` in the chat itself and it parks that session (stops its tmux session, closes its terminal tab) without switching back to the moomux list. Despite the name it's the same as pressing `x`, not `d`: the worktree, branch, and moomux list entry are kept, so the session can be reopened later. Claude Code only for now — codex/opencode sessions still use `x` from the list.
+Every Claude Code or Codex session moomux opens gets a personal `/kill` command installed automatically (`~/.claude/commands/kill.md`, or `~/.codex/prompts/kill.md`) — say `/kill` in the chat itself and it parks that session (stops its tmux session, closes its terminal tab) without switching back to the moomux list. Despite the name it's the same as pressing `x`, not `d`: the worktree, branch, and moomux list entry are kept, so the session can be reopened later.
+
+Codex may invoke it as `/prompts:kill` instead of `/kill`, and requires restarting the session once after the prompt is first installed (or after a moomux upgrade changes it) before it shows up — type `/` to see what's actually available. Codex's custom prompts are also plain text, not an executed command: it hands Codex an instruction to run `moomux park` rather than running it directly the way Claude Code's version does, so it depends on Codex actually following through. opencode sessions have no equivalent yet — use `x` from the list.
 
 The chorded keys have plain-letter alternates for keyboards that can't send modifier+special-key chords (mobile terminal clients, terminals without `extended-keys`): `K`/`J` reorder session, `H`/`L` reorder project, `[`/`]` switch project.
 

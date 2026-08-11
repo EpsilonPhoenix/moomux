@@ -149,7 +149,7 @@ func (m *Model) renderHelp() string {
 	b.WriteString(lipgloss.JoinVertical(lipgloss.Left, rows...))
 	b.WriteString("\n\n")
 	b.WriteString(hintStyle.Width(tableWidth).Render(
-		"tip: add mouse/passthrough settings to ~/.tmux.conf for the best experience — see the README's \"Recommended tmux config\"",
+		"tip: /kill inside a Claude or Codex session parks it too, same as x",
 	))
 	return b.String()
 }

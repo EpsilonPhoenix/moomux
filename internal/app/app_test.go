@@ -391,6 +391,9 @@ func TestCreateSessionInstallsCodexHooks(t *testing.T) {
 	if !strings.Contains(string(data), "moomux hook codex set") || !strings.Contains(string(data), "moomux hook codex clear") {
 		t.Fatalf("hooks.json missing moomux hooks: %s", data)
 	}
+	if _, err := os.Stat(filepath.Join(home, ".codex", "prompts", "kill.md")); err != nil {
+		t.Fatalf("expected ~/.codex/prompts/kill.md to be written: %v", err)
+	}
 }
 
 func TestCreateSessionDangerousAppendsAgentFlag(t *testing.T) {
@@ -677,16 +680,17 @@ func TestCreateSessionErrors(t *testing.T) {
 
 func TestOpenSessionAlive(t *testing.T) {
 	a, _, tm, term := newTestApp(t, gitProject("/repo"))
-	// codexhook.EnsureHooks (invoked via repairNeedsInputHooks, since this
-	// session's agent is codex) installs into the real os.UserHomeDir() by
-	// design (see its doc comment) — newTestApp already sandboxes HOME.
-	// Pre-install codex's hooks so repairNeedsInputHooks's call is a no-op
+	// codexhook.EnsureAllInstalled (invoked via repairNeedsInputHooks, since
+	// this session's agent is codex) installs into the real
+	// os.UserHomeDir() by design (see its doc comment) — newTestApp already
+	// sandboxes HOME. Pre-install both of codex's pieces (hooks.json and the
+	// /kill prompt) so repairNeedsInputHooks's call is a no-op
 	// (changed=false): this test is about alive-session reuse behavior, not
 	// about the hooks-hint text (covered by TestOpenSessionRepairsMissingCodexHooks),
 	// so this keeps its hint assertion focused on what OpenSession actually
 	// returned for terminal reuse.
 	home, _ := os.UserHomeDir()
-	if _, err := codexhook.EnsureHooks(home); err != nil {
+	if _, err := codexhook.EnsureAllInstalled(home); err != nil {
 		t.Fatal(err)
 	}
 
@@ -885,6 +889,9 @@ func TestOpenSessionRepairsMissingCodexHooks(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "moomux hook codex set") {
 		t.Fatalf("hooks.json missing moomux hooks: %s", data)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".codex", "prompts", "kill.md")); err != nil {
+		t.Fatalf("expected OpenSession to also backfill ~/.codex/prompts/kill.md: %v", err)
 	}
 }
 

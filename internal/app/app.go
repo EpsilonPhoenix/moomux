@@ -84,7 +84,7 @@ func buildAgentCmd(agent string, dangerous bool) string {
 // doc comments for why).
 var needsInputInstallers = map[string]func(home string) (changed bool, err error){
 	"claude": claudehook.EnsureAllInstalled,
-	"codex":  codexhook.EnsureHooks,
+	"codex":  codexhook.EnsureAllInstalled,
 }
 
 func validateAgent(agent string) error {
@@ -646,21 +646,24 @@ func (a *App) repairNeedsInputHooks(s session.Session) string {
 	return codexHooksHint(s.AgentName())
 }
 
-// codexHooksHint returns a message telling the user how to activate the
-// codex hooks that were just installed or changed, or "" if agent isn't
-// codex. Codex requires an explicit `/hooks` review before it will run a new
-// or changed hook entry (trust is keyed by the file's path and per-entry
-// content hash — see codexhook.EnsureHooks's doc comment) — without this
-// nudge, needs-input would silently never activate for the new/changed
-// entry and there'd be no indication why. Callers only call this when
-// needsInputInstallers reported changed=true, so it naturally re-fires
-// whenever a future moomux release adds another hook event, not just once
-// ever.
+// codexHooksHint returns a message telling the user how to activate
+// whatever codexhook.EnsureAllInstalled just installed or changed, or "" if
+// agent isn't codex. It covers two independent things that share one
+// changed bool (see EnsureAllInstalled): needs-input hooks, which require
+// an explicit `/hooks` review before Codex will run a new or changed entry
+// (trust is keyed by the file's path and per-entry content hash — see
+// codexhook.EnsureHooks's doc comment); and the /kill custom prompt, which
+// instead needs a session restart to be picked up (per
+// developers.openai.com/codex/custom-prompts). Worded to cover both since
+// the bool alone doesn't say which one actually changed. Callers only call
+// this when needsInputInstallers reported changed=true, so it naturally
+// re-fires whenever a future moomux release adds another hook event or
+// changes the prompt, not just once ever.
 func codexHooksHint(agent string) string {
 	if agent != "codex" {
 		return ""
 	}
-	return "Codex needs-input hooks were installed/updated in ~/.codex/hooks.json — run /hooks inside Codex once to trust them"
+	return "Codex integration was installed/updated in ~/.codex — run /hooks inside Codex once to trust any new hooks, and restart the session to pick up the /kill prompt"
 }
 
 // joinHints combines two non-empty hint strings for display, e.g. a
