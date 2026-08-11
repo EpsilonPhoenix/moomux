@@ -1,5 +1,7 @@
 package tui
 
+import "github.com/erickgnclvs/moomux/internal/watcher"
+
 var quipsWorking = []string{
 	"udderly focused",
 	"milking this for progress",
@@ -24,6 +26,35 @@ var quipsParked = []string{
 	"chewing the cud, nothing to see",
 	"herd nothing, seen nothing",
 	"mootering off for now",
+}
+
+// quipPool returns the quip pool matching a session's state.
+func quipPool(st watcher.State) []string {
+	switch st {
+	case watcher.Working:
+		return quipsWorking
+	case watcher.Done:
+		return quipsDone
+	case watcher.NeedsInput:
+		return quipsNeedsInput
+	default:
+		return quipsParked
+	}
+}
+
+// stateEyes returns the cow's eyes for a session's state, used by both the
+// header cow and the detail panel's cowsay.
+func stateEyes(st watcher.State) string {
+	switch st {
+	case watcher.Working:
+		return "**"
+	case watcher.Done:
+		return "oo"
+	case watcher.NeedsInput:
+		return "!!"
+	default:
+		return "--"
+	}
 }
 
 func pickQuip(sessionID string, pool []string) string {

@@ -37,7 +37,6 @@ func parseFile(path string) (rawSession, error) {
 	return rs, nil
 }
 
-// classify maps a rawSession to a State.
 func classify(rs rawSession) State {
 	if rs.Busy != nil {
 		if *rs.Busy {

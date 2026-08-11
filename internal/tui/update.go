@@ -929,10 +929,12 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return SessionCreatedMsg{Session: s, Hint: hint}
 		}
 	}
+	// Any other focus is a selector or toggle row, with no text input to type
+	// into.
 	var cmd tea.Cmd
 	switch m.newFormFocus {
-	case newFormProjFocus:
-		// selector row: no text input to type into
+	case 1:
+		m.nameInput, cmd = m.nameInput.Update(msg)
 	case 2:
 		m.branchInput, cmd = m.branchInput.Update(msg)
 	case 3:
@@ -941,16 +943,6 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ticketInput, cmd = m.ticketInput.Update(msg)
 	case 5:
 		m.prInput, cmd = m.prInput.Update(msg)
-	case newFormAgentFocus:
-		// selector row: no text input to type into
-	case newFormDangerousFocus:
-		// toggle row: no text input to type into
-	case newFormOpenTerminalFocus:
-		// toggle row: no text input to type into
-	case newFormAutoSubmitFocus:
-		// toggle row: no text input to type into
-	default:
-		m.nameInput, cmd = m.nameInput.Update(msg)
 	}
 	return m, cmd
 }
@@ -999,10 +991,12 @@ func (m *Model) newFormBlurAll() {
 	m.promptInput.Blur()
 }
 
+// newFormFocusInput focuses the text input at the current focus, if any — the
+// selector and toggle rows have nothing to focus.
 func (m *Model) newFormFocusInput() {
 	switch m.newFormFocus {
-	case newFormProjFocus:
-		// selector row: nothing to focus
+	case 1:
+		m.nameInput.Focus()
 	case 2:
 		m.branchInput.Focus()
 	case 3:
@@ -1011,16 +1005,6 @@ func (m *Model) newFormFocusInput() {
 		m.ticketInput.Focus()
 	case 5:
 		m.prInput.Focus()
-	case newFormAgentFocus:
-		// selector row: nothing to focus
-	case newFormDangerousFocus:
-		// toggle row: nothing to focus
-	case newFormOpenTerminalFocus:
-		// toggle row: nothing to focus
-	case newFormAutoSubmitFocus:
-		// toggle row: nothing to focus
-	default:
-		m.nameInput.Focus()
 	}
 }
 
@@ -1092,6 +1076,27 @@ func cycleProjectAgentIdx(idx, delta int) int {
 	return pos
 }
 
+// adjustProjFormField steers the project form's non-text control at the
+// current focus by delta (emoji/agent selectors cycle; the dangerous and
+// worktree toggles just flip either way), and reports whether focus was on
+// one of them at all — false means ←/→ belongs to a text input's cursor.
+// Shared by the add- and edit-project forms, which drive identical controls.
+func (m *Model) adjustProjFormField(delta int) bool {
+	switch m.projForm.focus {
+	case projFormInputCount:
+		m.projForm.emojiIdx = cycleProjectEmojiIdx(m.projForm.emojiChoices, m.projForm.emojiIdx, delta)
+	case projFormInputCount + 1:
+		m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, delta)
+	case projFormInputCount + 2:
+		m.projForm.dangerous = !m.projForm.dangerous
+	case projFormInputCount + 3:
+		m.projForm.noWorktree = !m.projForm.noWorktree
+	default:
+		return false
+	}
+	return true
+}
+
 // projectAgentFields returns the Agent, Dangerous and PromptAgent values a
 // submitted project form should store, given its agentIdx (possibly
 // askAgentIdx) and its independent dangerous toggle.
@@ -1118,33 +1123,11 @@ func (m *Model) updateNewProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cycleFormFocus(m.projForm.inputs, &m.projForm.focus, totalFields, false)
 		return m, nil
 	case key.Matches(msg, m.keys.Left):
-		switch m.projForm.focus {
-		case projFormInputCount:
-			m.projForm.emojiIdx = cycleProjectEmojiIdx(m.projForm.emojiChoices, m.projForm.emojiIdx, -1)
-			return m, nil
-		case projFormInputCount + 1:
-			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, -1)
-			return m, nil
-		case projFormInputCount + 2:
-			m.projForm.dangerous = !m.projForm.dangerous
-			return m, nil
-		case projFormInputCount + 3:
-			m.projForm.noWorktree = !m.projForm.noWorktree
+		if m.adjustProjFormField(-1) {
 			return m, nil
 		}
 	case key.Matches(msg, m.keys.Right):
-		switch m.projForm.focus {
-		case projFormInputCount:
-			m.projForm.emojiIdx = cycleProjectEmojiIdx(m.projForm.emojiChoices, m.projForm.emojiIdx, 1)
-			return m, nil
-		case projFormInputCount + 1:
-			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, 1)
-			return m, nil
-		case projFormInputCount + 2:
-			m.projForm.dangerous = !m.projForm.dangerous
-			return m, nil
-		case projFormInputCount + 3:
-			m.projForm.noWorktree = !m.projForm.noWorktree
+		if m.adjustProjFormField(1) {
 			return m, nil
 		}
 	case key.Matches(msg, m.keys.Enter):
@@ -1265,28 +1248,10 @@ func (m *Model) updateEditProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cycleEditProjectFocus(false)
 		return m, nil
 	case key.Matches(msg, m.keys.Left):
-		switch m.projForm.focus {
-		case projFormInputCount:
-			m.projForm.emojiIdx = cycleProjectEmojiIdx(m.projForm.emojiChoices, m.projForm.emojiIdx, -1)
-		case projFormInputCount + 1:
-			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, -1)
-		case projFormInputCount + 2:
-			m.projForm.dangerous = !m.projForm.dangerous
-		case projFormInputCount + 3:
-			m.projForm.noWorktree = !m.projForm.noWorktree
-		}
+		m.adjustProjFormField(-1)
 		return m, nil
 	case key.Matches(msg, m.keys.Right):
-		switch m.projForm.focus {
-		case projFormInputCount:
-			m.projForm.emojiIdx = cycleProjectEmojiIdx(m.projForm.emojiChoices, m.projForm.emojiIdx, 1)
-		case projFormInputCount + 1:
-			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, 1)
-		case projFormInputCount + 2:
-			m.projForm.dangerous = !m.projForm.dangerous
-		case projFormInputCount + 3:
-			m.projForm.noWorktree = !m.projForm.noWorktree
-		}
+		m.adjustProjFormField(1)
 		return m, nil
 	case key.Matches(msg, m.keys.Enter):
 		project.Repo = m.projForm.inputs[1].Value()

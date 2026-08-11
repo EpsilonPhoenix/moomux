@@ -70,40 +70,72 @@ func buildAgentCmd(agent string, dangerous bool) string {
 	return cmd
 }
 
-// needsInputInstallers maps an agent name to the function that wires its
-// "needs input" hooks into the user's global config. Agents with no entry
-// here (opencode) don't support the needs-input state yet — add a sibling
-// package and a map entry to bring one in. changed reports whether the call
-// actually wrote something new (see codexHooksHint).
+// agentInstallers are the per-agent writers that wire moomux's integrations
+// into the user's global agent config: the "needs input" hooks, and the /kill
+// and /tag custom commands (so any session can park or tag itself without
+// leaving the agent). Each maps an agent name to its installer; an agent with
+// no entry (opencode, everywhere) doesn't support that integration yet — add a
+// sibling package and a map entry to bring one in. changed reports whether the
+// call actually wrote something new (see codexHooksHint).
 //
-// Both installers are global rather than per-worktree/per-project: each
-// agent's own trust model would otherwise force re-approving hooks on every
-// new worktree (see claudehook.EnsureHooksInstalled and codexhook.EnsureHooks
-// doc comments for why).
-var needsInputInstallers = map[string]func(home string) (changed bool, err error){
-	"claude": claudehook.EnsureHooksInstalled,
-	"codex":  codexhook.EnsureHooks,
+// All of them are global rather than per-worktree/per-project: each agent's
+// own trust model would otherwise force re-approving hooks — or
+// re-discovering commands — on every new worktree (see
+// claudehook.EnsureHooksInstalled and codexhook.EnsureHooks for why).
+var agentInstallers = []struct {
+	what string
+	// hintOnChange marks the entry whose changed=true produces the user-facing
+	// activation hint (see codexHooksHint); the custom commands need no
+	// trust/review step, so they have nothing to say.
+	hintOnChange bool
+	byAgent      map[string]func(home string) (changed bool, err error)
+}{
+	{"needs-input hook", true, map[string]func(string) (bool, error){
+		"claude": claudehook.EnsureHooksInstalled,
+		"codex":  codexhook.EnsureHooks,
+	}},
+	{"kill command", false, map[string]func(string) (bool, error){
+		"claude": claudehook.EnsureKillCommand,
+		"codex":  codexhook.EnsureKillPrompt,
+	}},
+	{"tag command", false, map[string]func(string) (bool, error){
+		"claude": claudehook.EnsureTagCommand,
+		"codex":  codexhook.EnsureTagPrompt,
+	}},
 }
 
-// killCommandInstallers maps an agent name to the function that installs
-// its /kill custom command/prompt into the user's global config, so any
-// session can run /kill to park itself (stop tmux, close its tab) without
-// leaving the agent. Global for the same reason as needsInputInstallers: a
-// per-worktree file would mean re-approving or re-discovering it on every
-// new worktree.
-var killCommandInstallers = map[string]func(home string) (changed bool, err error){
-	"claude": claudehook.EnsureKillCommand,
-	"codex":  codexhook.EnsureKillPrompt,
-}
-
-// tagCommandInstallers maps an agent name to the function that installs its
-// /tag custom command/prompt into the user's global config, so any session
-// can run /tag to tag its own PR (and ticket) without leaving the agent.
-// Global for the same reason as needsInputInstallers: a per-worktree file
-// would mean re-approving or re-discovering it on every new worktree.
-var tagCommandInstallers = map[string]func(home string) (changed bool, err error){
-	"claude": claudehook.EnsureTagCommand,
-	"codex":  codexhook.EnsureTagPrompt,
+// installAgentSupport runs every agentInstallers entry that applies to agent,
+// returning a hint (see codexHooksHint) if that changed something worth
+// telling the user about. Every installer is idempotent, so this runs on
+// session create *and* every open — that's what backfills sessions made
+// before a given integration (or a newer hook event) existed, and a failure
+// only warns rather than blocking the session.
+//
+// Deliberately not gated on the project using worktrees: every installer
+// ignores the worktree path and writes to a fixed global location, so a
+// plain/no-worktree project deserves them just as much as a worktree one.
+func installAgentSupport(agent string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		slog.Warn("agent support install failed", "agent", agent, "err", err)
+		return ""
+	}
+	hint := ""
+	for _, entry := range agentInstallers {
+		install, ok := entry.byAgent[agent]
+		if !ok {
+			continue
+		}
+		changed, err := install(home)
+		if err != nil {
+			slog.Warn(entry.what+" install failed", "agent", agent, "err", err)
+			continue
+		}
+		if changed && entry.hintOnChange {
+			hint = codexHooksHint(agent)
+		}
+	}
+	return hint
 }
 
 func validateAgent(agent string) error {
@@ -336,35 +368,7 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string,
 		}
 		slog.Info("worktree added", "path", wt, "branch", branch)
 	}
-	// Not gated on proj.UsesWorktree(): both installers ignore the worktree
-	// path entirely (see needsInputInstallers's doc comment) and write to a
-	// fixed global location, so a plain/no-worktree project deserves it just
-	// as much as a worktree one.
-	hooksHint := ""
-	if install, ok := needsInputInstallers[agent]; ok {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			slog.Warn("needs-input hook install failed", "agent", agent, "err", err)
-		} else if changed, err := install(home); err != nil {
-			slog.Warn("needs-input hook install failed", "agent", agent, "err", err)
-		} else if changed {
-			hooksHint = codexHooksHint(agent)
-		}
-	}
-	if install, ok := killCommandInstallers[agent]; ok {
-		if home, err := os.UserHomeDir(); err != nil {
-			slog.Warn("kill command install failed", "agent", agent, "err", err)
-		} else if _, err := install(home); err != nil {
-			slog.Warn("kill command install failed", "agent", agent, "err", err)
-		}
-	}
-	if install, ok := tagCommandInstallers[agent]; ok {
-		if home, err := os.UserHomeDir(); err != nil {
-			slog.Warn("tag command install failed", "agent", agent, "err", err)
-		} else if _, err := install(home); err != nil {
-			slog.Warn("tag command install failed", "agent", agent, "err", err)
-		}
-	}
+	hooksHint := installAgentSupport(agent)
 	if agent == "claude" {
 		if home, err := os.UserHomeDir(); err != nil {
 			slog.Warn("claude trust write failed", "err", err)
@@ -650,84 +654,14 @@ func (a *App) SetSessionArchived(id string, archived bool) (session.Session, err
 	return a.Store.SetArchived(id, archived)
 }
 
-// repairNeedsInputHooks backfills a session's needs-input hooks on open, for
-// sessions created before this feature existed (or before its agent got an
-// entry in needsInputInstallers, or before a newer moomux build added a hook
-// event an older one didn't install). Each installer is idempotent, so
-// running this on every open is cheap and safe. Not gated on the project
-// using worktrees — both installers ignore the worktree path and write to a
-// fixed global location (see needsInputInstallers), so a plain-project
-// session deserves the repair just as much as a worktree one. Returns a hint
-// (see codexHooksHint) if this call is what just installed or changed
-// codex's hooks, or "" otherwise.
-func (a *App) repairNeedsInputHooks(s session.Session) string {
+// repairAgentSupport re-runs s's agent installers on open, backfilling
+// sessions created before a given integration existed. See
+// installAgentSupport — this only adds the "still a known project" guard.
+func (a *App) repairAgentSupport(s session.Session) string {
 	if _, ok := a.Cfg.Projects[s.Project]; !ok {
 		return ""
 	}
-	install, ok := needsInputInstallers[s.AgentName()]
-	if !ok {
-		return ""
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		slog.Warn("needs-input hook repair failed", "agent", s.AgentName(), "err", err)
-		return ""
-	}
-	changed, err := install(home)
-	if err != nil {
-		slog.Warn("needs-input hook repair failed", "agent", s.AgentName(), "err", err)
-		return ""
-	}
-	if !changed {
-		return ""
-	}
-	return codexHooksHint(s.AgentName())
-}
-
-// repairKillCommand backfills a session's /kill command/prompt on open, for
-// sessions created before this feature existed. Like repairNeedsInputHooks,
-// each installer is idempotent, so running this on every open is cheap and
-// safe. Unlike repairNeedsInputHooks, there's no hint to return — neither
-// agent requires a trust/review step before a custom command takes effect.
-func (a *App) repairKillCommand(s session.Session) {
-	if _, ok := a.Cfg.Projects[s.Project]; !ok {
-		return
-	}
-	install, ok := killCommandInstallers[s.AgentName()]
-	if !ok {
-		return
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		slog.Warn("kill command repair failed", "agent", s.AgentName(), "err", err)
-		return
-	}
-	if _, err := install(home); err != nil {
-		slog.Warn("kill command repair failed", "agent", s.AgentName(), "err", err)
-	}
-}
-
-// repairTagCommand backfills a session's /tag command/prompt on open, for
-// sessions created before this feature existed. Like repairNeedsInputHooks,
-// each installer is idempotent, so running this on every open is cheap and
-// safe. Unlike repairNeedsInputHooks, there's no hint to return — neither
-// agent requires a trust/review step before a custom command takes effect.
-func (a *App) repairTagCommand(s session.Session) {
-	if _, ok := a.Cfg.Projects[s.Project]; !ok {
-		return
-	}
-	install, ok := tagCommandInstallers[s.AgentName()]
-	if !ok {
-		return
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		slog.Warn("tag command repair failed", "agent", s.AgentName(), "err", err)
-		return
-	}
-	if _, err := install(home); err != nil {
-		slog.Warn("tag command repair failed", "agent", s.AgentName(), "err", err)
-	}
+	return installAgentSupport(s.AgentName())
 }
 
 // codexHooksHint returns a message telling the user how to activate the
@@ -766,9 +700,7 @@ func (a *App) OpenSession(id string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("unknown session %q", id)
 	}
-	hooksHint := a.repairNeedsInputHooks(s)
-	a.repairKillCommand(s)
-	a.repairTagCommand(s)
+	hooksHint := a.repairAgentSupport(s)
 	has, err := a.Tmux.HasSession(s.TmuxSession)
 	slog.Info("open session", "id", id, "tmux_session", s.TmuxSession, "worktree", s.WorktreePath, "tmux_has_session", has)
 	if err != nil {
