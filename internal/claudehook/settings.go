@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"github.com/erickgnclvs/moomux/internal/atomicfile"
 )
 
 // EnsureHooksInstalled merges the Notification/PreToolUse/UserPromptSubmit
@@ -71,43 +73,25 @@ func EnsureHooksInstalled(home string) (changed bool, err error) {
 		// avoids most opportunities for it to observe a half-written file.
 		return false, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return false, err
-	}
 	if err := writeFileAtomic(path, data); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
-// writeFileAtomic writes data via a temp file + rename in path's directory,
-// so a concurrent reader (Claude Code reloading its own hook config) never
-// observes a partially-written file. Preserves the existing file's
-// permission bits rather than hardcoding one — settings.json can carry
-// sensitive env values, and a user who's locked it down to 0600 shouldn't
-// have that silently loosened back to 0644 the next time this runs. A
-// brand-new file defaults to 0600 rather than the more permissive 0644.
+// writeFileAtomic writes data to path atomically (so a concurrent reader —
+// Claude Code reloading its own hook config — never observes a
+// partially-written file), preserving the existing file's permission bits
+// rather than hardcoding one: settings.json can carry sensitive env values,
+// and a user who's locked it down to 0600 shouldn't have that silently
+// loosened back to 0644 the next time this runs. A brand-new file defaults
+// to 0600 rather than the more permissive 0644.
 func writeFileAtomic(path string, data []byte) error {
 	mode := os.FileMode(0o600)
 	if info, err := os.Stat(path); err == nil {
 		mode = info.Mode().Perm()
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".settings-*.json.tmp")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name()) // no-op once the rename below succeeds
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmp.Name(), mode); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return atomicfile.Write(path, data, mode)
 }
 
 // addHook appends a {matcher, hooks:[{type:command,command}]} entry for

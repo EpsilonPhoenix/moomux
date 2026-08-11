@@ -206,6 +206,9 @@ func renderToggle(on, focused bool) string {
 // renderSelector renders a horizontal "[selected]  other  other" choice row,
 // degrading to renderCompactSelector when the full row won't fit available.
 func renderSelector(choices []string, selected int, focused bool, available int) string {
+	if selected < 0 || selected >= len(choices) {
+		return ""
+	}
 	var b strings.Builder
 	for i, c := range choices {
 		if i > 0 {

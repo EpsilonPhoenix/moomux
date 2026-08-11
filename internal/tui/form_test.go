@@ -27,3 +27,24 @@ func TestRenderFormHintPadsShortHintToFixedHeight(t *testing.T) {
 		t.Fatalf("height = %d, want %d (short hint):\n%s", got, formHintLines, rendered)
 	}
 }
+
+// TestRenderSelectorOutOfRangeSelection guards against the compact-fallback
+// path indexing choices[selected] unguarded: on very narrow terminals
+// available goes negative, so the fallback fires even for an empty slice.
+func TestRenderSelectorOutOfRangeSelection(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		choices  []string
+		selected int
+	}{
+		{"empty", nil, 0},
+		{"negative", []string{"a"}, -1},
+		{"past end", []string{"a"}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := renderSelector(tc.choices, tc.selected, true, -5); got != "" {
+				t.Fatalf("renderSelector = %q, want empty", got)
+			}
+		})
+	}
+}

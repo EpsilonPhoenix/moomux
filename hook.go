@@ -39,14 +39,22 @@ func runHook(args []string) error {
 	}
 }
 
-func handleClaudeHook(action string, stdin io.Reader, home string) error {
+func readHookPayload(stdin io.Reader) (hookPayload, error) {
+	var p hookPayload
 	data, err := io.ReadAll(stdin)
 	if err != nil {
-		return fmt.Errorf("read hook payload: %w", err)
+		return p, fmt.Errorf("read hook payload: %w", err)
 	}
-	var p hookPayload
 	if err := json.Unmarshal(data, &p); err != nil {
-		return fmt.Errorf("parse hook payload: %w", err)
+		return p, fmt.Errorf("parse hook payload: %w", err)
+	}
+	return p, nil
+}
+
+func handleClaudeHook(action string, stdin io.Reader, home string) error {
+	p, err := readHookPayload(stdin)
+	if err != nil {
+		return err
 	}
 	if p.SessionID == "" {
 		return fmt.Errorf("hook payload missing session_id")
@@ -61,13 +69,9 @@ func handleClaudeHook(action string, stdin io.Reader, home string) error {
 // cwd (see codexhook.markerPath) rather than a session id, so only cwd is
 // required here.
 func handleCodexHook(action string, stdin io.Reader, home string) error {
-	data, err := io.ReadAll(stdin)
+	p, err := readHookPayload(stdin)
 	if err != nil {
-		return fmt.Errorf("read hook payload: %w", err)
-	}
-	var p hookPayload
-	if err := json.Unmarshal(data, &p); err != nil {
-		return fmt.Errorf("parse hook payload: %w", err)
+		return err
 	}
 	if p.CWD == "" {
 		return fmt.Errorf("hook payload missing cwd")

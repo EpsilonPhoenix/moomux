@@ -225,12 +225,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.refreshSessions()
-		for i, s := range m.sessions {
-			if s.ID == msg.Session.ID {
-				m.cursor = i
-				break
-			}
-		}
+		m.focusSession(msg.Session.ID)
 		delete(m.prompts, msg.Session.ID)
 		m.mode = m.sessionDialogReturn
 		m.setFlash("info", "updated session "+msg.Session.Name)
@@ -242,12 +237,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.refreshSessions()
-		for i, s := range m.sessions {
-			if s.ID == msg.ID {
-				m.cursor = i
-				break
-			}
-		}
+		m.focusSession(msg.ID)
 		return m, nil
 
 	case SessionOpenedMsg:
@@ -275,24 +265,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.projForm.err = msg.Err.Error()
 			return m, nil
-		case "init":
+		case "init", "plain":
+			// Both are answers to the init-choice dialog, so a failure sends
+			// the user back to the form rather than the "add" case's retry
+			// into that dialog.
 			if msg.Err != nil {
 				m.mode = ModeNewProject
 				m.projForm.err = msg.Err.Error()
 				return m, nil
 			}
 			m.activateProject(msg.Name)
-			m.setFlash("info", "initialized git repo + added "+msg.Name)
-			m.finishProjectAdded(msg.Name)
-			return m, nil
-		case "plain":
-			if msg.Err != nil {
-				m.mode = ModeNewProject
-				m.projForm.err = msg.Err.Error()
-				return m, nil
+			if msg.Kind == "init" {
+				m.setFlash("info", "initialized git repo + added "+msg.Name)
+			} else {
+				m.setFlash("info", "added plain (non-git) project "+msg.Name)
 			}
-			m.activateProject(msg.Name)
-			m.setFlash("info", "added plain (non-git) project "+msg.Name)
 			m.finishProjectAdded(msg.Name)
 			return m, nil
 		}
@@ -501,43 +488,19 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(msg, m.keys.MoveUp):
 		if len(m.sessions) > 0 && m.cursor > 0 {
-			id := m.sessions[m.cursor].ID
-			return m, func() tea.Msg {
-				if err := m.backend.MoveSession(id, -1); err != nil {
-					return SessionMovedMsg{ID: id, Err: err}
-				}
-				return SessionMovedMsg{ID: id}
-			}
+			return m, m.moveSessionCmd(m.sessions[m.cursor].ID, -1)
 		}
 	case key.Matches(msg, m.keys.MoveDown):
 		if len(m.sessions) > 0 && m.cursor < len(m.sessions)-1 {
-			id := m.sessions[m.cursor].ID
-			return m, func() tea.Msg {
-				if err := m.backend.MoveSession(id, 1); err != nil {
-					return SessionMovedMsg{ID: id, Err: err}
-				}
-				return SessionMovedMsg{ID: id}
-			}
+			return m, m.moveSessionCmd(m.sessions[m.cursor].ID, 1)
 		}
 	case key.Matches(msg, m.keys.MoveProjLeft):
 		if len(m.projects) > 0 && m.activeProj > 0 {
-			name := m.projects[m.activeProj]
-			return m, func() tea.Msg {
-				if err := m.backend.MoveProject(name, -1); err != nil {
-					return ProjectMovedMsg{Name: name, Err: err}
-				}
-				return ProjectMovedMsg{Name: name}
-			}
+			return m, m.moveProjectCmd(m.projects[m.activeProj], -1)
 		}
 	case key.Matches(msg, m.keys.MoveProjRight):
 		if len(m.projects) > 0 && m.activeProj < len(m.projects)-1 {
-			name := m.projects[m.activeProj]
-			return m, func() tea.Msg {
-				if err := m.backend.MoveProject(name, 1); err != nil {
-					return ProjectMovedMsg{Name: name, Err: err}
-				}
-				return ProjectMovedMsg{Name: name}
-			}
+			return m, m.moveProjectCmd(m.projects[m.activeProj], 1)
 		}
 	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.NextProject):
 		m.switchProject(1)
@@ -619,10 +582,8 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			id := m.sessions[m.cursor].ID
 			archive := !m.showArchived
 			return m, func() tea.Msg {
-				if _, err := m.backend.SetSessionArchived(id, archive); err != nil {
-					return SessionArchivedMsg{ID: id, Archived: archive, Err: err}
-				}
-				return SessionArchivedMsg{ID: id, Archived: archive}
+				_, err := m.backend.SetSessionArchived(id, archive)
+				return SessionArchivedMsg{ID: id, Archived: archive, Err: err}
 			}
 		}
 	case key.Matches(msg, m.keys.ShowArchived):
@@ -756,18 +717,24 @@ func (m *Model) handleListMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		// over Moshi, etc.) have no keyboard focus to move a cursor with
 		// first.
 		if id, ok := m.sessionRowAt(msg.X, msg.Y); ok {
-			for i, s := range m.sessions {
-				if s.ID == id {
-					m.cursor = i
-					break
-				}
-			}
+			m.focusSession(id)
 			sync()
 			return m, m.openSessionCmd(id)
 		}
 	}
 	sync()
 	return m, nil
+}
+
+// moveSessionCmd and moveProjectCmd persist a reorder off the event loop.
+// A nil Err on the resulting msg is the success case, so the backend call's
+// error goes straight into the field rather than being branched on here.
+func (m *Model) moveSessionCmd(id string, delta int) tea.Cmd {
+	return func() tea.Msg { return SessionMovedMsg{ID: id, Err: m.backend.MoveSession(id, delta)} }
+}
+
+func (m *Model) moveProjectCmd(name string, delta int) tea.Cmd {
+	return func() tea.Msg { return ProjectMovedMsg{Name: name, Err: m.backend.MoveProject(name, delta)} }
 }
 
 // openSessionCmd returns a Cmd that opens/attaches the given session,
@@ -1413,23 +1380,11 @@ func (m *Model) updateProjectPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// session list, not the header's horizontal tabs.
 	case key.Matches(msg, m.keys.MoveUp):
 		if len(m.projects) > 0 && m.pickerCursor > 0 {
-			name := m.projects[m.pickerCursor]
-			return m, func() tea.Msg {
-				if err := m.backend.MoveProject(name, -1); err != nil {
-					return ProjectMovedMsg{Name: name, Err: err}
-				}
-				return ProjectMovedMsg{Name: name}
-			}
+			return m, m.moveProjectCmd(m.projects[m.pickerCursor], -1)
 		}
 	case key.Matches(msg, m.keys.MoveDown):
 		if len(m.projects) > 0 && m.pickerCursor < len(m.projects)-1 {
-			name := m.projects[m.pickerCursor]
-			return m, func() tea.Msg {
-				if err := m.backend.MoveProject(name, 1); err != nil {
-					return ProjectMovedMsg{Name: name, Err: err}
-				}
-				return ProjectMovedMsg{Name: name}
-			}
+			return m, m.moveProjectCmd(m.projects[m.pickerCursor], 1)
 		}
 	// d rather than the main list's D (capitalized there to stay distinct
 	// from the session-level d shown on the same screen) — the picker only

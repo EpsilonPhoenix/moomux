@@ -288,12 +288,7 @@ func (m *Model) enterSingleProjectContext(proj string) bool {
 	m.activeProj = projIdx
 	m.refreshSessions()
 	if focusedID != "" {
-		for i, s := range m.sessions {
-			if s.ID == focusedID {
-				m.cursor = i
-				break
-			}
-		}
+		m.focusSession(focusedID)
 	}
 	return true
 }

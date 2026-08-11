@@ -865,6 +865,18 @@ func (m *Model) archivedCount() int {
 	return n
 }
 
+// focusSession moves the cursor onto id, if it's in the current list. A
+// no-op otherwise, which is what callers want after a refresh that may have
+// filtered the session out (archived, deleted, or now in another project).
+func (m *Model) focusSession(id string) {
+	for i, s := range m.sessions {
+		if s.ID == id {
+			m.cursor = i
+			return
+		}
+	}
+}
+
 func (m *Model) refreshSessions() {
 	if len(m.projects) == 0 {
 		m.sessions = nil
@@ -891,12 +903,7 @@ func (m *Model) refreshSessions() {
 	m.sessions = out
 
 	if selectedID != "" {
-		for i, s := range m.sessions {
-			if s.ID == selectedID {
-				m.cursor = i
-				break
-			}
-		}
+		m.focusSession(selectedID)
 	}
 	if m.cursor >= len(m.sessions) {
 		if len(m.sessions) == 0 {
