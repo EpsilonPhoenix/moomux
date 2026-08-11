@@ -62,17 +62,9 @@ func (m *Model) renderList(width, height int) (string, []linkHit, []rowHit) {
 	if visible < 1 {
 		visible = 1
 	}
-	if m.cursor != m.lastScrollCursor {
-		m.lastScrollCursor = m.cursor
-		m.scrollLocked = false
-	}
 	start := 0
 	if len(m.sessions) > visible {
-		if m.scrollLocked {
-			start = m.scrollTop
-		} else {
-			start = m.cursor - visible/2
-		}
+		start = m.cursor - visible/2
 		if start < 0 {
 			start = 0
 		}
@@ -80,7 +72,6 @@ func (m *Model) renderList(width, height int) (string, []linkHit, []rowHit) {
 			start = max
 		}
 	}
-	m.scrollTop = start
 	end := start + visible
 	if end > len(m.sessions) {
 		end = len(m.sessions)
