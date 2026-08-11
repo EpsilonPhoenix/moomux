@@ -149,10 +149,22 @@ func (c *Client) IsWorktreeClean(worktreePath string) (bool, error) {
 }
 
 // HasUnpushedCommits reports whether worktreePath's checked-out branch has
-// commits its upstream doesn't — including having no upstream configured at
-// all, since nothing has been pushed in that case either.
+// commits its upstream doesn't. A branch that never had an upstream counts
+// as unpushed, since nothing has been pushed at all. A branch whose upstream
+// was configured but has since disappeared — e.g. the remote branch was
+// deleted after the PR merged — has nothing left to compare against, so it
+// counts as not unpushed rather than reading as stuck forever.
 func (c *Client) HasUnpushedCommits(worktreePath string) (bool, error) {
 	if _, err := c.Runner.Run(worktreePath, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"); err != nil {
+		branch, err := c.Runner.Run(worktreePath, "rev-parse", "--abbrev-ref", "HEAD")
+		if err != nil {
+			return true, nil
+		}
+		// branch.<name>.merge survives the remote ref being pruned, so its
+		// presence tells "upstream gone" apart from "never configured".
+		if _, err := c.Runner.Run(worktreePath, "config", "--get", "branch."+strings.TrimSpace(branch)+".merge"); err == nil {
+			return false, nil
+		}
 		return true, nil
 	}
 	out, err := c.Runner.Run(worktreePath, "rev-list", "--count", "@{u}..HEAD")
