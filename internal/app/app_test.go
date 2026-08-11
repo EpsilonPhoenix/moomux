@@ -352,6 +352,21 @@ func TestCreateSessionInstallsClaudeHooks(t *testing.T) {
 	}
 }
 
+func TestCreateSessionInstallsTagCommand(t *testing.T) {
+	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	home, _ := os.UserHomeDir()
+	tn := TmuxSessionName("demo:feat", "feat")
+	tm.out["list-panes -t ="+tn+": -F #{pane_id}"] = "%0\n"
+	noBranch(git, "feat")
+
+	if _, _, err := a.CreateSession("demo", "feat", "claude", "", "", true, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "commands", "tag.md")); err != nil {
+		t.Fatalf("expected ~/.claude/commands/tag.md to be written: %v", err)
+	}
+}
+
 func TestCreateSessionSkipsClaudeHooksForOtherAgents(t *testing.T) {
 	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
 	home, _ := os.UserHomeDir()
@@ -390,6 +405,36 @@ func TestCreateSessionInstallsCodexHooks(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "moomux hook codex set") || !strings.Contains(string(data), "moomux hook codex clear") {
 		t.Fatalf("hooks.json missing moomux hooks: %s", data)
+	}
+}
+
+func TestCreateSessionInstallsKillCommand(t *testing.T) {
+	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	home, _ := os.UserHomeDir()
+	tn := TmuxSessionName("demo:feat", "feat")
+	tm.out["list-panes -t ="+tn+": -F #{pane_id}"] = "%0\n"
+	noBranch(git, "feat")
+
+	if _, _, err := a.CreateSession("demo", "feat", "claude", "", "", true, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "commands", "kill.md")); err != nil {
+		t.Fatalf("expected ~/.claude/commands/kill.md to be written: %v", err)
+	}
+}
+
+func TestCreateSessionInstallsKillPrompt(t *testing.T) {
+	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	home, _ := os.UserHomeDir()
+	tn := TmuxSessionName("demo:feat", "feat")
+	tm.out["list-panes -t ="+tn+": -F #{pane_id}"] = "%0\n"
+	noBranch(git, "feat")
+
+	if _, _, err := a.CreateSession("demo", "feat", "codex", "", "", true, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".codex", "prompts", "kill.md")); err != nil {
+		t.Fatalf("expected ~/.codex/prompts/kill.md to be written: %v", err)
 	}
 }
 
@@ -885,6 +930,46 @@ func TestOpenSessionRepairsMissingCodexHooks(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "moomux hook codex set") {
 		t.Fatalf("hooks.json missing moomux hooks: %s", data)
+	}
+}
+
+func TestOpenSessionRepairsMissingKillCommand(t *testing.T) {
+	a, _, tm, term := newTestApp(t, gitProject("/repo"))
+	home, _ := os.UserHomeDir()
+	term.hint = "run: tmux attach -t moomux-feat"
+	wt := filepath.Join(t.TempDir(), "feat")
+	_ = a.Store.Put(session.Session{
+		ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat",
+		WorktreePath: wt, Agent: "claude",
+	})
+	tm.out["list-panes -t =moomux-feat: -F #{pane_current_path}"] = wt + "\n"
+
+	// Session predates the /kill feature: no ~/.claude/commands/kill.md yet.
+	if _, err := a.OpenSession("demo:feat"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "commands", "kill.md")); err != nil {
+		t.Fatalf("expected OpenSession to backfill ~/.claude/commands/kill.md: %v", err)
+	}
+}
+
+func TestOpenSessionRepairsMissingKillPrompt(t *testing.T) {
+	a, _, tm, term := newTestApp(t, gitProject("/repo"))
+	home, _ := os.UserHomeDir()
+	term.hint = "run: tmux attach -t moomux-feat"
+	wt := filepath.Join(t.TempDir(), "feat")
+	_ = a.Store.Put(session.Session{
+		ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat",
+		WorktreePath: wt, Agent: "codex",
+	})
+	tm.out["list-panes -t =moomux-feat: -F #{pane_current_path}"] = wt + "\n"
+
+	// Session predates the /kill feature: no ~/.codex/prompts/kill.md yet.
+	if _, err := a.OpenSession("demo:feat"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".codex", "prompts", "kill.md")); err != nil {
+		t.Fatalf("expected OpenSession to backfill ~/.codex/prompts/kill.md: %v", err)
 	}
 }
 

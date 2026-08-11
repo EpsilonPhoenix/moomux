@@ -1,4 +1,4 @@
-package claudehook
+package codexhook
 
 import (
 	"os"
@@ -7,30 +7,30 @@ import (
 	"time"
 )
 
-func TestEnsureKillCommandCreatesFile(t *testing.T) {
+func TestEnsureKillPromptCreatesFile(t *testing.T) {
 	home := t.TempDir()
-	changed, err := EnsureKillCommand(home)
+	changed, err := EnsureKillPrompt(home)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !changed {
 		t.Fatal("expected changed=true on first install")
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".claude", "commands", "kill.md"))
+	data, err := os.ReadFile(filepath.Join(home, ".codex", "prompts", "kill.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != killCommand {
+	if string(data) != killPrompt {
 		t.Fatalf("unexpected content: %s", data)
 	}
 }
 
-func TestEnsureKillCommandIsIdempotent(t *testing.T) {
+func TestEnsureKillPromptIsIdempotent(t *testing.T) {
 	home := t.TempDir()
-	if _, err := EnsureKillCommand(home); err != nil {
+	if _, err := EnsureKillPrompt(home); err != nil {
 		t.Fatal(err)
 	}
-	changed, err := EnsureKillCommand(home)
+	changed, err := EnsureKillPrompt(home)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,12 +39,12 @@ func TestEnsureKillCommandIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestEnsureKillCommandSkipsNoopWrite(t *testing.T) {
+func TestEnsureKillPromptSkipsNoopWrite(t *testing.T) {
 	home := t.TempDir()
-	if _, err := EnsureKillCommand(home); err != nil {
+	if _, err := EnsureKillPrompt(home); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(home, ".claude", "commands", "kill.md")
+	path := filepath.Join(home, ".codex", "prompts", "kill.md")
 	before, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +54,7 @@ func TestEnsureKillCommandSkipsNoopWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if changed, err := EnsureKillCommand(home); err != nil {
+	if changed, err := EnsureKillPrompt(home); err != nil {
 		t.Fatal(err)
 	} else if changed {
 		t.Fatal("expected changed=false for a no-op call")
@@ -68,9 +68,9 @@ func TestEnsureKillCommandSkipsNoopWrite(t *testing.T) {
 	}
 }
 
-func TestEnsureKillCommandOverwritesStaleContent(t *testing.T) {
+func TestEnsureKillPromptOverwritesStaleContent(t *testing.T) {
 	home := t.TempDir()
-	path := filepath.Join(home, ".claude", "commands", "kill.md")
+	path := filepath.Join(home, ".codex", "prompts", "kill.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestEnsureKillCommandOverwritesStaleContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	changed, err := EnsureKillCommand(home)
+	changed, err := EnsureKillPrompt(home)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,35 +89,35 @@ func TestEnsureKillCommandOverwritesStaleContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != killCommand {
+	if string(data) != killPrompt {
 		t.Fatalf("unexpected content: %s", data)
 	}
 }
 
-func TestEnsureTagCommandCreatesFile(t *testing.T) {
+func TestEnsureTagPromptCreatesFile(t *testing.T) {
 	home := t.TempDir()
-	changed, err := EnsureTagCommand(home)
+	changed, err := EnsureTagPrompt(home)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !changed {
 		t.Fatal("expected changed=true on first install")
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".claude", "commands", "tag.md"))
+	data, err := os.ReadFile(filepath.Join(home, ".codex", "prompts", "tag.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != tagCommand {
+	if string(data) != tagPrompt {
 		t.Fatalf("unexpected content: %s", data)
 	}
 }
 
-func TestEnsureTagCommandIsIdempotent(t *testing.T) {
+func TestEnsureTagPromptIsIdempotent(t *testing.T) {
 	home := t.TempDir()
-	if _, err := EnsureTagCommand(home); err != nil {
+	if _, err := EnsureTagPrompt(home); err != nil {
 		t.Fatal(err)
 	}
-	changed, err := EnsureTagCommand(home)
+	changed, err := EnsureTagPrompt(home)
 	if err != nil {
 		t.Fatal(err)
 	}

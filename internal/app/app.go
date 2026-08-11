@@ -71,20 +71,39 @@ func buildAgentCmd(agent string, dangerous bool) string {
 }
 
 // needsInputInstallers maps an agent name to the function that wires its
-// global Claude/Codex integration into the user's config — needs-input
-// hooks, plus (for claude) the /kill slash command; see
-// claudehook.EnsureAllInstalled. Agents with no entry here (opencode) don't
-// support the needs-input state yet — add a sibling package and a map entry
-// to bring one in. changed reports whether the call actually wrote
-// something new (see codexHooksHint).
+// "needs input" hooks into the user's global config. Agents with no entry
+// here (opencode) don't support the needs-input state yet — add a sibling
+// package and a map entry to bring one in. changed reports whether the call
+// actually wrote something new (see codexHooksHint).
 //
 // Both installers are global rather than per-worktree/per-project: each
 // agent's own trust model would otherwise force re-approving hooks on every
 // new worktree (see claudehook.EnsureHooksInstalled and codexhook.EnsureHooks
 // doc comments for why).
 var needsInputInstallers = map[string]func(home string) (changed bool, err error){
-	"claude": claudehook.EnsureAllInstalled,
+	"claude": claudehook.EnsureHooksInstalled,
 	"codex":  codexhook.EnsureHooks,
+}
+
+// killCommandInstallers maps an agent name to the function that installs
+// its /kill custom command/prompt into the user's global config, so any
+// session can run /kill to park itself (stop tmux, close its tab) without
+// leaving the agent. Global for the same reason as needsInputInstallers: a
+// per-worktree file would mean re-approving or re-discovering it on every
+// new worktree.
+var killCommandInstallers = map[string]func(home string) (changed bool, err error){
+	"claude": claudehook.EnsureKillCommand,
+	"codex":  codexhook.EnsureKillPrompt,
+}
+
+// tagCommandInstallers maps an agent name to the function that installs its
+// /tag custom command/prompt into the user's global config, so any session
+// can run /tag to tag its own PR (and ticket) without leaving the agent.
+// Global for the same reason as needsInputInstallers: a per-worktree file
+// would mean re-approving or re-discovering it on every new worktree.
+var tagCommandInstallers = map[string]func(home string) (changed bool, err error){
+	"claude": claudehook.EnsureTagCommand,
+	"codex":  codexhook.EnsureTagPrompt,
 }
 
 func validateAgent(agent string) error {
@@ -330,6 +349,20 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string,
 			slog.Warn("needs-input hook install failed", "agent", agent, "err", err)
 		} else if changed {
 			hooksHint = codexHooksHint(agent)
+		}
+	}
+	if install, ok := killCommandInstallers[agent]; ok {
+		if home, err := os.UserHomeDir(); err != nil {
+			slog.Warn("kill command install failed", "agent", agent, "err", err)
+		} else if _, err := install(home); err != nil {
+			slog.Warn("kill command install failed", "agent", agent, "err", err)
+		}
+	}
+	if install, ok := tagCommandInstallers[agent]; ok {
+		if home, err := os.UserHomeDir(); err != nil {
+			slog.Warn("tag command install failed", "agent", agent, "err", err)
+		} else if _, err := install(home); err != nil {
+			slog.Warn("tag command install failed", "agent", agent, "err", err)
 		}
 	}
 	if agent == "claude" {
@@ -651,6 +684,52 @@ func (a *App) repairNeedsInputHooks(s session.Session) string {
 	return codexHooksHint(s.AgentName())
 }
 
+// repairKillCommand backfills a session's /kill command/prompt on open, for
+// sessions created before this feature existed. Like repairNeedsInputHooks,
+// each installer is idempotent, so running this on every open is cheap and
+// safe. Unlike repairNeedsInputHooks, there's no hint to return — neither
+// agent requires a trust/review step before a custom command takes effect.
+func (a *App) repairKillCommand(s session.Session) {
+	if _, ok := a.Cfg.Projects[s.Project]; !ok {
+		return
+	}
+	install, ok := killCommandInstallers[s.AgentName()]
+	if !ok {
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		slog.Warn("kill command repair failed", "agent", s.AgentName(), "err", err)
+		return
+	}
+	if _, err := install(home); err != nil {
+		slog.Warn("kill command repair failed", "agent", s.AgentName(), "err", err)
+	}
+}
+
+// repairTagCommand backfills a session's /tag command/prompt on open, for
+// sessions created before this feature existed. Like repairNeedsInputHooks,
+// each installer is idempotent, so running this on every open is cheap and
+// safe. Unlike repairNeedsInputHooks, there's no hint to return — neither
+// agent requires a trust/review step before a custom command takes effect.
+func (a *App) repairTagCommand(s session.Session) {
+	if _, ok := a.Cfg.Projects[s.Project]; !ok {
+		return
+	}
+	install, ok := tagCommandInstallers[s.AgentName()]
+	if !ok {
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		slog.Warn("tag command repair failed", "agent", s.AgentName(), "err", err)
+		return
+	}
+	if _, err := install(home); err != nil {
+		slog.Warn("tag command repair failed", "agent", s.AgentName(), "err", err)
+	}
+}
+
 // codexHooksHint returns a message telling the user how to activate the
 // codex hooks that were just installed or changed, or "" if agent isn't
 // codex. Codex requires an explicit `/hooks` review before it will run a new
@@ -688,6 +767,8 @@ func (a *App) OpenSession(id string) (string, error) {
 		return "", fmt.Errorf("unknown session %q", id)
 	}
 	hooksHint := a.repairNeedsInputHooks(s)
+	a.repairKillCommand(s)
+	a.repairTagCommand(s)
 	has, err := a.Tmux.HasSession(s.TmuxSession)
 	slog.Info("open session", "id", id, "tmux_session", s.TmuxSession, "worktree", s.WorktreePath, "tmux_has_session", has)
 	if err != nil {
