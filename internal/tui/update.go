@@ -225,12 +225,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.refreshSessions()
-		for i, s := range m.sessions {
-			if s.ID == msg.Session.ID {
-				m.cursor = i
-				break
-			}
-		}
+		m.focusSession(msg.Session.ID)
 		delete(m.prompts, msg.Session.ID)
 		m.mode = m.sessionDialogReturn
 		m.setFlash("info", "updated session "+msg.Session.Name)
@@ -242,12 +237,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.refreshSessions()
-		for i, s := range m.sessions {
-			if s.ID == msg.ID {
-				m.cursor = i
-				break
-			}
-		}
+		m.focusSession(msg.ID)
 		return m, nil
 
 	case SessionOpenedMsg:
@@ -275,24 +265,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.projForm.err = msg.Err.Error()
 			return m, nil
-		case "init":
+		case "init", "plain":
+			// Both are answers to the init-choice dialog, so a failure sends
+			// the user back to the form rather than the "add" case's retry
+			// into that dialog.
 			if msg.Err != nil {
 				m.mode = ModeNewProject
 				m.projForm.err = msg.Err.Error()
 				return m, nil
 			}
 			m.activateProject(msg.Name)
-			m.setFlash("info", "initialized git repo + added "+msg.Name)
-			m.finishProjectAdded(msg.Name)
-			return m, nil
-		case "plain":
-			if msg.Err != nil {
-				m.mode = ModeNewProject
-				m.projForm.err = msg.Err.Error()
-				return m, nil
+			if msg.Kind == "init" {
+				m.setFlash("info", "initialized git repo + added "+msg.Name)
+			} else {
+				m.setFlash("info", "added plain (non-git) project "+msg.Name)
 			}
-			m.activateProject(msg.Name)
-			m.setFlash("info", "added plain (non-git) project "+msg.Name)
 			m.finishProjectAdded(msg.Name)
 			return m, nil
 		}
@@ -501,43 +488,19 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(msg, m.keys.MoveUp):
 		if len(m.sessions) > 0 && m.cursor > 0 {
-			id := m.sessions[m.cursor].ID
-			return m, func() tea.Msg {
-				if err := m.backend.MoveSession(id, -1); err != nil {
-					return SessionMovedMsg{ID: id, Err: err}
-				}
-				return SessionMovedMsg{ID: id}
-			}
+			return m, m.moveSessionCmd(m.sessions[m.cursor].ID, -1)
 		}
 	case key.Matches(msg, m.keys.MoveDown):
 		if len(m.sessions) > 0 && m.cursor < len(m.sessions)-1 {
-			id := m.sessions[m.cursor].ID
-			return m, func() tea.Msg {
-				if err := m.backend.MoveSession(id, 1); err != nil {
-					return SessionMovedMsg{ID: id, Err: err}
-				}
-				return SessionMovedMsg{ID: id}
-			}
+			return m, m.moveSessionCmd(m.sessions[m.cursor].ID, 1)
 		}
 	case key.Matches(msg, m.keys.MoveProjLeft):
 		if len(m.projects) > 0 && m.activeProj > 0 {
-			name := m.projects[m.activeProj]
-			return m, func() tea.Msg {
-				if err := m.backend.MoveProject(name, -1); err != nil {
-					return ProjectMovedMsg{Name: name, Err: err}
-				}
-				return ProjectMovedMsg{Name: name}
-			}
+			return m, m.moveProjectCmd(m.projects[m.activeProj], -1)
 		}
 	case key.Matches(msg, m.keys.MoveProjRight):
 		if len(m.projects) > 0 && m.activeProj < len(m.projects)-1 {
-			name := m.projects[m.activeProj]
-			return m, func() tea.Msg {
-				if err := m.backend.MoveProject(name, 1); err != nil {
-					return ProjectMovedMsg{Name: name, Err: err}
-				}
-				return ProjectMovedMsg{Name: name}
-			}
+			return m, m.moveProjectCmd(m.projects[m.activeProj], 1)
 		}
 	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.NextProject):
 		m.switchProject(1)
@@ -619,10 +582,8 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			id := m.sessions[m.cursor].ID
 			archive := !m.showArchived
 			return m, func() tea.Msg {
-				if _, err := m.backend.SetSessionArchived(id, archive); err != nil {
-					return SessionArchivedMsg{ID: id, Archived: archive, Err: err}
-				}
-				return SessionArchivedMsg{ID: id, Archived: archive}
+				_, err := m.backend.SetSessionArchived(id, archive)
+				return SessionArchivedMsg{ID: id, Archived: archive, Err: err}
 			}
 		}
 	case key.Matches(msg, m.keys.ShowArchived):
@@ -756,18 +717,24 @@ func (m *Model) handleListMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		// over Moshi, etc.) have no keyboard focus to move a cursor with
 		// first.
 		if id, ok := m.sessionRowAt(msg.X, msg.Y); ok {
-			for i, s := range m.sessions {
-				if s.ID == id {
-					m.cursor = i
-					break
-				}
-			}
+			m.focusSession(id)
 			sync()
 			return m, m.openSessionCmd(id)
 		}
 	}
 	sync()
 	return m, nil
+}
+
+// moveSessionCmd and moveProjectCmd persist a reorder off the event loop.
+// A nil Err on the resulting msg is the success case, so the backend call's
+// error goes straight into the field rather than being branched on here.
+func (m *Model) moveSessionCmd(id string, delta int) tea.Cmd {
+	return func() tea.Msg { return SessionMovedMsg{ID: id, Err: m.backend.MoveSession(id, delta)} }
+}
+
+func (m *Model) moveProjectCmd(name string, delta int) tea.Cmd {
+	return func() tea.Msg { return ProjectMovedMsg{Name: name, Err: m.backend.MoveProject(name, delta)} }
 }
 
 // openSessionCmd returns a Cmd that opens/attaches the given session,
@@ -929,10 +896,12 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return SessionCreatedMsg{Session: s, Hint: hint}
 		}
 	}
+	// Any other focus is a selector or toggle row, with no text input to type
+	// into.
 	var cmd tea.Cmd
 	switch m.newFormFocus {
-	case newFormProjFocus:
-		// selector row: no text input to type into
+	case 1:
+		m.nameInput, cmd = m.nameInput.Update(msg)
 	case 2:
 		m.branchInput, cmd = m.branchInput.Update(msg)
 	case 3:
@@ -941,16 +910,6 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ticketInput, cmd = m.ticketInput.Update(msg)
 	case 5:
 		m.prInput, cmd = m.prInput.Update(msg)
-	case newFormAgentFocus:
-		// selector row: no text input to type into
-	case newFormDangerousFocus:
-		// toggle row: no text input to type into
-	case newFormOpenTerminalFocus:
-		// toggle row: no text input to type into
-	case newFormAutoSubmitFocus:
-		// toggle row: no text input to type into
-	default:
-		m.nameInput, cmd = m.nameInput.Update(msg)
 	}
 	return m, cmd
 }
@@ -999,10 +958,12 @@ func (m *Model) newFormBlurAll() {
 	m.promptInput.Blur()
 }
 
+// newFormFocusInput focuses the text input at the current focus, if any — the
+// selector and toggle rows have nothing to focus.
 func (m *Model) newFormFocusInput() {
 	switch m.newFormFocus {
-	case newFormProjFocus:
-		// selector row: nothing to focus
+	case 1:
+		m.nameInput.Focus()
 	case 2:
 		m.branchInput.Focus()
 	case 3:
@@ -1011,16 +972,6 @@ func (m *Model) newFormFocusInput() {
 		m.ticketInput.Focus()
 	case 5:
 		m.prInput.Focus()
-	case newFormAgentFocus:
-		// selector row: nothing to focus
-	case newFormDangerousFocus:
-		// toggle row: nothing to focus
-	case newFormOpenTerminalFocus:
-		// toggle row: nothing to focus
-	case newFormAutoSubmitFocus:
-		// toggle row: nothing to focus
-	default:
-		m.nameInput.Focus()
 	}
 }
 
@@ -1092,6 +1043,27 @@ func cycleProjectAgentIdx(idx, delta int) int {
 	return pos
 }
 
+// adjustProjFormField steers the project form's non-text control at the
+// current focus by delta (emoji/agent selectors cycle; the dangerous and
+// worktree toggles just flip either way), and reports whether focus was on
+// one of them at all — false means ←/→ belongs to a text input's cursor.
+// Shared by the add- and edit-project forms, which drive identical controls.
+func (m *Model) adjustProjFormField(delta int) bool {
+	switch m.projForm.focus {
+	case projFormInputCount:
+		m.projForm.emojiIdx = cycleProjectEmojiIdx(m.projForm.emojiChoices, m.projForm.emojiIdx, delta)
+	case projFormInputCount + 1:
+		m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, delta)
+	case projFormInputCount + 2:
+		m.projForm.dangerous = !m.projForm.dangerous
+	case projFormInputCount + 3:
+		m.projForm.noWorktree = !m.projForm.noWorktree
+	default:
+		return false
+	}
+	return true
+}
+
 // projectAgentFields returns the Agent, Dangerous and PromptAgent values a
 // submitted project form should store, given its agentIdx (possibly
 // askAgentIdx) and its independent dangerous toggle.
@@ -1118,33 +1090,11 @@ func (m *Model) updateNewProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cycleFormFocus(m.projForm.inputs, &m.projForm.focus, totalFields, false)
 		return m, nil
 	case key.Matches(msg, m.keys.Left):
-		switch m.projForm.focus {
-		case projFormInputCount:
-			m.projForm.emojiIdx = cycleProjectEmojiIdx(m.projForm.emojiChoices, m.projForm.emojiIdx, -1)
-			return m, nil
-		case projFormInputCount + 1:
-			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, -1)
-			return m, nil
-		case projFormInputCount + 2:
-			m.projForm.dangerous = !m.projForm.dangerous
-			return m, nil
-		case projFormInputCount + 3:
-			m.projForm.noWorktree = !m.projForm.noWorktree
+		if m.adjustProjFormField(-1) {
 			return m, nil
 		}
 	case key.Matches(msg, m.keys.Right):
-		switch m.projForm.focus {
-		case projFormInputCount:
-			m.projForm.emojiIdx = cycleProjectEmojiIdx(m.projForm.emojiChoices, m.projForm.emojiIdx, 1)
-			return m, nil
-		case projFormInputCount + 1:
-			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, 1)
-			return m, nil
-		case projFormInputCount + 2:
-			m.projForm.dangerous = !m.projForm.dangerous
-			return m, nil
-		case projFormInputCount + 3:
-			m.projForm.noWorktree = !m.projForm.noWorktree
+		if m.adjustProjFormField(1) {
 			return m, nil
 		}
 	case key.Matches(msg, m.keys.Enter):
@@ -1265,28 +1215,10 @@ func (m *Model) updateEditProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cycleEditProjectFocus(false)
 		return m, nil
 	case key.Matches(msg, m.keys.Left):
-		switch m.projForm.focus {
-		case projFormInputCount:
-			m.projForm.emojiIdx = cycleProjectEmojiIdx(m.projForm.emojiChoices, m.projForm.emojiIdx, -1)
-		case projFormInputCount + 1:
-			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, -1)
-		case projFormInputCount + 2:
-			m.projForm.dangerous = !m.projForm.dangerous
-		case projFormInputCount + 3:
-			m.projForm.noWorktree = !m.projForm.noWorktree
-		}
+		m.adjustProjFormField(-1)
 		return m, nil
 	case key.Matches(msg, m.keys.Right):
-		switch m.projForm.focus {
-		case projFormInputCount:
-			m.projForm.emojiIdx = cycleProjectEmojiIdx(m.projForm.emojiChoices, m.projForm.emojiIdx, 1)
-		case projFormInputCount + 1:
-			m.projForm.agentIdx = cycleProjectAgentIdx(m.projForm.agentIdx, 1)
-		case projFormInputCount + 2:
-			m.projForm.dangerous = !m.projForm.dangerous
-		case projFormInputCount + 3:
-			m.projForm.noWorktree = !m.projForm.noWorktree
-		}
+		m.adjustProjFormField(1)
 		return m, nil
 	case key.Matches(msg, m.keys.Enter):
 		project.Repo = m.projForm.inputs[1].Value()
@@ -1448,23 +1380,11 @@ func (m *Model) updateProjectPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// session list, not the header's horizontal tabs.
 	case key.Matches(msg, m.keys.MoveUp):
 		if len(m.projects) > 0 && m.pickerCursor > 0 {
-			name := m.projects[m.pickerCursor]
-			return m, func() tea.Msg {
-				if err := m.backend.MoveProject(name, -1); err != nil {
-					return ProjectMovedMsg{Name: name, Err: err}
-				}
-				return ProjectMovedMsg{Name: name}
-			}
+			return m, m.moveProjectCmd(m.projects[m.pickerCursor], -1)
 		}
 	case key.Matches(msg, m.keys.MoveDown):
 		if len(m.projects) > 0 && m.pickerCursor < len(m.projects)-1 {
-			name := m.projects[m.pickerCursor]
-			return m, func() tea.Msg {
-				if err := m.backend.MoveProject(name, 1); err != nil {
-					return ProjectMovedMsg{Name: name, Err: err}
-				}
-				return ProjectMovedMsg{Name: name}
-			}
+			return m, m.moveProjectCmd(m.projects[m.pickerCursor], 1)
 		}
 	// d rather than the main list's D (capitalized there to stay distinct
 	// from the session-level d shown on the same screen) — the picker only

@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/erickgnclvs/moomux/internal/atomicfile"
 )
 
 type Project struct {
@@ -135,48 +137,19 @@ func Reload(path string, cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	cfg.Projects = fresh.Projects
-	cfg.Order = fresh.Order
-	cfg.TmuxSetupAsked = fresh.TmuxSetupAsked
-	cfg.AutoTmux = fresh.AutoTmux
-	cfg.AutoTmuxAsked = fresh.AutoTmuxAsked
-	cfg.Theme = fresh.Theme
-	cfg.Appearance = fresh.Appearance
+	*cfg = *fresh
 	return nil
 }
 
 func Save(path string, cfg *Config) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	// Write-then-rename (same as the session store): encoding straight into
+	// Encode into a buffer, then write atomically: encoding straight into
 	// the live file truncates it first, so a crash or full disk mid-encode
-	// destroys every project definition. A unique temp file per call (rather
-	// than a fixed ".tmp" name) also keeps concurrent Save calls from
-	// different moomux processes from clobbering each other's in-flight
-	// write.
+	// destroys every project definition.
 	var buf bytes.Buffer
 	if err := toml.NewEncoder(&buf).Encode(cfg); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if _, err := tmp.Write(buf.Bytes()); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmpPath, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, path)
+	return atomicfile.Write(path, buf.Bytes(), 0o644)
 }
 
 func DefaultPath() string {

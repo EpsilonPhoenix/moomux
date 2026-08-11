@@ -21,6 +21,34 @@ import (
 // not the whole refresh, indefinitely.
 var queryTimeout = 3 * time.Second
 
+// sqliteQuery runs query against dbPath via the sqlite3 CLI and returns its
+// trimmed output. Any failure — sqlite3 missing, a locked or corrupt DB, the
+// query timing out, no rows — yields "", since every caller's answer to
+// "couldn't read a prompt" is the same: show none.
+func sqliteQuery(dbPath, query string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sqlite3", dbPath, query)
+	// Without WaitDelay, Output can still block past ctx's deadline: if
+	// sqlite3 forked a child that inherited the output pipe, killing
+	// sqlite3 alone doesn't close it.
+	cmd.WaitDelay = 2 * time.Second
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// sqlQuote renders s as a single-quoted SQL string literal. These queries go
+// to the sqlite3 CLI as one argv string, so there's no placeholder binding
+// to lean on — worktree paths are the only thing interpolated, and doubling
+// any embedded quote is what keeps a path with an apostrophe in it from
+// breaking (or reshaping) the statement.
+func sqlQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
 // EncodeCwd mirrors Claude Code's project-dir encoding: '/', '.', and '_'
 // all become '-'. Existing hyphens are preserved.
 func EncodeCwd(p string) string {
@@ -66,47 +94,27 @@ func FirstOpenCode(home, worktreePath string) string {
 FROM part p
 JOIN message m ON p.message_id = m.id
 JOIN session s ON s.id = m.session_id
-WHERE s.directory = '` + strings.ReplaceAll(worktreePath, "'", "''") + `'
+WHERE s.directory = ` + sqlQuote(worktreePath) + `
   AND json_extract(m.data, '$.role') = 'user'
   AND json_extract(p.data, '$.type') = 'text'
 ORDER BY m.time_created ASC, p.time_created ASC
 LIMIT 1`
-	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "sqlite3", dbPath, query)
-	// Without WaitDelay, Output can still block past ctx's deadline: if
-	// sqlite3 forked a child that inherited the output pipe, killing
-	// sqlite3 alone doesn't close it.
-	cmd.WaitDelay = 2 * time.Second
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
+	return sqliteQuery(dbPath, query)
 }
 
 // FirstCodex returns the first user prompt from a Codex CLI session by
 // querying the threads table in the state SQLite files.
 func FirstCodex(home, worktreePath string) string {
-	globs := codexDBGlobs(home)
-	query := "SELECT first_user_message FROM threads WHERE cwd = '" +
-		strings.ReplaceAll(worktreePath, "'", "''") +
-		"' AND first_user_message != '' ORDER BY created_at ASC LIMIT 1"
-	for _, pattern := range globs {
+	query := "SELECT first_user_message FROM threads WHERE cwd = " +
+		sqlQuote(worktreePath) +
+		" AND first_user_message != '' ORDER BY created_at ASC LIMIT 1"
+	for _, pattern := range codexDBGlobs(home) {
 		paths, err := filepath.Glob(pattern)
-		if err != nil || len(paths) == 0 {
+		if err != nil {
 			continue
 		}
 		for _, p := range paths {
-			ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
-			cmd := exec.CommandContext(ctx, "sqlite3", p, query)
-			cmd.WaitDelay = 2 * time.Second
-			out, err := cmd.Output()
-			cancel()
-			if err != nil {
-				continue
-			}
-			if s := strings.TrimSpace(string(out)); s != "" {
+			if s := sqliteQuery(p, query); s != "" {
 				return s
 			}
 		}

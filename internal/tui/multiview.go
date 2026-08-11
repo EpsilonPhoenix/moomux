@@ -219,12 +219,8 @@ func (m *Model) advanceMultiFocus(delta int) {
 // …) applied to that panel's own selection — then folds the result back
 // into ModeMultiView's per-panel state.
 //
-// The focused session is carried across by ID, not index: multiViewSessionsFor
-// (what panels render from) and refreshSessions' m.sessions (what updateList's
-// handlers act on) can order the same project's sessions differently — the
-// latter sorts live-tmux sessions to the top, the former doesn't — so
-// translating m.multiCursors[proj] into m.cursor (and back) by position
-// instead of ID could select the wrong session entirely.
+// The focused session is carried across by ID rather than index in both
+// directions — see enterSingleProjectContext for why.
 //
 // focusedMultiProject can fail with no eligible project to sync to at all —
 // e.g. every configured project is empty, which is exactly the state a
@@ -292,12 +288,7 @@ func (m *Model) enterSingleProjectContext(proj string) bool {
 	m.activeProj = projIdx
 	m.refreshSessions()
 	if focusedID != "" {
-		for i, s := range m.sessions {
-			if s.ID == focusedID {
-				m.cursor = i
-				break
-			}
-		}
+		m.focusSession(focusedID)
 	}
 	return true
 }

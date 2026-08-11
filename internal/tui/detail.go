@@ -170,18 +170,7 @@ func (m *Model) renderDetailContent(s session.Session, hasSelection bool, width 
 		}
 	}
 	b.WriteString("\n")
-	var cowMsg string
-	switch st {
-	case watcher.Working:
-		cowMsg = pickQuip(s.ID, quipsWorking)
-	case watcher.Done:
-		cowMsg = pickQuip(s.ID, quipsDone)
-	case watcher.NeedsInput:
-		cowMsg = pickQuip(s.ID, quipsNeedsInput)
-	default:
-		cowMsg = pickQuip(s.ID, quipsParked)
-	}
-	b.WriteString(cowStyle.Render(cowsay(cowMsg, valueWidth+10, st)))
+	b.WriteString(cowStyle.Render(cowsay(pickQuip(s.ID, quipPool(st)), valueWidth+10, st)))
 	return b.String(), hits
 }
 
@@ -236,7 +225,6 @@ func cowsay(msg string, maxWidth int, st watcher.State) string {
 		w = maxWidth
 	}
 	lines := wrapLines(msg, w)
-	// cap at 4 lines, truncate last with ellipsis
 	if len(lines) > 4 {
 		lines = lines[:4]
 		r := []rune(lines[3])
@@ -263,17 +251,7 @@ func cowsay(msg string, maxWidth int, st watcher.State) string {
 		}
 	}
 	b.WriteString(" " + strings.Repeat("-", w+2) + "\n")
-	var eyes string
-	switch st {
-	case watcher.Working:
-		eyes = "**"
-	case watcher.Done:
-		eyes = "oo"
-	case watcher.NeedsInput:
-		eyes = "!!"
-	default:
-		eyes = "--"
-	}
+	eyes := stateEyes(st)
 	b.WriteString(`        \   ^__^` + "\n")
 	b.WriteString("         \\  (" + eyes + `)\_______` + "\n")
 	b.WriteString(`            (__)\       )\/\` + "\n")

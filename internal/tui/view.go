@@ -193,7 +193,7 @@ func (m *Model) focusedOverlayLine(content string) int {
 		default:
 			return lineContaining(content, m.nameInput.View())
 		}
-	case ModeNewProject:
+	case ModeNewProject, ModeEditProject:
 		if m.projForm.focus < len(m.projForm.inputs) {
 			return lineContaining(content, m.projForm.inputs[m.projForm.focus].View())
 		}
@@ -218,19 +218,6 @@ func (m *Model) focusedOverlayLine(content string) int {
 			return lineContaining(content, m.renderSessionDangerousToggle())
 		}
 		return lineContaining(content, m.renderSessionAgentSelector())
-	case ModeEditProject:
-		if m.projForm.focus < len(m.projForm.inputs) {
-			return lineContaining(content, m.projForm.inputs[m.projForm.focus].View())
-		}
-		switch m.projForm.focus {
-		case projFormInputCount:
-			return lineContaining(content, m.renderProjectEmojiSelector())
-		case projFormInputCount + 1:
-			return lineContaining(content, m.renderAgentSelector())
-		case projFormInputCount + 2:
-			return lineContaining(content, m.renderFormLabel("dangerous", 15)+m.renderProjectDangerousToggle())
-		}
-		return lineContaining(content, m.renderFormLabel("worktrees", 15)+m.renderWorktreeToggle())
 	case ModeProjectPicker:
 		if m.pickerCursor < len(m.projects) {
 			return lineContaining(content, projectPickerRowMarker+m.projects[m.pickerCursor])
@@ -528,16 +515,7 @@ func (m *Model) renderHeader() string {
 	haveCursor := len(m.sessions) > 0 && m.cursor < len(m.sessions)
 	if haveCursor {
 		st = m.effectiveState(m.sessions[m.cursor])
-		switch st {
-		case watcher.Working:
-			eyes = "**"
-		case watcher.Done:
-			eyes = "oo"
-		case watcher.NeedsInput:
-			eyes = "!!"
-		default:
-			eyes = "--"
-		}
+		eyes = stateEyes(st)
 	}
 
 	var left string
@@ -549,18 +527,9 @@ func (m *Model) renderHeader() string {
 		cow := cowStyle.Render(headerCowArt(eyes, m.showArchived, true))
 		left = cow
 		if haveCursor {
-			pool := quipsParked
-			switch st {
-			case watcher.Working:
-				pool = quipsWorking
-			case watcher.Done:
-				pool = quipsDone
-			case watcher.NeedsInput:
-				pool = quipsNeedsInput
-			}
 			quipWidth := m.width - lipgloss.Width(cow) - 5
 			if quipWidth > 3 {
-				quip := muteStyle.Render(truncateToWidth(pickQuip(m.sessions[m.cursor].ID, pool), quipWidth))
+				quip := muteStyle.Render(truncateToWidth(pickQuip(m.sessions[m.cursor].ID, quipPool(st)), quipWidth))
 				left = lipgloss.JoinHorizontal(lipgloss.Center, cow, "  ", quip)
 			}
 		}

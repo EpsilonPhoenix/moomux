@@ -136,22 +136,15 @@ func (m *Model) renderFormHint(text string) string {
 // newFormFieldCount is the focus cycle length: project selector, name,
 // branch, prompt, ticket, PR, agent selector, dangerous toggle,
 // open-terminal toggle, auto-submit toggle — matching the rendered order.
-const newFormFieldCount = 10
-
-// newFormAgentFocus is the newFormFocus value for the agent selector row.
-const newFormAgentFocus = 6
-
-// newFormDangerousFocus is the newFormFocus value for the dangerous toggle
-// row.
-const newFormDangerousFocus = 7
-
-// newFormOpenTerminalFocus is the newFormFocus value for the open-in-
-// background toggle row.
-const newFormOpenTerminalFocus = 8
-
-// newFormAutoSubmitFocus is the newFormFocus value for the auto-submit
-// toggle row.
-const newFormAutoSubmitFocus = 9
+// The named constants below are the newFormFocus values for the non-text
+// rows in that order; the text inputs are referred to by their bare index.
+const (
+	newFormFieldCount        = 10
+	newFormAgentFocus        = 6
+	newFormDangerousFocus    = 7
+	newFormOpenTerminalFocus = 8
+	newFormAutoSubmitFocus   = 9
+)
 
 var newFormFieldHints = []string{
 	0: "which project this session belongs to — ←→ to choose",
@@ -197,43 +190,56 @@ func (m *Model) renderNewForm() string {
 	return b.String()
 }
 
-func (m *Model) renderNewFormDangerousToggle() string {
-	focused := m.newFormFocus == newFormDangerousFocus
-	choice := "on"
-	if !m.newFormDangerous {
-		choice = "off"
+// renderToggle renders a form's on/off toggle value, in the highlighted style
+// when it's the focused control.
+func renderToggle(on, focused bool) string {
+	label := "[off]"
+	if on {
+		label = "[on]"
 	}
-	label := "[" + choice + "]"
 	if focused {
 		return titleStyle.Render(label)
 	}
 	return lipgloss.NewStyle().Bold(true).Render(label)
+}
+
+// renderSelector renders a horizontal "[selected]  other  other" choice row,
+// degrading to renderCompactSelector when the full row won't fit available.
+func renderSelector(choices []string, selected int, focused bool, available int) string {
+	if selected < 0 || selected >= len(choices) {
+		return ""
+	}
+	var b strings.Builder
+	for i, c := range choices {
+		if i > 0 {
+			b.WriteString("  ")
+		}
+		switch {
+		case i != selected:
+			b.WriteString(muteStyle.Render(c))
+		case focused:
+			b.WriteString(titleStyle.Render("[" + c + "]"))
+		default:
+			b.WriteString(lipgloss.NewStyle().Bold(true).Render("[" + c + "]"))
+		}
+	}
+	rendered := b.String()
+	if lipgloss.Width(rendered) > available {
+		return renderCompactSelector(choices[selected], focused, available)
+	}
+	return rendered
+}
+
+func (m *Model) renderNewFormDangerousToggle() string {
+	return renderToggle(m.newFormDangerous, m.newFormFocus == newFormDangerousFocus)
 }
 
 func (m *Model) renderNewFormOpenTerminalToggle() string {
-	focused := m.newFormFocus == newFormOpenTerminalFocus
-	choice := "on"
-	if !m.newFormOpenInBackground {
-		choice = "off"
-	}
-	label := "[" + choice + "]"
-	if focused {
-		return titleStyle.Render(label)
-	}
-	return lipgloss.NewStyle().Bold(true).Render(label)
+	return renderToggle(m.newFormOpenInBackground, m.newFormFocus == newFormOpenTerminalFocus)
 }
 
 func (m *Model) renderNewFormAutoSubmitToggle() string {
-	focused := m.newFormFocus == newFormAutoSubmitFocus
-	choice := "on"
-	if !m.newFormAutoSubmit {
-		choice = "off"
-	}
-	label := "[" + choice + "]"
-	if focused {
-		return titleStyle.Render(label)
-	}
-	return lipgloss.NewStyle().Bold(true).Render(label)
+	return renderToggle(m.newFormAutoSubmit, m.newFormFocus == newFormAutoSubmitFocus)
 }
 
 // newFormProjFocus is the newFormFocus value for the project selector row.
@@ -246,54 +252,24 @@ func (m *Model) renderNewFormProjectSelector() string {
 	if m.newFormProjIdx < 0 {
 		return warnStyle.Render("choose a project (←→)")
 	}
-	focused := m.newFormFocus == newFormProjFocus
-	var b strings.Builder
-	for i, name := range m.projects {
-		if i > 0 {
-			b.WriteString("  ")
-		}
-		if i == m.newFormProjIdx {
-			if focused {
-				b.WriteString(titleStyle.Render("[" + name + "]"))
-			} else {
-				b.WriteString(lipgloss.NewStyle().Bold(true).Render("[" + name + "]"))
-			}
-		} else {
-			b.WriteString(muteStyle.Render(name))
-		}
-	}
-	rendered := b.String()
-	available := m.overlayWidth(formHintWidth) - lipgloss.Width("project:  ")
-	if lipgloss.Width(rendered) > available {
-		return renderCompactAgentSelector(m.projects[m.newFormProjIdx], focused, available)
-	}
-	return rendered
+	return renderSelector(
+		m.projects, m.newFormProjIdx,
+		m.newFormFocus == newFormProjFocus,
+		m.overlayWidth(formHintWidth)-lipgloss.Width("project:  "),
+	)
 }
 
 func (m *Model) renderNewFormAgentSelector() string {
 	if m.newFormAgentIdx < 0 {
 		return warnStyle.Render("choose an agent (←→)")
 	}
-	var b strings.Builder
-	for i, a := range agentNames {
-		if i > 0 {
-			b.WriteString("  ")
-		}
-		if i == m.newFormAgentIdx {
-			b.WriteString(titleStyle.Render("[" + a + "]"))
-		} else {
-			b.WriteString(muteStyle.Render(a))
-		}
-	}
-	rendered := b.String()
-	available := m.overlayWidth(formHintWidth) - lipgloss.Width("agent:  ")
-	if lipgloss.Width(rendered) > available {
-		return renderCompactAgentSelector(agentNames[m.newFormAgentIdx], true, available)
-	}
-	return rendered
+	return renderSelector(
+		agentNames, m.newFormAgentIdx, true,
+		m.overlayWidth(formHintWidth)-lipgloss.Width("agent:  "),
+	)
 }
 
-func renderCompactAgentSelector(agent string, focused bool, available int) string {
+func renderCompactSelector(agent string, focused bool, available int) string {
 	selected := lipgloss.NewStyle().Bold(true)
 	if focused {
 		selected = titleStyle
@@ -327,41 +303,15 @@ func (m *Model) renderEditSession() string {
 }
 
 func (m *Model) renderSessionAgentSelector() string {
-	focused := m.sessionForm.focus == sessionFormAgentFocus
-	var b strings.Builder
-	for i, agent := range agentNames {
-		if i > 0 {
-			b.WriteString("  ")
-		}
-		if i == m.sessionForm.agentIdx {
-			if focused {
-				b.WriteString(titleStyle.Render("[" + agent + "]"))
-			} else {
-				b.WriteString(lipgloss.NewStyle().Bold(true).Render("[" + agent + "]"))
-			}
-		} else {
-			b.WriteString(muteStyle.Render(agent))
-		}
-	}
-	rendered := b.String()
-	available := m.overlayWidth(formHintWidth) - lipgloss.Width("agent:  ")
-	if lipgloss.Width(rendered) > available {
-		return renderCompactAgentSelector(agentNames[m.sessionForm.agentIdx], focused, available)
-	}
-	return rendered
+	return renderSelector(
+		agentNames, m.sessionForm.agentIdx,
+		m.sessionForm.focus == sessionFormAgentFocus,
+		m.overlayWidth(formHintWidth)-lipgloss.Width("agent:  "),
+	)
 }
 
 func (m *Model) renderSessionDangerousToggle() string {
-	focused := m.sessionForm.focus == sessionFormDangerousFocus
-	choice := "on"
-	if !m.sessionForm.dangerous {
-		choice = "off"
-	}
-	label := "[" + choice + "]"
-	if focused {
-		return titleStyle.Render(label)
-	}
-	return lipgloss.NewStyle().Bold(true).Render(label)
+	return renderToggle(m.sessionForm.dangerous, m.sessionForm.focus == sessionFormDangerousFocus)
 }
 
 // editSessionFieldHints gives a one-line explanation for whichever control of
@@ -460,56 +410,19 @@ func (m *Model) renderEditProject() string {
 }
 
 func (m *Model) renderProjectEmojiSelector() string {
-	focused := m.projForm.focus == projFormInputCount
-	selectedIdx := m.projForm.emojiIdx
-	choices := m.projForm.emojiChoices
-	var b strings.Builder
-	for i, e := range choices {
-		if i > 0 {
-			b.WriteString("  ")
-		}
-		if i == selectedIdx {
-			if focused {
-				b.WriteString(titleStyle.Render("[" + e + "]"))
-			} else {
-				b.WriteString(lipgloss.NewStyle().Bold(true).Render("[" + e + "]"))
-			}
-		} else {
-			b.WriteString(muteStyle.Render(e))
-		}
-	}
-	rendered := b.String()
-	available := m.overlayWidth(formHintWidth) - m.formLabelWidth("emoji", 15)
-	if lipgloss.Width(rendered) > available {
-		return renderCompactAgentSelector(choices[selectedIdx], focused, available)
-	}
-	return rendered
+	return renderSelector(
+		m.projForm.emojiChoices, m.projForm.emojiIdx,
+		m.projForm.focus == projFormInputCount,
+		m.overlayWidth(formHintWidth)-m.formLabelWidth("emoji", 15),
+	)
 }
 
 func (m *Model) renderWorktreeToggle() string {
-	focused := m.projForm.focus == projFormInputCount+3
-	choice := "on"
-	if m.projForm.noWorktree {
-		choice = "off"
-	}
-	label := "[" + choice + "]"
-	if focused {
-		return titleStyle.Render(label)
-	}
-	return lipgloss.NewStyle().Bold(true).Render(label)
+	return renderToggle(!m.projForm.noWorktree, m.projForm.focus == projFormInputCount+3)
 }
 
 func (m *Model) renderProjectDangerousToggle() string {
-	focused := m.projForm.focus == projFormInputCount+2
-	choice := "on"
-	if !m.projForm.dangerous {
-		choice = "off"
-	}
-	label := "[" + choice + "]"
-	if focused {
-		return titleStyle.Render(label)
-	}
-	return lipgloss.NewStyle().Bold(true).Render(label)
+	return renderToggle(m.projForm.dangerous, m.projForm.focus == projFormInputCount+2)
 }
 
 // projectAgentChoices is the project form's agent selector: the real agents,
@@ -518,32 +431,15 @@ func (m *Model) renderProjectDangerousToggle() string {
 var projectAgentChoices = append(append([]string{}, agentNames...), "ask each time")
 
 func (m *Model) renderAgentSelector() string {
-	focused := m.projForm.focus == projFormInputCount+1
 	selectedIdx := m.projForm.agentIdx
 	if selectedIdx == askAgentIdx {
 		selectedIdx = len(agentNames)
 	}
-	var b strings.Builder
-	for i, a := range projectAgentChoices {
-		if i > 0 {
-			b.WriteString("  ")
-		}
-		if i == selectedIdx {
-			if focused {
-				b.WriteString(titleStyle.Render("[" + a + "]"))
-			} else {
-				b.WriteString(lipgloss.NewStyle().Bold(true).Render("[" + a + "]"))
-			}
-		} else {
-			b.WriteString(muteStyle.Render(a))
-		}
-	}
-	rendered := b.String()
-	available := m.overlayWidth(formHintWidth) - m.formLabelWidth("agent", 15)
-	if lipgloss.Width(rendered) > available {
-		return renderCompactAgentSelector(projectAgentChoices[selectedIdx], focused, available)
-	}
-	return rendered
+	return renderSelector(
+		projectAgentChoices, selectedIdx,
+		m.projForm.focus == projFormInputCount+1,
+		m.overlayWidth(formHintWidth)-m.formLabelWidth("agent", 15),
+	)
 }
 
 // tagFormFieldHints gives a one-line explanation for whichever field of the

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"github.com/erickgnclvs/moomux/internal/atomicfile"
 )
 
 // EnsureHooks merges the PermissionRequest/PreToolUse/UserPromptSubmit
@@ -75,35 +77,17 @@ func EnsureHooks(home string) (changed bool, err error) {
 		// avoids most opportunities for it to observe a half-written file.
 		return false, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return false, err
-	}
 	if err := writeFileAtomic(path, data); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
-// writeFileAtomic writes data via a temp file + rename in path's directory,
-// so a concurrent reader (Codex reloading its own hook config) never
-// observes a partially-written file.
+// writeFileAtomic writes data to path atomically, so a concurrent reader
+// (Codex reloading its own hook config) never observes a partially-written
+// file.
 func writeFileAtomic(path string, data []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".hooks-*.json.tmp")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name()) // no-op once the rename below succeeds
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return atomicfile.Write(path, data, 0o644)
 }
 
 // addHook appends a {hooks:[{type:command,command}]} entry for event,

@@ -20,30 +20,33 @@ allowed-tools: Bash(moomux park:*)
 !` + "`moomux park`" + `
 `
 
-// EnsureKillCommand installs the /kill custom command into the user's
-// global ~/.claude/commands/kill.md, so it's available from every worktree
-// with no per-project trust approval — unlike claudehook's hooks, a custom
-// command only ever runs when the user explicitly types /kill, so Claude
-// Code requires none. Safe to call more than once: it only writes when
-// content actually changed. changed reports whether this call wrote the
-// file.
-func EnsureKillCommand(home string) (changed bool, err error) {
-	path := filepath.Join(home, ".claude", "commands", "kill.md")
+// ensureCommand writes body to ~/.claude/commands/<name>.md, creating the
+// directory if needed and skipping the write when the content is already
+// there. changed reports whether this call wrote the file.
+//
+// Custom commands live in the user's global commands dir so they're
+// available from every worktree with no per-project trust approval — unlike
+// claudehook's hooks, a custom command only ever runs when the user
+// explicitly types it, so Claude Code requires none.
+func ensureCommand(home, name, body string) (changed bool, err error) {
+	path := filepath.Join(home, ".claude", "commands", name+".md")
 
 	existing, err := os.ReadFile(path)
-	if err == nil && string(existing) == killCommand {
+	if err == nil && string(existing) == body {
 		return false, nil
 	}
 	if err != nil && !os.IsNotExist(err) {
 		return false, err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return false, err
-	}
-	if err := writeFileAtomic(path, []byte(killCommand)); err != nil {
+	if err := writeFileAtomic(path, []byte(body)); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// EnsureKillCommand installs the /kill custom command — see ensureCommand.
+func EnsureKillCommand(home string) (changed bool, err error) {
+	return ensureCommand(home, "kill", killCommand)
 }
 
 // tagCommand is installed as the body of the /tag custom command — see
@@ -65,27 +68,7 @@ tracked on the session yet, pass it too:
 If there's no open PR yet, say so instead of guessing one.
 `
 
-// EnsureTagCommand installs the /tag custom command into the user's global
-// ~/.claude/commands/tag.md, so it's available from every worktree with no
-// per-project trust approval — unlike claudehook's hooks, a custom command
-// only ever runs when the user explicitly types /tag, so Claude Code
-// requires none. Safe to call more than once: it only writes when content
-// actually changed. changed reports whether this call wrote the file.
+// EnsureTagCommand installs the /tag custom command — see ensureCommand.
 func EnsureTagCommand(home string) (changed bool, err error) {
-	path := filepath.Join(home, ".claude", "commands", "tag.md")
-
-	existing, err := os.ReadFile(path)
-	if err == nil && string(existing) == tagCommand {
-		return false, nil
-	}
-	if err != nil && !os.IsNotExist(err) {
-		return false, err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return false, err
-	}
-	if err := writeFileAtomic(path, []byte(tagCommand)); err != nil {
-		return false, err
-	}
-	return true, nil
+	return ensureCommand(home, "tag", tagCommand)
 }

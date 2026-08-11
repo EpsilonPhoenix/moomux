@@ -11,6 +11,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/erickgnclvs/moomux/internal/atomicfile"
 )
 
 type Session struct {
@@ -87,35 +89,11 @@ func (s *Store) reloadLocked() error {
 }
 
 func (s *Store) save() error {
-	dir := filepath.Dir(s.Path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	f := fileShape{Version: 1, Sessions: s.sessions}
-	data, err := json.MarshalIndent(f, "", "  ")
+	data, err := json.MarshalIndent(fileShape{Version: 1, Sessions: s.sessions}, "", "  ")
 	if err != nil {
 		return err
 	}
-	// A fixed ".tmp" name races when multiple moomux processes share this
-	// store: one process's write/rename can clobber or steal another's
-	// in-flight temp file. A per-invocation temp file avoids that.
-	tmp, err := os.CreateTemp(dir, filepath.Base(s.Path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmpPath, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, s.Path)
+	return atomicfile.Write(s.Path, data, 0o644)
 }
 
 func (s *Store) Put(sess Session) error {
