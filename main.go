@@ -245,18 +245,31 @@ func newApp() (*app.App, error) {
 // prints the new tmux session name and exits without waiting on the agent.
 func runSpawn(args []string) error {
 	fs := flag.NewFlagSet("spawn", flag.ExitOnError)
-	project := fs.String("project", "", "project name (required)")
+	project := fs.String("project", "", "project name (required; run -list to see configured projects)")
 	name := fs.String("name", "", "session name (derived from -branch if omitted)")
 	agent := fs.String("agent", "", "agent override (claude, codex, opencode)")
 	dangerous := fs.Bool("dangerous", false, "run the agent with its permission-skipping flag (claude: --dangerously-skip-permissions, codex: --yolo)")
 	branch := fs.String("branch", "", "existing branch to check out, instead of creating a new one")
 	ticket := fs.String("ticket", "", "ticket URL to attach to the session")
 	prompt := fs.String("prompt", "", "initial prompt to type into the new session's agent pane")
+	list := fs.Bool("list", false, "list configured project names and exit")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+
+	if *list {
+		a, err := newApp()
+		if err != nil {
+			return err
+		}
+		for _, name := range a.Cfg.OrderedProjectNames() {
+			fmt.Println(name)
+		}
+		return nil
+	}
+
 	if *project == "" {
-		return fmt.Errorf("spawn: -project is required")
+		return fmt.Errorf("spawn: -project is required (run 'moomux spawn -list' to see configured projects)")
 	}
 
 	a, err := newApp()
