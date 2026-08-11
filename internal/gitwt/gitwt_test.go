@@ -223,11 +223,26 @@ func TestHasUnpushedCommits(t *testing.T) {
 		t.Fatalf("unpushed=%v err=%v, want true (ahead of upstream)", unpushed, err)
 	}
 
-	fr = &fakeRunner{errAt: map[int]error{0: errors.New("no upstream configured")}}
+	// call 0: @{u} fails (no upstream). call 1: rev-parse HEAD succeeds.
+	// call 2: config lookup also fails, meaning upstream was never configured.
+	fr = &fakeRunner{errAt: map[int]error{
+		0: errors.New("no upstream configured"),
+		2: errors.New("key not found"),
+	}}
 	c = &Client{Runner: fr}
 	unpushed, err = c.HasUnpushedCommits("/wt/foo")
 	if err != nil || !unpushed {
 		t.Fatalf("unpushed=%v err=%v, want true (no upstream)", unpushed, err)
+	}
+
+	// call 0: @{u} fails, but call 2's config lookup succeeds — the upstream
+	// was configured and then pruned (e.g. remote branch deleted post-merge),
+	// which must not read the same as "never pushed".
+	fr = &fakeRunner{errAt: map[int]error{0: errors.New("upstream gone")}}
+	c = &Client{Runner: fr}
+	unpushed, err = c.HasUnpushedCommits("/wt/foo")
+	if err != nil || unpushed {
+		t.Fatalf("unpushed=%v err=%v, want false (upstream gone, nothing left to compare)", unpushed, err)
 	}
 }
 
