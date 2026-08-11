@@ -114,6 +114,22 @@ func (f *fakeTabTerminal) OpenTab(tabID, tmuxSession, title string) (string, str
 	return tabID, "", nil
 }
 
+// fakeCloseTabTerminal implements terminal.TabCloser (and the base
+// TerminalOpener), mimicking iTerm2, to test KillTmux's tab-closing path.
+type fakeCloseTabTerminal struct {
+	closed []string
+	err    error
+}
+
+func (f *fakeCloseTabTerminal) OpenSession(tmuxSession, title string) (string, error) {
+	return "", nil
+}
+
+func (f *fakeCloseTabTerminal) CloseTab(tabID string) error {
+	f.closed = append(f.closed, tabID)
+	return f.err
+}
+
 // noBranch marks the rev-parse existence check for branch as failing, i.e.
 // "branch does not exist yet" — the normal case when creating a session.
 func noBranch(fr *fakeGitRunner, branch string) {
@@ -932,6 +948,43 @@ func TestKillTmux(t *testing.T) {
 
 	if err := a.KillTmux("demo:nope"); err == nil {
 		t.Fatal("unknown id must fail")
+	}
+}
+
+func TestKillTmuxClosesTerminalTab(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
+	fakeTerm := &fakeCloseTabTerminal{}
+	a.Terminal = fakeTerm
+	_ = a.Store.Put(session.Session{
+		ID: "demo:a", Project: "demo", Name: "a", TmuxSession: "moomux-a", TermTabID: "tab-7",
+	})
+
+	if err := a.KillTmux("demo:a"); err != nil {
+		t.Fatal(err)
+	}
+	if len(fakeTerm.closed) != 1 || fakeTerm.closed[0] != "tab-7" {
+		t.Fatalf("want tab-7 closed, got %v", fakeTerm.closed)
+	}
+	s, _ := a.Store.Get("demo:a")
+	if s.TermTabID != "" {
+		t.Fatalf("want tab id cleared after close, got %q", s.TermTabID)
+	}
+	if !tm.called("kill-session -t =moomux-a") {
+		t.Fatalf("calls = %v", tm.calls)
+	}
+}
+
+func TestKillTmuxSkipsTabCloseWhenNoTabRecorded(t *testing.T) {
+	a, _, _, _ := newTestApp(t, gitProject("/repo"))
+	fakeTerm := &fakeCloseTabTerminal{}
+	a.Terminal = fakeTerm
+	_ = a.Store.Put(session.Session{ID: "demo:a", Project: "demo", Name: "a", TmuxSession: "moomux-a"})
+
+	if err := a.KillTmux("demo:a"); err != nil {
+		t.Fatal(err)
+	}
+	if len(fakeTerm.closed) != 0 {
+		t.Fatalf("want no close attempt without a recorded tab, got %v", fakeTerm.closed)
 	}
 }
 

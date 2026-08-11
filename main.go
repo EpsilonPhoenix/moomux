@@ -45,6 +45,10 @@ Usage:
                      Run 'moomux spawn -h' for its flags.
   moomux tag ...    Tag the session whose worktree you're currently in with
                      a ticket and/or PR URL. Run 'moomux tag -h' for its flags.
+  moomux park       Stop tmux and close the terminal tab for the session
+                     whose worktree you're currently in, keeping its
+                     worktree/branch (same as pressing 'x' in the TUI).
+                     Backs the /kill slash command inside Claude Code.
   moomux --version  Print the version.
   moomux --help     Show this message.`)
 }
@@ -78,6 +82,13 @@ func main() {
 	}
 	if len(os.Args) >= 2 && os.Args[1] == "tag" {
 		if err := runTag(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "moomux:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) >= 2 && os.Args[1] == "park" {
+		if err := runPark(); err != nil {
 			fmt.Fprintln(os.Stderr, "moomux:", err)
 			os.Exit(1)
 		}
@@ -346,6 +357,34 @@ func runTag(args []string) error {
 		return fmt.Errorf("tag: %w", err)
 	}
 	fmt.Println("tagged " + s.Name)
+	return nil
+}
+
+// runPark implements `moomux park`: stop the tmux session and close its
+// terminal tab (if any) for whichever moomux session's worktree the current
+// directory is inside — the CLI backend for the /kill slash command
+// (internal/claudehook.EnsureKillCommandInstalled), invoked from the
+// agent's own pane. Like `moomux tag`, it identifies "the session we're in"
+// from cwd rather than taking an explicit ID. The worktree, branch, and
+// moomux list entry are left intact so the session can be reopened later —
+// see App.KillTmux's doc comment.
+func runPark() error {
+	a, err := newApp()
+	if err != nil {
+		return err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	s, ok := a.SessionForPath(cwd)
+	if !ok {
+		return fmt.Errorf("park: no moomux session found for %s (run this from inside a session's worktree)", cwd)
+	}
+	if err := a.KillTmux(s.ID); err != nil {
+		return fmt.Errorf("park: %w", err)
+	}
+	fmt.Println("parked " + s.Name)
 	return nil
 }
 

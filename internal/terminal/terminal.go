@@ -37,6 +37,19 @@ type TabReopener interface {
 	OpenTab(tabID, tmuxSession, title string) (newTabID, hint string, err error)
 }
 
+// TabCloser is an optional capability, mirroring TabReopener: implement it
+// on a TerminalOpener whose terminal can close a specific addressable tab
+// (currently just iTerm2, via AppleScript). Callers type-assert for this
+// interface rather than calling it directly, so terminals without the
+// capability are unaffected — closing a session's tab is a best-effort
+// nicety, not something every terminal needs to support.
+//
+// CloseTab closes tabID's tab if it still exists; closing an already-gone
+// tab is not an error, mirroring TabReopener.OpenTab's "tab gone" handling.
+type TabCloser interface {
+	CloseTab(tabID string) error
+}
+
 // Detect returns the best TerminalOpener for the current environment by
 // inspecting well-known environment variables.
 func Detect() TerminalOpener {

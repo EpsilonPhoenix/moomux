@@ -113,6 +113,31 @@ end tell`, setName, escapeAppleScript("="+tmuxSession))
 	return strings.TrimSpace(out), nil
 }
 
+// CloseTab closes the tab holding session id tabID, across all windows. A
+// no-op (not an error) if no such session exists — tabs close independently
+// of the tmux session they were attached to, same as selectSession.
+// Deliberately doesn't `activate` first, unlike selectSession/createTab: a
+// close shouldn't steal focus the way bringing a tab to front should.
+func (c *itermClient) CloseTab(tabID string) error {
+	script := fmt.Sprintf(`
+tell application "iTerm2"
+	repeat with w in windows
+		repeat with t in tabs of w
+			repeat with sess in sessions of t
+				if id of sess is "%s" then
+					close t
+					return "closed"
+				end if
+			end repeat
+		end repeat
+	end repeat
+	return "notfound"
+end tell`, escapeAppleScript(tabID))
+	out, err := c.runner.Run(script)
+	slog.Debug("iterm: close tab result", "tab_id", tabID, "out", out, "err", err)
+	return err
+}
+
 func escapeAppleScript(s string) string {
 	out := make([]rune, 0, len(s))
 	for _, r := range s {
