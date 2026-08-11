@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/watcher"
 )
 
@@ -424,23 +425,28 @@ func (m *Model) renderListView() string {
 			listContent, hits, rows = m.renderList(panelW-2, bodyHeight)
 			body = panelBorder.Width(panelW).Height(bodyHeight).Render(listContent)
 		} else {
-			// The list gets enough room to show every one of its sessions
-			// without scrolling (compactScreen is always true at this
-			// width, so it never needs rows for its own title either) —
-			// it's the thing being actively browsed, so a project with a
-			// lot of sessions takes priority over the detail pane. Detail
-			// gets whatever's left and simply clips from the bottom (via
-			// its own Height/MaxHeight) if that isn't enough to show
-			// everything, rather than the list being forced to scroll
-			// through a long session list just to protect detail's size.
-			listH := len(m.sessions)
-			if listH < minStackedListRows {
-				listH = minStackedListRows
+			// detailH is sized around what the selected session's detail
+			// content actually needs (fields, wrapped prompt, closing
+			// cowsay art) — same approach as renderMultiPanel's own split —
+			// rather than handing the list every row it could use first. A
+			// long, actively-scrolled session list is the point of this
+			// app, but it used to starve detail down to a few clipped
+			// lines (hiding its closing cow) whenever there were more
+			// sessions than fit; the list scrolling further to make room
+			// instead fixes that regardless of session count.
+			var sel session.Session
+			hasSel := m.cursor < len(m.sessions)
+			if hasSel {
+				sel = m.sessions[m.cursor]
 			}
-			if listH > avail {
-				listH = avail
+			detailH := m.detailContentHeight(sel, hasSel, panelW-2)
+			if maxDetailH := avail - minStackedListRows; detailH > maxDetailH {
+				detailH = maxDetailH
 			}
-			detailH := avail - listH
+			if detailH < minStackedPaneHeight {
+				detailH = minStackedPaneHeight
+			}
+			listH := avail - detailH
 			var listContent string
 			listContent, hits, rows = m.renderList(panelW-2, listH)
 			var detailContent string

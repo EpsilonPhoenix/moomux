@@ -32,7 +32,10 @@ import (
 // whole word like "demo/Documents/foo" types into the focused input in one
 // step).
 var screens = map[string][]string{
-	"list":        {},
+	"list": {},
+	// Same as "list" but with enough sessions to force scrolling in the
+	// narrow stacked layout — see TestNarrowStackedDetailGrowsBeforeListClips.
+	"long-list":   {},
 	"new-session": {"n"},
 	// The form preselects the active project, so no "right" press is needed
 	// to pick one; 3 tabs from there lands on the first-prompt textarea (see
@@ -299,6 +302,21 @@ func renderScreen(screenName string, width, height int, theme, appearance string
 	}}
 	sessions := sampleSessions()
 	switch screenName {
+	case "long-list":
+		now := time.Now().UTC()
+		sessions = nil
+		for i := 0; i < 25; i++ {
+			name := fmt.Sprintf("session-%02d", i)
+			sessions = append(sessions, session.Session{
+				ID:           "demo:" + name,
+				Project:      "demo",
+				Name:         name,
+				WorktreePath: "/tmp/demo/" + name,
+				TmuxSession:  "moomux-" + name,
+				CreatedAt:    now,
+				Agent:        "claude",
+			})
+		}
 	case "no-projects-startup", "no-projects":
 		cfg = &config.Config{Projects: map[string]config.Project{}}
 		sessions = nil
