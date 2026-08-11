@@ -43,6 +43,8 @@ Usage:
   moomux            Launch the interactive TUI.
   moomux spawn ...   Create a session non-interactively and hand it a prompt.
                      Run 'moomux spawn -h' for its flags.
+  moomux tag ...    Tag the session whose worktree you're currently in with
+                     a ticket and/or PR URL. Run 'moomux tag -h' for its flags.
   moomux --version  Print the version.
   moomux --help     Show this message.`)
 }
@@ -69,6 +71,13 @@ func main() {
 	}
 	if len(os.Args) >= 2 && os.Args[1] == "spawn" {
 		if err := runSpawn(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "moomux:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) >= 2 && os.Args[1] == "tag" {
+		if err := runTag(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "moomux:", err)
 			os.Exit(1)
 		}
@@ -295,6 +304,48 @@ func runSpawn(args []string) error {
 			return fmt.Errorf("send prompt: %w", err)
 		}
 	}
+	return nil
+}
+
+// runTag implements `moomux tag`: attach a ticket and/or PR URL to whichever
+// moomux session's worktree the current directory is inside (or a
+// subdirectory of), so it can be run from an agent's own pane right after
+// opening a PR. Flags left unset keep the session's existing value rather
+// than clearing it.
+func runTag(args []string) error {
+	fs := flag.NewFlagSet("tag", flag.ExitOnError)
+	ticket := fs.String("ticket", "", "ticket URL to attach (kept as-is if omitted)")
+	pr := fs.String("pr", "", "pull request URL to attach (kept as-is if omitted)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *ticket == "" && *pr == "" {
+		return fmt.Errorf("tag: pass -ticket and/or -pr")
+	}
+
+	a, err := newApp()
+	if err != nil {
+		return err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	s, ok := a.SessionForPath(cwd)
+	if !ok {
+		return fmt.Errorf("tag: no moomux session found for %s (run this from inside a session's worktree)", cwd)
+	}
+
+	if *ticket == "" {
+		*ticket = s.Ticket
+	}
+	if *pr == "" {
+		*pr = s.PR
+	}
+	if _, err := a.SetSessionTags(s.ID, *ticket, *pr); err != nil {
+		return fmt.Errorf("tag: %w", err)
+	}
+	fmt.Println("tagged " + s.Name)
 	return nil
 }
 
