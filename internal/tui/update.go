@@ -449,6 +449,7 @@ func (m *Model) openNewSessionForm() {
 	}
 	m.newFormOpenInBackground = false
 	m.newFormDangerous = false
+	m.newFormAutoSubmit = false
 	m.nameInput.SetValue("")
 	m.branchInput.SetValue("")
 	m.ticketInput.SetValue("")
@@ -862,6 +863,10 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.newFormOpenInBackground = !m.newFormOpenInBackground
 			return m, nil
 		}
+		if m.newFormFocus == newFormAutoSubmitFocus {
+			m.newFormAutoSubmit = !m.newFormAutoSubmit
+			return m, nil
+		}
 	case key.Matches(msg, m.keys.Enter):
 		if m.newFormProjIdx < 0 {
 			m.newFormErr = "choose a project — tab to the project row, then ←→"
@@ -917,7 +922,7 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if updated, promptErr := m.backend.SetSessionPrompt(s.ID, firstPrompt); promptErr == nil {
 					s = updated
 				}
-				if err := m.backend.StartFirstPrompt(s.TmuxSession, firstPrompt); err != nil {
+				if err := m.backend.StartFirstPrompt(s.TmuxSession, firstPrompt, m.newFormAutoSubmit); err != nil {
 					hint = joinHint(hint, fmt.Sprintf("couldn't send first prompt: %v", err))
 				}
 			}
@@ -941,6 +946,8 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case newFormDangerousFocus:
 		// toggle row: no text input to type into
 	case newFormOpenTerminalFocus:
+		// toggle row: no text input to type into
+	case newFormAutoSubmitFocus:
 		// toggle row: no text input to type into
 	default:
 		m.nameInput, cmd = m.nameInput.Update(msg)
@@ -1009,6 +1016,8 @@ func (m *Model) newFormFocusInput() {
 	case newFormDangerousFocus:
 		// toggle row: nothing to focus
 	case newFormOpenTerminalFocus:
+		// toggle row: nothing to focus
+	case newFormAutoSubmitFocus:
 		// toggle row: nothing to focus
 	default:
 		m.nameInput.Focus()

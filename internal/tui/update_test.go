@@ -97,8 +97,47 @@ func TestNewSessionFormSendsFirstPrompt(t *testing.T) {
 	if len(be.firstPromptCalls) != 1 || be.firstPromptCalls[0].prompt != "do the thing" {
 		t.Fatalf("firstPromptCalls = %v", be.firstPromptCalls)
 	}
+	if be.firstPromptCalls[0].autoSubmit {
+		t.Fatalf("auto-submit should default to off: %v", be.firstPromptCalls)
+	}
 	if len(be.sessions) != 1 || be.sessions[0].Prompt != "do the thing" {
 		t.Fatalf("session prompt not persisted: %v", be.sessions)
+	}
+}
+
+// TestNewSessionFormAutoSubmitToggle guards the auto-submit checkbox: toggling
+// it on with ←→ must flow through to StartFirstPrompt's autoSubmit arg, and
+// reopening the form must reset it back to off rather than carrying over the
+// previous session's choice.
+func TestNewSessionFormAutoSubmitToggle(t *testing.T) {
+	be := &fakeBackend{}
+	m := newTestModel(be)
+
+	m.Update(keyRune("n"))
+	typeText(m, "myfeat")
+	for i := 0; i < 2; i++ {
+		press(m, tea.KeyTab) // name -> branch -> prompt
+	}
+	typeText(m, "do the thing")
+	for i := 0; i < 6; i++ {
+		press(m, tea.KeyTab) // prompt -> ticket -> PR -> agent -> dangerous -> open-in-background -> auto-submit
+	}
+	if m.newFormFocus != newFormAutoSubmitFocus {
+		t.Fatalf("focus = %d, want auto-submit toggle", m.newFormFocus)
+	}
+	press(m, tea.KeyRight)
+	if !m.newFormAutoSubmit {
+		t.Fatal("←→ did not toggle auto-submit on")
+	}
+
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(be.firstPromptCalls) != 1 || !be.firstPromptCalls[0].autoSubmit {
+		t.Fatalf("firstPromptCalls = %v, want autoSubmit=true", be.firstPromptCalls)
+	}
+
+	m.Update(keyRune("n")) // reopen
+	if m.newFormAutoSubmit {
+		t.Fatal("auto-submit carried over into the reopened form")
 	}
 }
 

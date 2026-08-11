@@ -478,15 +478,20 @@ func (a *App) waitForPaneReady(tmuxSession string) {
 const firstPromptSubmitDelay = 300 * time.Millisecond
 
 // StartFirstPrompt waits for a freshly created session's agent pane to
-// finish starting up, types prompt into it, and separately presses Enter to
-// start the agent working on it. No-op if prompt is empty.
-func (a *App) StartFirstPrompt(tmuxSession, prompt string) error {
+// finish starting up and types prompt into it. If autoSubmit is true, it
+// separately presses Enter afterward to start the agent working on it right
+// away; otherwise the prompt is left typed in the pane for the user to
+// review and send themselves. No-op if prompt is empty.
+func (a *App) StartFirstPrompt(tmuxSession, prompt string, autoSubmit bool) error {
 	if prompt == "" {
 		return nil
 	}
 	a.waitForPaneReady(tmuxSession)
 	if err := a.Tmux.SendLiteral(tmuxSession, prompt); err != nil {
 		return err
+	}
+	if !autoSubmit {
+		return nil
 	}
 	time.Sleep(firstPromptSubmitDelay)
 	return a.Tmux.PressEnter(tmuxSession)

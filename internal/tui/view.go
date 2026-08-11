@@ -184,7 +184,12 @@ func (m *Model) focusedOverlayLine(content string) int {
 			// label to keep the two unambiguous.
 			return lineContaining(content, muteStyle.Render("dangerous:  ")+m.renderNewFormDangerousToggle())
 		case newFormOpenTerminalFocus:
+			// Same "[on]"/"[off]" collision as newFormDangerousFocus above,
+			// now three-way with the auto-submit toggle too — label included
+			// for the same reason.
 			return lineContaining(content, muteStyle.Render("open in background:  ")+m.renderNewFormOpenTerminalToggle())
+		case newFormAutoSubmitFocus:
+			return lineContaining(content, muteStyle.Render("auto-submit:  ")+m.renderNewFormAutoSubmitToggle())
 		default:
 			return lineContaining(content, m.nameInput.View())
 		}

@@ -134,9 +134,9 @@ func (m *Model) renderFormHint(text string) string {
 // new-session form is currently focused, so the jargon (worktree, base
 // branch) doesn't have to be memorized up front.
 // newFormFieldCount is the focus cycle length: project selector, name,
-// branch, prompt, ticket, PR, agent selector, dangerous toggle, open-terminal
-// toggle — matching the rendered order.
-const newFormFieldCount = 9
+// branch, prompt, ticket, PR, agent selector, dangerous toggle,
+// open-terminal toggle, auto-submit toggle — matching the rendered order.
+const newFormFieldCount = 10
 
 // newFormAgentFocus is the newFormFocus value for the agent selector row.
 const newFormAgentFocus = 6
@@ -149,6 +149,10 @@ const newFormDangerousFocus = 7
 // background toggle row.
 const newFormOpenTerminalFocus = 8
 
+// newFormAutoSubmitFocus is the newFormFocus value for the auto-submit
+// toggle row.
+const newFormAutoSubmitFocus = 9
+
 var newFormFieldHints = []string{
 	0: "which project this session belongs to — ←→ to choose",
 	1: "shown in the list and worktree folder — blank uses branch",
@@ -159,6 +163,7 @@ var newFormFieldHints = []string{
 	6: "which agent CLI runs in the session's pane — ←→ to choose",
 	7: "on: skips permission prompts (--dangerously-skip-permissions / --yolo); no effect for opencode",
 	8: "on: starts the session in the background, no terminal window",
+	9: "on: presses enter after typing the first prompt so the agent starts right away; off: leaves it typed for you to review first",
 }
 
 func (m *Model) renderNewForm() string {
@@ -186,6 +191,9 @@ func (m *Model) renderNewForm() string {
 	b.WriteString("\n\n")
 	b.WriteString(muteStyle.Render("open in background:  "))
 	b.WriteString(m.renderNewFormOpenTerminalToggle())
+	b.WriteString("\n\n")
+	b.WriteString(muteStyle.Render("auto-submit:  "))
+	b.WriteString(m.renderNewFormAutoSubmitToggle())
 	return b.String()
 }
 
@@ -206,6 +214,19 @@ func (m *Model) renderNewFormOpenTerminalToggle() string {
 	focused := m.newFormFocus == newFormOpenTerminalFocus
 	choice := "on"
 	if !m.newFormOpenInBackground {
+		choice = "off"
+	}
+	label := "[" + choice + "]"
+	if focused {
+		return titleStyle.Render(label)
+	}
+	return lipgloss.NewStyle().Bold(true).Render(label)
+}
+
+func (m *Model) renderNewFormAutoSubmitToggle() string {
+	focused := m.newFormFocus == newFormAutoSubmitFocus
+	choice := "on"
+	if !m.newFormAutoSubmit {
 		choice = "off"
 	}
 	label := "[" + choice + "]"
