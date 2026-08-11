@@ -116,8 +116,23 @@ func (c *Client) AddWorktree(repoDir, worktreePath, branch, baseBranch string) e
 			return fmt.Errorf("branch %q already exists and isn't fully merged — create the session from the existing branch instead, or delete the branch manually: %w", branch, err)
 		}
 	}
-	_, err := c.Runner.Run(repoDir, "worktree", "add", worktreePath, "-b", branch, start)
-	return err
+	if _, err := c.Runner.Run(repoDir, "worktree", "add", worktreePath, "-b", branch, start); err != nil {
+		return err
+	}
+	return c.lockNewWorktree(repoDir, worktreePath)
+}
+
+// lockNewWorktree locks a just-added worktree against accidental removal by
+// other tools. If locking fails, the checkout it just created would
+// otherwise be left behind as an untracked orphan (add succeeded, caller
+// sees an error and never registers it) — so we remove it here to fail
+// clean instead.
+func (c *Client) lockNewWorktree(repoDir, worktreePath string) error {
+	if _, err := c.Runner.Run(repoDir, "worktree", "lock", worktreePath, "--reason", "moomux"); err != nil {
+		_ = c.RemoveWorktree(repoDir, worktreePath)
+		return err
+	}
+	return nil
 }
 
 // WorktreeForBranch returns the path of the worktree that currently has
@@ -172,12 +187,17 @@ func (c *Client) BranchExists(repoDir, branch string) bool {
 // (local, or remote-tracking via git's single-remote DWIM) instead of
 // creating a new branch.
 func (c *Client) AddWorktreeExisting(repoDir, worktreePath, branch string) error {
-	_, err := c.Runner.Run(repoDir, "worktree", "add", worktreePath, branch)
-	return err
+	if _, err := c.Runner.Run(repoDir, "worktree", "add", worktreePath, branch); err != nil {
+		return err
+	}
+	return c.lockNewWorktree(repoDir, worktreePath)
 }
 
 func (c *Client) RemoveWorktree(repoDir, worktreePath string) error {
-	_, err := c.Runner.Run(repoDir, "worktree", "remove", worktreePath, "--force")
+	// A single --force overrides a dirty worktree but not a locked one (by
+	// moomux itself, see AddWorktree, or by another tool) — git demands
+	// --force twice, or an unlock first, to remove a locked worktree.
+	_, err := c.Runner.Run(repoDir, "worktree", "remove", worktreePath, "--force", "--force")
 	if _, statErr := os.Stat(worktreePath); statErr != nil {
 		if os.IsNotExist(statErr) {
 			// The checkout is already gone (e.g. another session removed
