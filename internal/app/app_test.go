@@ -527,7 +527,7 @@ func TestCreateSessionExistingBranchRemovesStaleCleanWorktree(t *testing.T) {
 	if s.Branch != "feature/login-page" {
 		t.Fatalf("session = %+v", s)
 	}
-	wantRemove := "@/repo worktree remove " + staleWT + " --force"
+	wantRemove := "@/repo worktree remove " + staleWT + " --force --force"
 	found := false
 	for _, c := range git.calls {
 		if strings.Join(c, " ") == wantRemove {
@@ -1566,7 +1566,7 @@ func TestDeleteSessionWorktree(t *testing.T) {
 	var sawRemove, sawBranchDelete bool
 	for _, c := range git.calls {
 		joined := strings.Join(c, " ")
-		if joined == "@/repo worktree remove "+wt+" --force" {
+		if joined == "@/repo worktree remove "+wt+" --force --force" {
 			sawRemove = true
 		}
 		if joined == "@/repo branch -D feat" {

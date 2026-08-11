@@ -2,10 +2,12 @@ package gitwt
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -16,6 +18,15 @@ type fakeRunner struct {
 	// errAt, keyed by call index (0-based), makes that call fail instead of
 	// returning out — used to simulate e.g. "no upstream configured".
 	errAt map[int]error
+	// failPrefix, when set, makes any call whose args start with it fail
+	// instead of returning out — used when the failing call's index isn't
+	// worth pinning down (e.g. "any 'worktree lock' call").
+	failPrefix []string
+}
+
+// failCommand makes any call whose args start with prefix fail.
+func (f *fakeRunner) failCommand(prefix ...string) {
+	f.failPrefix = prefix
 }
 
 func (f *fakeRunner) Run(dir string, args ...string) (string, error) {
@@ -24,6 +35,9 @@ func (f *fakeRunner) Run(dir string, args ...string) (string, error) {
 	f.calls = append(f.calls, c)
 	if err, ok := f.errAt[idx]; ok {
 		return "", err
+	}
+	if len(f.failPrefix) > 0 && len(args) >= len(f.failPrefix) && reflect.DeepEqual(args[:len(f.failPrefix)], f.failPrefix) {
+		return "", fmt.Errorf("git %v: fake failure", args)
 	}
 	return f.out, nil
 }
@@ -47,7 +61,11 @@ func TestAddWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"@/repo", "worktree", "add", "/wt/foo", "-b", "user/foo", "origin/main"}
-	if !reflect.DeepEqual(fr.calls[len(fr.calls)-1], want) {
+	if !reflect.DeepEqual(fr.calls[len(fr.calls)-2], want) {
+		t.Fatalf("calls = %v", fr.calls)
+	}
+	wantLock := []string{"@/repo", "worktree", "lock", "/wt/foo", "--reason", "moomux"}
+	if !reflect.DeepEqual(fr.calls[len(fr.calls)-1], wantLock) {
 		t.Fatalf("calls = %v", fr.calls)
 	}
 }
@@ -59,8 +77,35 @@ func TestAddWorktreeExisting(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"@/repo", "worktree", "add", "/wt/foo", "user/foo"}
-	if !reflect.DeepEqual(fr.calls[len(fr.calls)-1], want) {
+	if !reflect.DeepEqual(fr.calls[len(fr.calls)-2], want) {
 		t.Fatalf("calls = %v", fr.calls)
+	}
+	wantLock := []string{"@/repo", "worktree", "lock", "/wt/foo", "--reason", "moomux"}
+	if !reflect.DeepEqual(fr.calls[len(fr.calls)-1], wantLock) {
+		t.Fatalf("calls = %v", fr.calls)
+	}
+}
+
+// TestAddWorktreeLockFailureCleansUpOrphan covers `worktree lock` failing
+// right after `worktree add` succeeds — without cleanup, that leaves an
+// untracked checkout+branch on disk that no session references, since the
+// caller (CreateSession) bails out on the error before ever registering it.
+func TestAddWorktreeLockFailureCleansUpOrphan(t *testing.T) {
+	fr := &fakeRunner{}
+	fr.failCommand("worktree", "lock")
+	c := &Client{Runner: fr}
+	if err := c.AddWorktree("/repo", "/wt/foo", "user/foo", "main"); err == nil {
+		t.Fatal("expected the lock error to surface")
+	}
+	wantRemove := "@/repo worktree remove /wt/foo --force --force"
+	found := false
+	for _, call := range fr.calls {
+		if strings.Join(call, " ") == wantRemove {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected cleanup removal after failed lock, calls = %v", fr.calls)
 	}
 }
 
@@ -70,9 +115,41 @@ func TestRemoveWorktree(t *testing.T) {
 	if err := c.RemoveWorktree("/repo", "/wt/foo"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"@/repo", "worktree", "remove", "/wt/foo", "--force"}
+	want := []string{"@/repo", "worktree", "remove", "/wt/foo", "--force", "--force"}
 	if !reflect.DeepEqual(fr.calls[0], want) {
 		t.Fatalf("calls = %v", fr.calls)
+	}
+}
+
+// TestRemoveWorktreeLocked reproduces the real bug against real git: a
+// single --force removes a dirty worktree but git still refuses a locked
+// one ("use 'remove -f -f' to override or unlock first"). Locking worktrees
+// on creation (AddWorktree/AddWorktreeExisting) means every removal must
+// clear a lock moomux itself may have set, not just one from another tool.
+func TestRemoveWorktreeLocked(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	repoDir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v (%s)", args, err, out)
+		}
+	}
+	run("init", "-q", "-b", "main")
+	run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+	wtPath := filepath.Join(t.TempDir(), "wt")
+	run("worktree", "add", "-q", wtPath, "-b", "feat")
+	run("worktree", "lock", wtPath, "--reason", "test lock")
+
+	c := &Client{Runner: ExecRunner()}
+	if err := c.RemoveWorktree(repoDir, wtPath); err != nil {
+		t.Fatalf("RemoveWorktree on a locked worktree: %v", err)
+	}
+	if _, err := os.Stat(wtPath); !os.IsNotExist(err) {
+		t.Fatalf("expected worktree directory to be gone, stat err = %v", err)
 	}
 }
 

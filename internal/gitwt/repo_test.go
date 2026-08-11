@@ -223,7 +223,7 @@ func TestRemoveWorktreeRefusesRealRepo(t *testing.T) {
 	if err := Init(dir, "main"); err != nil {
 		t.Fatal(err)
 	}
-	fr := &failRunner{failOn: map[string]bool{"worktree remove " + dir + " --force": true}}
+	fr := &failRunner{failOn: map[string]bool{"worktree remove " + dir + " --force --force": true}}
 	c := &Client{Runner: fr}
 	if err := c.RemoveWorktree("/repo", dir); err == nil {
 		t.Fatal("expected error, real repo should not be deleted")
