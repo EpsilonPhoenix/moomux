@@ -124,6 +124,31 @@ func TestITermOpenTabCreatesWhenNoTabIDGiven(t *testing.T) {
 	}
 }
 
+func TestITermCloseTabClosesMatchingTab(t *testing.T) {
+	fr := &fakeRunner{out: "closed"}
+	c := &itermClient{runner: fr}
+	if err := c.CloseTab("tab-1"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fr.script, `id of sess is "tab-1"`) {
+		t.Fatalf("missing tab id lookup: %s", fr.script)
+	}
+	if !strings.Contains(fr.script, "close t") {
+		t.Fatalf("missing close: %s", fr.script)
+	}
+	if strings.Contains(fr.script, "activate") {
+		t.Fatalf("close should not steal focus: %s", fr.script)
+	}
+}
+
+func TestITermCloseTabMissingIsNotAnError(t *testing.T) {
+	fr := &fakeRunner{out: "notfound"}
+	c := &itermClient{runner: fr}
+	if err := c.CloseTab("tab-1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestITermEscapesAppleScript(t *testing.T) {
 	fr := &fakeRunner{}
 	c := &itermClient{runner: fr}

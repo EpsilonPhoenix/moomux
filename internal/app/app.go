@@ -71,17 +71,19 @@ func buildAgentCmd(agent string, dangerous bool) string {
 }
 
 // needsInputInstallers maps an agent name to the function that wires its
-// "needs input" hooks into the user's global config. Agents with no entry
-// here (opencode) don't support the needs-input state yet — add a sibling
-// package and a map entry to bring one in. changed reports whether the call
-// actually wrote something new (see codexHooksHint).
+// global Claude/Codex integration into the user's config — needs-input
+// hooks, plus (for claude) the /kill slash command; see
+// claudehook.EnsureAllInstalled. Agents with no entry here (opencode) don't
+// support the needs-input state yet — add a sibling package and a map entry
+// to bring one in. changed reports whether the call actually wrote
+// something new (see codexHooksHint).
 //
 // Both installers are global rather than per-worktree/per-project: each
 // agent's own trust model would otherwise force re-approving hooks on every
 // new worktree (see claudehook.EnsureHooksInstalled and codexhook.EnsureHooks
 // doc comments for why).
 var needsInputInstallers = map[string]func(home string) (changed bool, err error){
-	"claude": claudehook.EnsureHooksInstalled,
+	"claude": claudehook.EnsureAllInstalled,
 	"codex":  codexhook.EnsureHooks,
 }
 
@@ -768,12 +770,33 @@ func (a *App) TmuxAliveAll() map[string]bool {
 	return result
 }
 
-// KillTmux kills the tmux session but keeps the moomux session entry
-// (and its worktree) intact, so it can be re-opened later.
+// KillTmux kills the tmux session but keeps the moomux session entry (and
+// its worktree) intact, so it can be re-opened later. Also closes the
+// session's terminal tab, if the terminal supports addressing one (see
+// terminal.TabCloser) and this session has one recorded — otherwise a dead
+// tmux session leaves a stale, unresponsive tab behind. TermTabID is
+// cleared on success so a later reopen creates a fresh tab instead of
+// chasing a handle that's gone.
+//
+// The tab is closed before the tmux session is killed, not after: closing
+// it only kills the `tmux attach` client shown there — pane processes
+// belong to the tmux server, not to any attached client (see
+// terminal/processtree.go's attachedClientPID doc comment) — so this order
+// is safe even when KillTmux runs from inside the very pane it's killing
+// (see main.go's runPark, used by the /kill slash command).
 func (a *App) KillTmux(id string) error {
 	s, ok := a.Store.Get(id)
 	if !ok {
 		return fmt.Errorf("unknown session %q", id)
+	}
+	if closer, ok := a.Terminal.(terminal.TabCloser); ok && s.TermTabID != "" {
+		if err := closer.CloseTab(s.TermTabID); err != nil {
+			slog.Warn("close terminal tab failed", "id", id, "tab_id", s.TermTabID, "err", err)
+		}
+		s.TermTabID = ""
+		if err := a.Store.Put(s); err != nil {
+			slog.Warn("clear terminal tab id failed", "id", id, "err", err)
+		}
 	}
 	has, err := a.Tmux.HasSession(s.TmuxSession)
 	if err != nil {
