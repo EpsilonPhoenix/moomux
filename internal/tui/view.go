@@ -176,8 +176,15 @@ func (m *Model) focusedOverlayLine(content string) int {
 			return lineContaining(content, m.prInput.View())
 		case newFormAgentFocus:
 			return lineContaining(content, m.renderNewFormAgentSelector())
+		case newFormDangerousFocus:
+			// Both toggle rows render an identical "[on]"/"[off]" value, so
+			// searching for the value alone can match the wrong row (their
+			// focused/unfocused styling collapses to the same text when
+			// colors are unavailable, e.g. NO_COLOR) — include the row's
+			// label to keep the two unambiguous.
+			return lineContaining(content, muteStyle.Render("dangerous:  ")+m.renderNewFormDangerousToggle())
 		case newFormOpenTerminalFocus:
-			return lineContaining(content, m.renderNewFormOpenTerminalToggle())
+			return lineContaining(content, muteStyle.Render("open in background:  ")+m.renderNewFormOpenTerminalToggle())
 		default:
 			return lineContaining(content, m.nameInput.View())
 		}
@@ -190,15 +197,22 @@ func (m *Model) focusedOverlayLine(content string) int {
 			return lineContaining(content, m.renderProjectEmojiSelector())
 		case projFormInputCount + 1:
 			return lineContaining(content, m.renderAgentSelector())
+		case projFormInputCount + 2:
+			// The dangerous and worktree toggles render an identical
+			// "[on]"/"[off]" value — see the newFormDangerousFocus case
+			// above for why the label has to be part of the needle too.
+			return lineContaining(content, m.renderFormLabel("dangerous", 15)+m.renderProjectDangerousToggle())
 		}
-		return lineContaining(content, m.renderWorktreeToggle())
+		return lineContaining(content, m.renderFormLabel("worktrees", 15)+m.renderWorktreeToggle())
 	case ModeTagForm:
 		if m.tagForm.focus < len(m.tagForm.inputs) {
 			return lineContaining(content, m.tagForm.inputs[m.tagForm.focus].View())
 		}
 	case ModeEditSession:
-		agent := agentChoices[m.sessionForm.agentIdx]
-		return lineContaining(content, titleStyle.Render("["+agent+"]"))
+		if m.sessionForm.focus == sessionFormDangerousFocus {
+			return lineContaining(content, m.renderSessionDangerousToggle())
+		}
+		return lineContaining(content, m.renderSessionAgentSelector())
 	case ModeEditProject:
 		if m.projForm.focus < len(m.projForm.inputs) {
 			return lineContaining(content, m.projForm.inputs[m.projForm.focus].View())
@@ -208,8 +222,10 @@ func (m *Model) focusedOverlayLine(content string) int {
 			return lineContaining(content, m.renderProjectEmojiSelector())
 		case projFormInputCount + 1:
 			return lineContaining(content, m.renderAgentSelector())
+		case projFormInputCount + 2:
+			return lineContaining(content, m.renderFormLabel("dangerous", 15)+m.renderProjectDangerousToggle())
 		}
-		return lineContaining(content, m.renderWorktreeToggle())
+		return lineContaining(content, m.renderFormLabel("worktrees", 15)+m.renderWorktreeToggle())
 	case ModeProjectPicker:
 		if m.pickerCursor < len(m.projects) {
 			return lineContaining(content, projectPickerRowMarker+m.projects[m.pickerCursor])
@@ -342,8 +358,8 @@ func (m *Model) View() string {
 	case ModeEditSession:
 		content := m.compactOverlayContent(m.renderEditSession())
 		footer := m.formFooter(
-			"agent used the next time this session's tmux process is created",
-			"←→ agent  enter save  esc cancel",
+			editSessionFieldHints[m.sessionForm.focus],
+			"tab fields  ←→ change  enter save  esc cancel",
 			m.sessionForm.err,
 		)
 		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))

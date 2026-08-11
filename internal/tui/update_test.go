@@ -52,12 +52,10 @@ func TestNewSessionFormFlow(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		press(m, tea.KeyTab) // branch -> prompt -> ticket -> PR -> agent selector
 	}
-	press(m, tea.KeyRight)
-	press(m, tea.KeyRight) // claude -> claude (dangerous) -> codex
-	if agentChoices[m.newFormAgentIdx] != "codex" {
-		t.Fatalf("agent = %q", agentChoices[m.newFormAgentIdx])
+	press(m, tea.KeyRight) // claude -> codex
+	if agentNames[m.newFormAgentIdx] != "codex" {
+		t.Fatalf("agent = %q", agentNames[m.newFormAgentIdx])
 	}
-	press(m, tea.KeyLeft)
 	press(m, tea.KeyLeft)     // back to claude
 	press(m, tea.KeyShiftTab) // agent -> PR
 	press(m, tea.KeyShiftTab) // PR -> ticket
@@ -845,12 +843,11 @@ func TestNewProjectFlow(t *testing.T) {
 
 	// walk focus to the agent selector and worktree toggle
 	m.projForm.focus = projFormInputCount + 1
-	press(m, tea.KeyRight)
-	press(m, tea.KeyRight) // agent claude -> claude (dangerous) -> codex
-	if m.projForm.agentIdx != 2 {
-		t.Fatalf("agentIdx = %d", m.projForm.agentIdx)
+	press(m, tea.KeyRight) // agent claude -> codex
+	if agentNames[m.projForm.agentIdx] != "codex" {
+		t.Fatalf("agent = %q", agentNames[m.projForm.agentIdx])
 	}
-	m.projForm.focus = projFormInputCount + 2
+	m.projForm.focus = projFormInputCount + 3
 	press(m, tea.KeyLeft) // toggle no-worktree on
 	if !m.projForm.noWorktree {
 		t.Fatal("noWorktree not toggled")
@@ -918,7 +915,7 @@ func TestEditSessionFlow(t *testing.T) {
 	if m.mode != ModeEditSession {
 		t.Fatalf("mode = %v", m.mode)
 	}
-	if got := agentChoices[m.sessionForm.agentIdx]; got != "codex" {
+	if got := agentNames[m.sessionForm.agentIdx]; got != "codex" {
 		t.Fatalf("prefilled agent = %q", got)
 	}
 	if view := m.View(); !strings.Contains(view, "Edit session") ||
@@ -926,7 +923,8 @@ func TestEditSessionFlow(t *testing.T) {
 		t.Fatalf("edit session view:\n%s", view)
 	}
 
-	press(m, tea.KeyRight)
+	press(m, tea.KeyTab)   // agent -> dangerous
+	press(m, tea.KeyRight) // dangerous off -> on
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if len(be.sessionAgentCalls) != 1 ||
 		be.sessionAgentCalls[0] != (sessionAgentCall{"demo:a", "codex", true}) {
@@ -978,7 +976,7 @@ func TestEditProjectFlow(t *testing.T) {
 	if m.projForm.inputs[1].Value() != "/tmp/demo" ||
 		m.projForm.inputs[2].Value() != "main" ||
 		m.projForm.inputs[3].Value() != "old" ||
-		agentChoices[m.projForm.agentIdx] != "codex" {
+		agentNames[m.projForm.agentIdx] != "codex" {
 		t.Fatalf("project form = %+v", m.projForm)
 	}
 	if view := m.View(); !strings.Contains(view, "Edit project") ||
@@ -989,7 +987,7 @@ func TestEditProjectFlow(t *testing.T) {
 	m.projForm.inputs[1].SetValue("/tmp/renamed")
 	m.projForm.inputs[2].SetValue("trunk")
 	m.projForm.inputs[3].SetValue("alan")
-	m.projForm.agentIdx = 4 // opencode
+	m.projForm.agentIdx = 2 // opencode
 	m.projForm.noWorktree = true
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
 
@@ -1052,7 +1050,7 @@ func TestEditPlainProjectShowsOnlyRepoAndAgent(t *testing.T) {
 	if m.projForm.focus != projFormInputCount+1 {
 		t.Fatalf("focus = %d, want agent selector", m.projForm.focus)
 	}
-	m.projForm.agentIdx = agentChoiceIndex("codex", false)
+	m.projForm.agentIdx = agentNameIndex("codex")
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if len(be.updateProjectCalls) != 1 {
 		t.Fatalf("updateProjectCalls = %v", be.updateProjectCalls)
@@ -1093,7 +1091,7 @@ func TestNewProjectTabCyclesFocus(t *testing.T) {
 	m := newTestModel(be)
 	m.Update(slashKey())
 	m.Update(keyRune("n"))
-	total := projFormInputCount + 3
+	total := projFormInputCount + 4
 	for i := 1; i < total; i++ {
 		press(m, tea.KeyTab)
 		if m.projForm.focus != i {

@@ -134,16 +134,20 @@ func (m *Model) renderFormHint(text string) string {
 // new-session form is currently focused, so the jargon (worktree, base
 // branch) doesn't have to be memorized up front.
 // newFormFieldCount is the focus cycle length: project selector, name,
-// branch, prompt, ticket, PR, agent selector, open-terminal toggle —
-// matching the rendered order.
-const newFormFieldCount = 8
+// branch, prompt, ticket, PR, agent selector, dangerous toggle, open-terminal
+// toggle — matching the rendered order.
+const newFormFieldCount = 9
 
 // newFormAgentFocus is the newFormFocus value for the agent selector row.
 const newFormAgentFocus = 6
 
+// newFormDangerousFocus is the newFormFocus value for the dangerous toggle
+// row.
+const newFormDangerousFocus = 7
+
 // newFormOpenTerminalFocus is the newFormFocus value for the open-in-
 // background toggle row.
-const newFormOpenTerminalFocus = 7
+const newFormOpenTerminalFocus = 8
 
 var newFormFieldHints = []string{
 	0: "which project this session belongs to — ←→ to choose",
@@ -153,7 +157,8 @@ var newFormFieldHints = []string{
 	4: "optional — shown as a clickable ticket icon next to the session",
 	5: "optional — shown as a clickable PR icon next to the session",
 	6: "which agent CLI runs in the session's pane — ←→ to choose",
-	7: "on: starts the session in the background, no terminal window",
+	7: "on: skips permission prompts (--dangerously-skip-permissions / --yolo); no effect for opencode",
+	8: "on: starts the session in the background, no terminal window",
 }
 
 func (m *Model) renderNewForm() string {
@@ -176,9 +181,25 @@ func (m *Model) renderNewForm() string {
 	b.WriteString(muteStyle.Render("agent:  "))
 	b.WriteString(m.renderNewFormAgentSelector())
 	b.WriteString("\n\n")
+	b.WriteString(muteStyle.Render("dangerous:  "))
+	b.WriteString(m.renderNewFormDangerousToggle())
+	b.WriteString("\n\n")
 	b.WriteString(muteStyle.Render("open in background:  "))
 	b.WriteString(m.renderNewFormOpenTerminalToggle())
 	return b.String()
+}
+
+func (m *Model) renderNewFormDangerousToggle() string {
+	focused := m.newFormFocus == newFormDangerousFocus
+	choice := "on"
+	if !m.newFormDangerous {
+		choice = "off"
+	}
+	label := "[" + choice + "]"
+	if focused {
+		return titleStyle.Render(label)
+	}
+	return lipgloss.NewStyle().Bold(true).Render(label)
 }
 
 func (m *Model) renderNewFormOpenTerminalToggle() string {
@@ -233,7 +254,7 @@ func (m *Model) renderNewFormAgentSelector() string {
 		return warnStyle.Render("choose an agent (←→)")
 	}
 	var b strings.Builder
-	for i, a := range agentChoices {
+	for i, a := range agentNames {
 		if i > 0 {
 			b.WriteString("  ")
 		}
@@ -246,7 +267,7 @@ func (m *Model) renderNewFormAgentSelector() string {
 	rendered := b.String()
 	available := m.overlayWidth(formHintWidth) - lipgloss.Width("agent:  ")
 	if lipgloss.Width(rendered) > available {
-		return renderCompactAgentSelector(agentChoices[m.newFormAgentIdx], true, available)
+		return renderCompactAgentSelector(agentNames[m.newFormAgentIdx], true, available)
 	}
 	return rendered
 }
@@ -278,17 +299,25 @@ func (m *Model) renderEditSession() string {
 	b.WriteString("\n\n")
 	b.WriteString(muteStyle.Render("agent:  "))
 	b.WriteString(m.renderSessionAgentSelector())
+	b.WriteString("\n\n")
+	b.WriteString(muteStyle.Render("dangerous:  "))
+	b.WriteString(m.renderSessionDangerousToggle())
 	return b.String()
 }
 
 func (m *Model) renderSessionAgentSelector() string {
+	focused := m.sessionForm.focus == sessionFormAgentFocus
 	var b strings.Builder
-	for i, agent := range agentChoices {
+	for i, agent := range agentNames {
 		if i > 0 {
 			b.WriteString("  ")
 		}
 		if i == m.sessionForm.agentIdx {
-			b.WriteString(titleStyle.Render("[" + agent + "]"))
+			if focused {
+				b.WriteString(titleStyle.Render("[" + agent + "]"))
+			} else {
+				b.WriteString(lipgloss.NewStyle().Bold(true).Render("[" + agent + "]"))
+			}
 		} else {
 			b.WriteString(muteStyle.Render(agent))
 		}
@@ -296,9 +325,29 @@ func (m *Model) renderSessionAgentSelector() string {
 	rendered := b.String()
 	available := m.overlayWidth(formHintWidth) - lipgloss.Width("agent:  ")
 	if lipgloss.Width(rendered) > available {
-		return renderCompactAgentSelector(agentChoices[m.sessionForm.agentIdx], true, available)
+		return renderCompactAgentSelector(agentNames[m.sessionForm.agentIdx], focused, available)
 	}
 	return rendered
+}
+
+func (m *Model) renderSessionDangerousToggle() string {
+	focused := m.sessionForm.focus == sessionFormDangerousFocus
+	choice := "on"
+	if !m.sessionForm.dangerous {
+		choice = "off"
+	}
+	label := "[" + choice + "]"
+	if focused {
+		return titleStyle.Render(label)
+	}
+	return lipgloss.NewStyle().Bold(true).Render(label)
+}
+
+// editSessionFieldHints gives a one-line explanation for whichever control of
+// the edit-session form is currently focused.
+var editSessionFieldHints = []string{
+	sessionFormAgentFocus:     "agent used the next time this session's tmux process is created",
+	sessionFormDangerousFocus: "on: skips permission prompts (--dangerously-skip-permissions / --yolo); no effect for opencode",
 }
 
 // projFormFieldHints gives a one-line explanation for whichever field of the
@@ -312,7 +361,8 @@ var projFormFieldHints = []string{
 	3: "prepended to new branch names, e.g. alice/feature-x — blank to skip",
 	4: "shown instead of the project name in all-sessions — ←→ to choose",
 	5: "default agent for new sessions — \"ask each time\" prompts every time",
-	6: "off: sessions run directly in the repo, no worktree/branch",
+	6: "on: new sessions run with the agent's permission-skipping flag; no effect for opencode or \"ask each time\"",
+	7: "off: sessions run directly in the repo, no worktree/branch",
 }
 
 var editProjectFieldHints = []string{
@@ -322,7 +372,8 @@ var editProjectFieldHints = []string{
 	3: "prepended to branches created for new sessions — leave blank to skip",
 	4: "shown instead of the project name in all-sessions — ←→ to choose",
 	5: "default agent for new sessions — \"ask each time\" prompts every time",
-	6: "changes worktree behavior for new sessions only",
+	6: "on: new sessions run with the agent's permission-skipping flag; no effect for opencode or \"ask each time\"",
+	7: "changes worktree behavior for new sessions only",
 }
 
 func (m *Model) renderNewProject() string {
@@ -340,6 +391,9 @@ func (m *Model) renderNewProject() string {
 	b.WriteString("\n")
 	b.WriteString(m.renderFormLabel("agent", 15))
 	b.WriteString(m.renderAgentSelector())
+	b.WriteString("\n")
+	b.WriteString(m.renderFormLabel("dangerous", 15))
+	b.WriteString(m.renderProjectDangerousToggle())
 	b.WriteString("\n")
 	b.WriteString(m.renderFormLabel("worktrees", 15))
 	b.WriteString(m.renderWorktreeToggle())
@@ -372,6 +426,9 @@ func (m *Model) renderEditProject() string {
 	b.WriteString("\n")
 	b.WriteString(m.renderFormLabel("agent", 15))
 	b.WriteString(m.renderAgentSelector())
+	b.WriteString("\n")
+	b.WriteString(m.renderFormLabel("dangerous", 15))
+	b.WriteString(m.renderProjectDangerousToggle())
 	b.WriteString("\n")
 	if !project.IsPlain() {
 		b.WriteString(m.renderFormLabel("worktrees", 15))
@@ -409,9 +466,22 @@ func (m *Model) renderProjectEmojiSelector() string {
 }
 
 func (m *Model) renderWorktreeToggle() string {
-	focused := m.projForm.focus == projFormInputCount+2
+	focused := m.projForm.focus == projFormInputCount+3
 	choice := "on"
 	if m.projForm.noWorktree {
+		choice = "off"
+	}
+	label := "[" + choice + "]"
+	if focused {
+		return titleStyle.Render(label)
+	}
+	return lipgloss.NewStyle().Bold(true).Render(label)
+}
+
+func (m *Model) renderProjectDangerousToggle() string {
+	focused := m.projForm.focus == projFormInputCount+2
+	choice := "on"
+	if !m.projForm.dangerous {
 		choice = "off"
 	}
 	label := "[" + choice + "]"
@@ -424,13 +494,13 @@ func (m *Model) renderWorktreeToggle() string {
 // projectAgentChoices is the project form's agent selector: the real agents,
 // plus a trailing "ask each time" entry (index askAgentIdx maps to it) that
 // defers the choice to each new-session form instead of fixing one here.
-var projectAgentChoices = append(append([]string{}, agentChoices...), "ask each time")
+var projectAgentChoices = append(append([]string{}, agentNames...), "ask each time")
 
 func (m *Model) renderAgentSelector() string {
 	focused := m.projForm.focus == projFormInputCount+1
 	selectedIdx := m.projForm.agentIdx
 	if selectedIdx == askAgentIdx {
-		selectedIdx = len(agentChoices)
+		selectedIdx = len(agentNames)
 	}
 	var b strings.Builder
 	for i, a := range projectAgentChoices {
