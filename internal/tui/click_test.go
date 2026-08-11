@@ -84,7 +84,10 @@ type createCall struct {
 	project, name, agent, branch, ticket string
 	openTerminal, dangerous              bool
 }
-type sendPromptCall struct{ tmuxSession, prompt string }
+type sendPromptCall struct {
+	tmuxSession, prompt string
+	autoSubmit          bool
+}
 type tagCall struct{ id, ticket, pr string }
 type sessionAgentCall struct {
 	id, agent string
@@ -122,8 +125,8 @@ func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket
 	f.sessions = append(f.sessions, s)
 	return s, f.createHint, nil
 }
-func (f *fakeBackend) StartFirstPrompt(tmuxSession, prompt string) error {
-	f.firstPromptCalls = append(f.firstPromptCalls, sendPromptCall{tmuxSession, prompt})
+func (f *fakeBackend) StartFirstPrompt(tmuxSession, prompt string, autoSubmit bool) error {
+	f.firstPromptCalls = append(f.firstPromptCalls, sendPromptCall{tmuxSession, prompt, autoSubmit})
 	return f.firstPromptErr
 }
 func (f *fakeBackend) OpenSession(id string) (string, error) {

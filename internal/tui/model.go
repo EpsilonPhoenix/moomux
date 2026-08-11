@@ -32,9 +32,10 @@ type Backend interface {
 	// not an error.
 	CreateSession(project, name, agent, existingBranch, ticket string, openTerminal, dangerous bool) (s session.Session, hint string, err error)
 	// StartFirstPrompt waits for a freshly created session's agent pane to
-	// be ready, then types prompt into it and starts the agent working on
-	// it. No-op if prompt is empty.
-	StartFirstPrompt(tmuxSession, prompt string) error
+	// be ready, then types prompt into it, and — if autoSubmit is true —
+	// presses Enter to start the agent working on it. No-op if prompt is
+	// empty.
+	StartFirstPrompt(tmuxSession, prompt string, autoSubmit bool) error
 	OpenSession(id string) (hint string, err error)
 	DeleteSession(id string) error
 	// WorktreeStatus reports id's worktree as dirty/unpushed; ok is false if
@@ -217,12 +218,13 @@ type Model struct {
 	ticketInput             textinput.Model
 	prInput                 textinput.Model
 	promptInput             textarea.Model
-	newFormFocus            int // 0=project selector, 1=nameInput, 2=branchInput, 3=promptInput, 4=ticketInput, 5=prInput, 6=agent selector, 7=dangerous toggle, 8=open-terminal toggle
+	newFormFocus            int // 0=project selector, 1=nameInput, 2=branchInput, 3=promptInput, 4=ticketInput, 5=prInput, 6=agent selector, 7=dangerous toggle, 8=open-terminal toggle, 9=auto-submit toggle
 	newFormErr              string
 	newFormAgentIdx         int  // index into agentNames; -1 means "not chosen yet"
 	newFormDangerous        bool // whether to run the chosen agent with its permission-skipping flag; off by default
 	newFormProjIdx          int  // project selector in the new-session form; index into m.projects
 	newFormOpenInBackground bool // whether to skip opening a terminal window for the new session; off by default
+	newFormAutoSubmit       bool // whether to press Enter after typing the first prompt into the pane; off by default
 	projForm                projectForm
 	sessionForm             sessionForm
 	editProjectName         string

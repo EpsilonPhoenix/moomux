@@ -1656,7 +1656,7 @@ func TestStartFirstPromptWaitsForPaneThenSendsLiteralTextThenSeparateEnter(t *te
 		"capture-pane -p -t =demo:x:": {"$ claude", "agent-idle", "agent-idle"},
 	}
 
-	if err := a.StartFirstPrompt("demo:x", "do the thing"); err != nil {
+	if err := a.StartFirstPrompt("demo:x", "do the thing", true); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1694,7 +1694,7 @@ func TestStartFirstPromptWaitsForActualPaneChangeBeforeStabilizing(t *testing.T)
 		},
 	}
 
-	if err := a.StartFirstPrompt("demo:x", "do the thing"); err != nil {
+	if err := a.StartFirstPrompt("demo:x", "do the thing", true); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1724,11 +1724,32 @@ func TestStartFirstPromptWaitsForActualPaneChangeBeforeStabilizing(t *testing.T)
 
 func TestStartFirstPromptNoopOnEmptyPrompt(t *testing.T) {
 	a, _, tm, _ := newTestApp(t, map[string]config.Project{})
-	if err := a.StartFirstPrompt("demo:x", ""); err != nil {
+	if err := a.StartFirstPrompt("demo:x", "", true); err != nil {
 		t.Fatal(err)
 	}
 	if len(tm.calls) != 0 {
 		t.Fatalf("empty prompt should be a no-op: %v", tm.calls)
+	}
+}
+
+// TestStartFirstPromptSkipsEnterWhenAutoSubmitFalse guards the auto-submit
+// toggle's off state: the prompt still gets typed into the pane so the user
+// can review it, but Enter must never be pressed on their behalf.
+func TestStartFirstPromptSkipsEnterWhenAutoSubmitFalse(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, map[string]config.Project{})
+	tm.seq = map[string][]string{
+		"capture-pane -p -t =demo:x:": {"$ claude", "agent-idle", "agent-idle"},
+	}
+
+	if err := a.StartFirstPrompt("demo:x", "do the thing", false); err != nil {
+		t.Fatal(err)
+	}
+
+	if !tm.called("send-keys -t =demo:x: -l -- do the thing") {
+		t.Fatalf("did not type the prompt: %v", tm.calls)
+	}
+	if tm.called("send-keys -t =demo:x: Enter") {
+		t.Fatalf("Enter must not be pressed when autoSubmit is false: %v", tm.calls)
 	}
 }
 

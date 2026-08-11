@@ -387,8 +387,8 @@ func TestShortFormViewportKeepsFocusedInputVisible(t *testing.T) {
 	m.prInput.SetValue("unique-pr")
 	m.resizeFormInputs()
 
-	values := []string{"[demo]", "unique-name", "unique-branch", "unique-prompt", "unique-ticket", "unique-pr", "[claude]", "[off]", "[off]"}
-	hints := []string{"which project", "worktree folder", "existing branch", "agent's first task", "clickable ticket", "clickable PR", "←→ to choose", "permission prompts", "background"}
+	values := []string{"[demo]", "unique-name", "unique-branch", "unique-prompt", "unique-ticket", "unique-pr", "[claude]", "[off]", "[off]", "[off]"}
+	hints := []string{"which project", "worktree folder", "existing branch", "agent's first task", "clickable ticket", "clickable PR", "←→ to choose", "permission prompts", "background", "starts right away"}
 	for focus, value := range values {
 		m.newFormBlurAll()
 		m.newFormFocus = focus
@@ -437,6 +437,7 @@ func TestFocusedOverlayLineCoversEveryNewFormField(t *testing.T) {
 		{newFormAgentFocus, "agent:"},
 		{newFormDangerousFocus, "dangerous:"},
 		{newFormOpenTerminalFocus, "open in background:"},
+		{newFormAutoSubmitFocus, "auto-submit:"},
 	}
 	for _, tc := range cases {
 		m.newFormFocus = tc.focus
