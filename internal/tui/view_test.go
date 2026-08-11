@@ -168,7 +168,7 @@ func TestNarrowEditSessionShowsCompactSelectedAgent(t *testing.T) {
 	m.sessionForm = sessionForm{
 		project:  "demo",
 		name:     "session",
-		agentIdx: 4, // opencode
+		agentIdx: 2, // opencode
 	}
 
 	view := m.View()
@@ -387,8 +387,8 @@ func TestShortFormViewportKeepsFocusedInputVisible(t *testing.T) {
 	m.prInput.SetValue("unique-pr")
 	m.resizeFormInputs()
 
-	values := []string{"[demo]", "unique-name", "unique-branch", "unique-prompt", "unique-ticket", "unique-pr", "[claude]", "[off]"}
-	hints := []string{"which project", "worktree folder", "existing branch", "agent's first task", "clickable ticket", "clickable PR", "←→ to choose", "background"}
+	values := []string{"[demo]", "unique-name", "unique-branch", "unique-prompt", "unique-ticket", "unique-pr", "[claude]", "[off]", "[off]"}
+	hints := []string{"which project", "worktree folder", "existing branch", "agent's first task", "clickable ticket", "clickable PR", "←→ to choose", "permission prompts", "background"}
 	for focus, value := range values {
 		m.newFormBlurAll()
 		m.newFormFocus = focus
@@ -435,6 +435,7 @@ func TestFocusedOverlayLineCoversEveryNewFormField(t *testing.T) {
 		{4, "tok-ticket"},
 		{5, "tok-prurl"},
 		{newFormAgentFocus, "agent:"},
+		{newFormDangerousFocus, "dangerous:"},
 		{newFormOpenTerminalFocus, "open in background:"},
 	}
 	for _, tc := range cases {

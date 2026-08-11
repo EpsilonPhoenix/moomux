@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -89,43 +88,33 @@ const (
 	ModeMultiView
 )
 
-// agentChoices lists every agent selector entry. The "(dangerous)" suffix
-// marks the variant that runs with its permission-skipping flag (see
-// agentChoiceParts) — opencode has no such flag, so it gets no dangerous
-// entry.
-var agentChoices = []string{"claude", "claude (dangerous)", "codex", "codex (dangerous)", "opencode"}
+// agentNames lists the agent CLIs a session/project can run. Every form
+// pairs a selector over this list with its own independent "dangerous"
+// toggle row, rather than a single combined "codex (dangerous)"-style list
+// — opencode has no permission-skipping flag (see dangerousFlag in
+// internal/app), so its toggle is simply a no-op.
+var agentNames = []string{"claude", "codex", "opencode"}
 
-// dangerousSuffix marks an agentChoices entry as the flag-skipping variant;
-// see agentChoiceLabel/agentChoiceParts.
-const dangerousSuffix = " (dangerous)"
-
-// agentChoiceLabel builds the agentChoices entry for an (agent, dangerous)
-// pair — the inverse of agentChoiceParts.
-func agentChoiceLabel(agent string, dangerous bool) string {
-	if dangerous {
-		return agent + dangerousSuffix
+// agentNameIndex finds agent's position in agentNames, defaulting to 0
+// (claude) if it's unrecognized.
+func agentNameIndex(agent string) int {
+	for i, a := range agentNames {
+		if a == agent {
+			return i
+		}
 	}
-	return agent
-}
-
-// agentChoiceParts splits an agentChoices entry into the underlying agent
-// name and whether it's the dangerous variant.
-func agentChoiceParts(choice string) (agent string, dangerous bool) {
-	if rest, ok := strings.CutSuffix(choice, dangerousSuffix); ok {
-		return rest, true
-	}
-	return choice, false
+	return 0
 }
 
 // askAgentIdx is a sentinel projectForm.agentIdx value, one past the real
-// agentChoices, selected as an extra "ask each time" entry in the project
+// agentNames, selected as an extra "ask each time" entry in the project
 // agent selector — it maps to config.Project.PromptAgent instead of Agent.
 const askAgentIdx = -1
 
 // projFormInputCount is the number of plain text inputs in the project form
 // (name, repo, base branch, branch prefix). Non-text controls follow at
 // fixed offsets from it: focus==projFormInputCount is the emoji selector,
-// +1 the agent selector, +2 the worktree toggle.
+// +1 the agent selector, +2 the dangerous toggle, +3 the worktree toggle.
 const projFormInputCount = 4
 
 type projectForm struct {
@@ -138,7 +127,8 @@ type projectForm struct {
 	// config) — otherwise it would be indistinguishable from "auto" and
 	// saving any unrelated field would silently discard it.
 	emojiChoices []string
-	agentIdx     int // index into agentChoices, or askAgentIdx for "ask each time"
+	agentIdx     int  // index into agentNames, or askAgentIdx for "ask each time"
+	dangerous    bool // whether the chosen agent runs with its permission-skipping flag; meaningless when agentIdx is askAgentIdx
 	noWorktree   bool
 	err          string
 }
@@ -153,12 +143,21 @@ type tagForm struct {
 	focus  int
 }
 
+// sessionFormAgentFocus and sessionFormDangerousFocus are the sessionForm.focus
+// values for the edit-session form's two controls.
+const (
+	sessionFormAgentFocus     = 0
+	sessionFormDangerousFocus = 1
+)
+
 type sessionForm struct {
-	id       string
-	project  string
-	name     string
-	agentIdx int
-	err      string
+	id        string
+	project   string
+	name      string
+	agentIdx  int
+	dangerous bool
+	focus     int // sessionFormAgentFocus or sessionFormDangerousFocus
+	err       string
 }
 
 func newTagForm(ticket, pr string) tagForm {
@@ -218,9 +217,10 @@ type Model struct {
 	ticketInput             textinput.Model
 	prInput                 textinput.Model
 	promptInput             textarea.Model
-	newFormFocus            int // 0=project selector, 1=nameInput, 2=branchInput, 3=promptInput, 4=ticketInput, 5=prInput, 6=agent selector, 7=open-terminal toggle
+	newFormFocus            int // 0=project selector, 1=nameInput, 2=branchInput, 3=promptInput, 4=ticketInput, 5=prInput, 6=agent selector, 7=dangerous toggle, 8=open-terminal toggle
 	newFormErr              string
-	newFormAgentIdx         int  // agent selector in the new-session form; -1 means "not chosen yet"
+	newFormAgentIdx         int  // index into agentNames; -1 means "not chosen yet"
+	newFormDangerous        bool // whether to run the chosen agent with its permission-skipping flag; off by default
 	newFormProjIdx          int  // project selector in the new-session form; index into m.projects
 	newFormOpenInBackground bool // whether to skip opening a terminal window for the new session; off by default
 	projForm                projectForm
@@ -302,16 +302,6 @@ type Model struct {
 	overlayViewport viewport.Model
 	overlayMode     Mode
 	overlayFocus    int
-}
-
-func agentChoiceIndex(agent string, dangerous bool) int {
-	label := agentChoiceLabel(agent, dangerous)
-	for i, choice := range agentChoices {
-		if choice == label {
-			return i
-		}
-	}
-	return 0
 }
 
 // resolvedLinkHit is a linkHit translated into absolute terminal
@@ -789,7 +779,8 @@ func editProjectForm(name string, p config.Project) projectForm {
 	if p.PromptAgent {
 		pf.agentIdx = askAgentIdx
 	} else {
-		pf.agentIdx = agentChoiceIndex(p.AgentName(), p.Dangerous)
+		pf.agentIdx = agentNameIndex(p.AgentName())
+		pf.dangerous = p.Dangerous
 	}
 	pf.noWorktree = p.NoWorktree
 	return pf
