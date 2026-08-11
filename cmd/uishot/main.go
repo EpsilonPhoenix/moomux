@@ -338,6 +338,7 @@ func renderScreen(screenName string, width, height int, theme, appearance string
 	close(statusCh)
 	tui.ApplySettings(cfg)
 	m := tui.New(cfg, be, statusCh, func() {})
+	m.Version = "dev"
 	// tui.New() no longer calls TmuxAliveAll() synchronously (that now
 	// happens async, via Init(), so a slow tmux server can't block the real
 	// app's first render) — this harness never calls Init() at all, so

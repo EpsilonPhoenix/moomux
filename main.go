@@ -419,6 +419,7 @@ func run() error {
 
 	tui.ApplySettings(cfg)
 	m := tui.New(cfg, a, statusCh, cancel)
+	m.Version = version
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		cancel()

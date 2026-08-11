@@ -184,6 +184,8 @@ type Model struct {
 	cfg     *config.Config
 	backend Backend
 	keys    KeyMap
+	// Version is shown in the bottom-right corner of the footer; empty hides it.
+	Version string
 
 	projects     []string
 	activeProj   int

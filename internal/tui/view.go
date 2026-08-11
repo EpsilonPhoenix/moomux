@@ -605,12 +605,27 @@ func (m *Model) renderFooter() string {
 	// subtract 2 for the footer's horizontal padding (Padding(0,1) = 1 each side)
 	inner := m.width - 2
 	hint := helpKeyStyle.Foreground(colAccent).Render("?") + helpDescStyle.Render(" help")
-	hintRow := lipgloss.NewStyle().Width(inner).Render(hint)
+	hintRow := m.hintRowWithVersion(hint, inner)
 
 	messageRow := lipgloss.NewStyle().Width(inner).Render(m.flashLine(inner))
 
 	rows := lipgloss.JoinVertical(lipgloss.Left, messageRow, hintRow)
 	return footerStyle.Width(m.width).Render(rows)
+}
+
+// hintRowWithVersion places hint on the left and the app version flush
+// against the bottom-right corner of the screen. On a terminal too narrow
+// for both, the version is dropped rather than truncated mid-word.
+func (m *Model) hintRowWithVersion(hint string, width int) string {
+	if m.Version == "" {
+		return lipgloss.NewStyle().Width(width).Render(hint)
+	}
+	version := helpDescStyle.Render("v" + m.Version)
+	gap := width - lipgloss.Width(hint) - lipgloss.Width(version)
+	if gap < 1 {
+		return lipgloss.NewStyle().Width(width).Render(hint)
+	}
+	return hint + strings.Repeat(" ", gap) + version
 }
 
 // flashLine renders the current flash message styled by kind (or "" if
