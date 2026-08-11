@@ -336,6 +336,21 @@ func TestCreateSessionInstallsClaudeHooks(t *testing.T) {
 	}
 }
 
+func TestCreateSessionInstallsTagCommand(t *testing.T) {
+	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	home, _ := os.UserHomeDir()
+	tn := TmuxSessionName("demo:feat", "feat")
+	tm.out["list-panes -t ="+tn+": -F #{pane_id}"] = "%0\n"
+	noBranch(git, "feat")
+
+	if _, _, err := a.CreateSession("demo", "feat", "claude", "", "", true, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "commands", "tag.md")); err != nil {
+		t.Fatalf("expected ~/.claude/commands/tag.md to be written: %v", err)
+	}
+}
+
 func TestCreateSessionSkipsClaudeHooksForOtherAgents(t *testing.T) {
 	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
 	home, _ := os.UserHomeDir()

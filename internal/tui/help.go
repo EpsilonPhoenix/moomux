@@ -151,5 +151,9 @@ func (m *Model) renderHelp() string {
 	b.WriteString(hintStyle.Width(tableWidth).Render(
 		"tip: add mouse/passthrough settings to ~/.tmux.conf for the best experience — see the README's \"Recommended tmux config\"",
 	))
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Width(tableWidth).Render(
+		"tip: run /tag inside Claude Code or Codex to tag this session's PR (and ticket) without leaving the agent",
+	))
 	return b.String()
 }
