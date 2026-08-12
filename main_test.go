@@ -7,7 +7,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/erickgnclvs/moomux/internal/app"
 	"github.com/erickgnclvs/moomux/internal/config"
+	"github.com/erickgnclvs/moomux/internal/session"
+	"github.com/erickgnclvs/moomux/internal/tmux"
 )
 
 // saveConfig must log a Save failure rather than silently discard it —
@@ -27,5 +30,57 @@ func TestSaveConfigLogsFailure(t *testing.T) {
 
 	if !bytes.Contains(buf.Bytes(), []byte("config save failed")) {
 		t.Fatalf("expected a logged failure, got: %s", buf.String())
+	}
+}
+
+// stubTmuxRunner answers "display-message -p #S" with a fixed session name,
+// simulating a process running inside that tmux session regardless of cwd.
+type stubTmuxRunner struct{ currentSessionName string }
+
+func (r stubTmuxRunner) Run(args ...string) (string, error) {
+	return r.currentSessionName, nil
+}
+
+// TestCurrentSessionPrefersTmuxOverStaleCwd reproduces the /kill bug where a
+// stray `cd` earlier in the conversation (e.g. to read a sibling worktree's
+// file) left the process cwd inside session "b"'s worktree while the agent
+// was still running in session "a"'s tmux session and pane. Resolving purely
+// from cwd (the old behavior) would identify session "b" and park/tag it
+// instead — currentSession must resolve via the actual tmux session instead.
+func TestCurrentSessionPrefersTmuxOverStaleCwd(t *testing.T) {
+	root := t.TempDir()
+	wtA := filepath.Join(root, "a")
+	wtB := filepath.Join(root, "b")
+	for _, d := range []string{wtA, wtB} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	store := &session.Store{Path: filepath.Join(root, "sessions.json")}
+	if err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Put(session.Session{ID: "demo:a", Project: "demo", Name: "a", WorktreePath: wtA, TmuxSession: "moomux-a-1111"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Put(session.Session{ID: "demo:b", Project: "demo", Name: "b", WorktreePath: wtB, TmuxSession: "moomux-b-2222"}); err != nil {
+		t.Fatal(err)
+	}
+
+	a := &app.App{
+		Store: store,
+		Tmux:  &tmux.Client{Runner: stubTmuxRunner{currentSessionName: "moomux-a-1111"}},
+	}
+
+	t.Setenv("TMUX", "/tmp/tmux-501/default,1,0")
+	t.Chdir(wtB) // stale cwd: left over in session a's shell from an earlier `cd` into b
+
+	s, err := currentSession(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.ID != "demo:a" {
+		t.Fatalf("currentSession = %+v, want session a (the tmux session we're actually in), not the stale-cwd session", s)
 	}
 }

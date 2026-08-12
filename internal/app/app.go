@@ -600,6 +600,19 @@ func (a *App) SetSessionTags(id, ticket, pr string) (session.Session, error) {
 	return s, nil
 }
 
+// SessionForTmuxName finds the session running as tmux session tmuxName.
+// Preferred over SessionForPath for identifying "the session we're in": it
+// keys off the tmux session the caller's pane actually belongs to, which a
+// stray `cd` earlier in the same shell can't change, unlike cwd.
+func (a *App) SessionForTmuxName(tmuxName string) (session.Session, bool) {
+	for _, s := range a.Store.All() {
+		if s.TmuxSession == tmuxName {
+			return s, true
+		}
+	}
+	return session.Session{}, false
+}
+
 // SessionForPath finds the session whose worktree is path or an ancestor of
 // path, letting `moomux tag` identify "the session we're in" from the
 // caller's cwd without needing an explicit session ID.
