@@ -338,13 +338,9 @@ func runTag(args []string) error {
 	if err != nil {
 		return err
 	}
-	cwd, err := os.Getwd()
+	s, err := currentSession(a)
 	if err != nil {
-		return err
-	}
-	s, ok := a.SessionForPath(cwd)
-	if !ok {
-		return fmt.Errorf("tag: no moomux session found for %s (run this from inside a session's worktree)", cwd)
+		return fmt.Errorf("tag: %w", err)
 	}
 
 	if *ticket == "" {
@@ -361,31 +357,56 @@ func runTag(args []string) error {
 }
 
 // runPark implements `moomux park`: stop the tmux session and close its
-// terminal tab (if any) for whichever moomux session's worktree the current
-// directory is inside — the CLI backend for the /kill slash command
+// terminal tab (if any) for whichever moomux session we're currently
+// running in — the CLI backend for the /kill slash command
 // (internal/claudehook.EnsureKillCommandInstalled), invoked from the
 // agent's own pane. Like `moomux tag`, it identifies "the session we're in"
-// from cwd rather than taking an explicit ID. The worktree, branch, and
-// moomux list entry are left intact so the session can be reopened later —
-// see App.KillTmux's doc comment.
+// via currentSession rather than taking an explicit ID. The worktree,
+// branch, and moomux list entry are left intact so the session can be
+// reopened later — see App.KillTmux's doc comment.
 func runPark() error {
 	a, err := newApp()
 	if err != nil {
 		return err
 	}
-	cwd, err := os.Getwd()
+	s, err := currentSession(a)
 	if err != nil {
-		return err
-	}
-	s, ok := a.SessionForPath(cwd)
-	if !ok {
-		return fmt.Errorf("park: no moomux session found for %s (run this from inside a session's worktree)", cwd)
+		return fmt.Errorf("park: %w", err)
 	}
 	if err := a.KillTmux(s.ID); err != nil {
 		return fmt.Errorf("park: %w", err)
 	}
 	fmt.Println("parked " + s.Name)
 	return nil
+}
+
+// currentSession identifies "the moomux session this process is running
+// in" for the park/tag CLI backends. It prefers the tmux session the
+// caller's pane actually belongs to (via $TMUX, resolved by
+// Tmux.CurrentSessionName) over cwd: an agent that `cd`s into a sibling
+// worktree earlier in the conversation — to read a file, say — leaves cwd
+// pointing at that *other* session's directory, which previously made
+// SessionForPath silently park or tag the wrong session. The tmux session a
+// pane belongs to can't change out from under it that way, so it's the more
+// reliable signal. Falls back to cwd only when not running inside tmux at
+// all (SessionForTmuxName has nothing to key off).
+func currentSession(a *app.App) (session.Session, error) {
+	if os.Getenv("TMUX") != "" {
+		if name, err := a.Tmux.CurrentSessionName(); err == nil {
+			if s, ok := a.SessionForTmuxName(name); ok {
+				return s, nil
+			}
+		}
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return session.Session{}, err
+	}
+	s, ok := a.SessionForPath(cwd)
+	if !ok {
+		return session.Session{}, fmt.Errorf("no moomux session found for %s (run this from inside a session's worktree)", cwd)
+	}
+	return s, nil
 }
 
 func run() error {

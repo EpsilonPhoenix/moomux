@@ -1196,6 +1196,19 @@ func TestSessionForPath(t *testing.T) {
 	}
 }
 
+func TestSessionForTmuxName(t *testing.T) {
+	a, _, _, _ := newTestApp(t, gitProject("/repo"))
+	_ = a.Store.Put(session.Session{ID: "demo:a", Project: "demo", Name: "a", TmuxSession: "moomux-a-1234"})
+	_ = a.Store.Put(session.Session{ID: "demo:b", Project: "demo", Name: "b", TmuxSession: "moomux-b-5678"})
+
+	if s, ok := a.SessionForTmuxName("moomux-b-5678"); !ok || s.ID != "demo:b" {
+		t.Fatalf("s=%+v ok=%v", s, ok)
+	}
+	if _, ok := a.SessionForTmuxName("moomux-nonexistent"); ok {
+		t.Fatal("unknown tmux session must not match")
+	}
+}
+
 func TestSetSessionArchived(t *testing.T) {
 	a, _, _, _ := newTestApp(t, gitProject("/repo"))
 	_ = a.Store.Put(session.Session{ID: "demo:a", Project: "demo", Name: "a"})

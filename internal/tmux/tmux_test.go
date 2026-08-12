@@ -189,6 +189,15 @@ func TestPaneCwd(t *testing.T) {
 	}
 }
 
+func TestCurrentSessionName(t *testing.T) {
+	fr := &fakeRunner{out: map[string]string{"display-message -p #S": "moomux-foo-1234\n"}}
+	c := &Client{Runner: fr}
+	got, err := c.CurrentSessionName()
+	if err != nil || got != "moomux-foo-1234" {
+		t.Fatalf("got %q err %v", got, err)
+	}
+}
+
 func TestKillSession(t *testing.T) {
 	fr := &fakeRunner{}
 	c := &Client{Runner: fr}

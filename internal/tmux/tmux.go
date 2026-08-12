@@ -226,3 +226,15 @@ func (c *Client) KillSession(name string) error {
 	_, err := c.Runner.Run("kill-session", "-t", Exact(name))
 	return err
 }
+
+// CurrentSessionName returns the tmux session name of the pane this process
+// is running in (no -t target: tmux resolves it from $TMUX/$TMUX_PANE in the
+// environment, which the child process inherits). Errors when not run
+// inside a tmux client, e.g. $TMUX unset.
+func (c *Client) CurrentSessionName() (string, error) {
+	out, err := c.Runner.Run("display-message", "-p", "#S")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
