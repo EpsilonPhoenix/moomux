@@ -491,6 +491,23 @@ func TestCreateSessionBranchPrefix(t *testing.T) {
 	}
 }
 
+func TestCreateSessionBranchPrefixTrailingSlash(t *testing.T) {
+	projects := map[string]config.Project{
+		"demo": {Kind: "git", Repo: "/repo", BaseBranch: "main", BranchPrefix: "user/"},
+	}
+	a, git, tm, _ := newTestApp(t, projects)
+	tm.out["list-panes -t ="+TmuxSessionName("demo:feat", "feat")+": -F #{pane_id}"] = "%0\n"
+	noBranch(git, "user/feat")
+
+	s, _, err := a.CreateSession("demo", "feat", "", "", "", true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Branch != "user/feat" {
+		t.Fatalf("branch = %q", s.Branch)
+	}
+}
+
 func TestCreateSessionExistingBranch(t *testing.T) {
 	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
 	tm.out["list-panes -t ="+TmuxSessionName("demo:login-page", "login-page")+": -F #{pane_id}"] = "%0\n"
