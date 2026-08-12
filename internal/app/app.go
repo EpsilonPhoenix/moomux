@@ -331,8 +331,8 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string,
 			fetchTarget = existingBranch
 		} else {
 			branch = name
-			if proj.BranchPrefix != "" {
-				branch = proj.BranchPrefix + "/" + name
+			if prefix := strings.TrimSuffix(proj.BranchPrefix, "/"); prefix != "" {
+				branch = prefix + "/" + name
 			}
 		}
 		if a.Git.HasRemote(proj.Repo, "origin") {
