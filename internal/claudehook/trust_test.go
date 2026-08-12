@@ -20,6 +20,22 @@ func readClaudeJSON(t *testing.T, home string) map[string]any {
 	return m
 }
 
+// entryFor reads root.projects[dir] — the nesting Claude Code's own trust
+// checks actually read (root[dir] directly is a location Claude Code never
+// consults, however plausible it looks).
+func entryFor(t *testing.T, root map[string]any, dir string) map[string]any {
+	t.Helper()
+	projects, ok := root["projects"].(map[string]any)
+	if !ok {
+		t.Fatalf("no projects object: %v", root)
+	}
+	entry, ok := projects[dir].(map[string]any)
+	if !ok {
+		t.Fatalf("no projects entry for %q: %v", dir, projects)
+	}
+	return entry
+}
+
 func TestTrustDirectoryCreatesEntry(t *testing.T) {
 	home := t.TempDir()
 	dir := "/repo/worktrees/feature-x"
@@ -28,24 +44,29 @@ func TestTrustDirectoryCreatesEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	root := readClaudeJSON(t, home)
-	entry, ok := root[dir].(map[string]any)
-	if !ok {
-		t.Fatalf("no entry for %q: %v", dir, root)
-	}
+	entry := entryFor(t, readClaudeJSON(t, home), dir)
 	if entry["hasTrustDialogAccepted"] != true {
 		t.Fatalf("hasTrustDialogAccepted = %v, want true", entry["hasTrustDialogAccepted"])
 	}
 	if entry["hasCompletedProjectOnboarding"] != true {
 		t.Fatalf("hasCompletedProjectOnboarding = %v, want true", entry["hasCompletedProjectOnboarding"])
 	}
+	// A separate dialog from the folder-trust one above — gates on a CLAUDE.md
+	// that imports files from outside the project (e.g. a global CLAUDE.md
+	// importing from $HOME/.claude), and blocks first input exactly the same
+	// way if left unset.
+	if entry["hasClaudeMdExternalIncludesApproved"] != true {
+		t.Fatalf("hasClaudeMdExternalIncludesApproved = %v, want true", entry["hasClaudeMdExternalIncludesApproved"])
+	}
 }
 
 func TestTrustDirectoryPreservesOtherProjectsAndFields(t *testing.T) {
 	home := t.TempDir()
 	existing := `{
-		"/other/project": {"hasTrustDialogAccepted": false, "allowedTools": ["Bash"]},
-		"/repo/worktrees/feature-x": {"hasTrustDialogAccepted": false, "projectOnboardingSeenCount": 3}
+		"projects": {
+			"/other/project": {"hasTrustDialogAccepted": false, "allowedTools": ["Bash"]},
+			"/repo/worktrees/feature-x": {"hasTrustDialogAccepted": false, "projectOnboardingSeenCount": 3}
+		}
 	}`
 	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(existing), 0o600); err != nil {
 		t.Fatal(err)
@@ -56,11 +77,11 @@ func TestTrustDirectoryPreservesOtherProjectsAndFields(t *testing.T) {
 	}
 
 	root := readClaudeJSON(t, home)
-	other, ok := root["/other/project"].(map[string]any)
-	if !ok || other["hasTrustDialogAccepted"] != false {
-		t.Fatalf("unrelated project entry was touched: %v", root["/other/project"])
+	other := entryFor(t, root, "/other/project")
+	if other["hasTrustDialogAccepted"] != false {
+		t.Fatalf("unrelated project entry was touched: %v", other)
 	}
-	entry := root["/repo/worktrees/feature-x"].(map[string]any)
+	entry := entryFor(t, root, "/repo/worktrees/feature-x")
 	if entry["hasTrustDialogAccepted"] != true {
 		t.Fatalf("hasTrustDialogAccepted = %v, want true", entry["hasTrustDialogAccepted"])
 	}

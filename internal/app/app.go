@@ -489,7 +489,18 @@ func (a *App) waitForPaneReady(tmuxSession string) {
 		// immediately declare it stable, defeating the point of this wait.
 		return
 	}
+	a.waitForPaneStable(tmuxSession, last, deadline)
+}
 
+// waitForPaneStable polls tmuxSession's pane, starting from the already-known
+// seed content, until paneStableChecks consecutive captures come back
+// identical (and non-empty) or deadline passes — whichever comes first.
+// Shared by waitForPaneReady (waiting for startup rendering to finish) and
+// StartFirstPrompt (waiting for the just-typed prompt to finish rendering
+// before Enter is pressed) — both are the same "stop guessing a fixed delay,
+// wait for the pane to actually stop changing" problem.
+func (a *App) waitForPaneStable(tmuxSession, seed string, deadline time.Time) {
+	last := seed
 	stable := 0
 	for {
 		cur, err := a.Tmux.CapturePane(tmuxSession)
@@ -509,16 +520,13 @@ func (a *App) waitForPaneReady(tmuxSession string) {
 	}
 }
 
-// firstPromptSubmitDelay is the gap between typing the prompt and pressing
-// Enter — see Client.SendLiteral's doc comment for why they must be two
-// separate send-keys calls, not one.
-const firstPromptSubmitDelay = 300 * time.Millisecond
-
 // StartFirstPrompt waits for a freshly created session's agent pane to
 // finish starting up and types prompt into it. If autoSubmit is true, it
-// separately presses Enter afterward to start the agent working on it right
-// away; otherwise the prompt is left typed in the pane for the user to
-// review and send themselves. No-op if prompt is empty.
+// waits for the pane to finish re-rendering the typed prompt (a fixed delay
+// isn't reliable here — see waitForPaneStable) and then separately presses
+// Enter to start the agent working on it right away; otherwise the prompt is
+// left typed in the pane for the user to review and send themselves. No-op
+// if prompt is empty.
 func (a *App) StartFirstPrompt(tmuxSession, prompt string, autoSubmit bool) error {
 	if prompt == "" {
 		return nil
@@ -530,7 +538,7 @@ func (a *App) StartFirstPrompt(tmuxSession, prompt string, autoSubmit bool) erro
 	if !autoSubmit {
 		return nil
 	}
-	time.Sleep(firstPromptSubmitDelay)
+	a.waitForPaneStable(tmuxSession, "", time.Now().Add(paneReadyTimeout))
 	return a.Tmux.PressEnter(tmuxSession)
 }
 

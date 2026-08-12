@@ -1650,9 +1650,15 @@ func TestCreateSessionTrustsClaudeWorktree(t *testing.T) {
 	if err := json.Unmarshal(data, &root); err != nil {
 		t.Fatal(err)
 	}
-	entry, ok := root[s.WorktreePath].(map[string]any)
+	// Claude Code's own trust checks read root.projects[dir], never root[dir]
+	// directly — a top-level entry looks plausible but is silently ignored.
+	projects, ok := root["projects"].(map[string]any)
 	if !ok {
-		t.Fatalf("no trust entry for worktree %q: %v", s.WorktreePath, root)
+		t.Fatalf("no projects object: %v", root)
+	}
+	entry, ok := projects[s.WorktreePath].(map[string]any)
+	if !ok {
+		t.Fatalf("no projects entry for worktree %q: %v", s.WorktreePath, projects)
 	}
 	if entry["hasTrustDialogAccepted"] != true {
 		t.Fatalf("hasTrustDialogAccepted = %v, want true", entry["hasTrustDialogAccepted"])
@@ -1817,6 +1823,51 @@ func TestStartFirstPromptWaitsForActualPaneChangeBeforeStabilizing(t *testing.T)
 	// waited for first.
 	if captureBeforeSend < 4 {
 		t.Fatalf("sent after only %d capture-pane polls — looks like it fired on the pre-launch shell, not the agent: %v", captureBeforeSend, tm.calls)
+	}
+}
+
+// TestStartFirstPromptWaitsForPaneToSettleAfterTypingBeforePressingEnter
+// guards the same class of race waitForPaneReady already guards against
+// before typing, but on the other side of SendLiteral: a CLI that's still
+// re-rendering the just-typed text (e.g. collapsing a multi-line paste, or
+// just a slower machine) can still be changing when a fixed, unconditional
+// delay elapses, and pressing Enter into that mid-render state is exactly
+// what swallows it instead of submitting. Enter must wait for the pane to
+// actually stop changing after the prompt was typed, the same way typing
+// waits for the pane to start changing after the agent was launched.
+func TestStartFirstPromptWaitsForPaneToSettleAfterTypingBeforePressingEnter(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, map[string]config.Project{})
+	tm.seq = map[string][]string{
+		"capture-pane -p -t =demo:x:": {
+			"$ claude", "agent-idle", "agent-idle", // pre-type: change then stable
+			"agent-idle: settling", "agent-idle: settled", "agent-idle: settled", // post-type: still re-rendering, then stable
+		},
+	}
+
+	if err := a.StartFirstPrompt("demo:x", "do the thing", true); err != nil {
+		t.Fatal(err)
+	}
+
+	sendIdx, enterIdx, capturesAfterSend := -1, -1, 0
+	for i, c := range tm.calls {
+		joined := strings.Join(c, " ")
+		switch {
+		case strings.HasPrefix(joined, "send-keys -t =demo:x: -l --"):
+			sendIdx = i
+		case joined == "send-keys -t =demo:x: Enter":
+			enterIdx = i
+		case sendIdx != -1 && enterIdx == -1 && strings.HasPrefix(joined, "capture-pane"):
+			capturesAfterSend++
+		}
+	}
+	if sendIdx == -1 {
+		t.Fatalf("never typed the prompt: %v", tm.calls)
+	}
+	if enterIdx == -1 {
+		t.Fatalf("never pressed Enter: %v", tm.calls)
+	}
+	if capturesAfterSend < 2 {
+		t.Fatalf("pressed Enter after only %d capture-pane polls following the typed text — looks like a blind sleep rather than waiting for the pane to actually settle: %v", capturesAfterSend, tm.calls)
 	}
 }
 

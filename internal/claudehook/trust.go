@@ -14,10 +14,13 @@ import (
 // anything typed in programmatically (see App.StartFirstPrompt), since
 // there's nobody there to click through it.
 //
-// Unlike EnsureHooksInstalled's settings.json, this file is keyed per
-// project directory by design (that's the whole point of workspace trust),
-// so this only ever touches the entry for dir — every other project's trust
-// state is left untouched.
+// The per-project trust state Claude Code's own trust checks read lives
+// nested under a top-level "projects" object (root.projects[dir]), not at
+// root[dir] directly — the latter looks plausible but Claude Code never
+// reads it, so the dialog would still show despite this having "run
+// successfully". Unlike EnsureHooksInstalled's settings.json, this only
+// ever touches the entry for dir — every other project's trust state is
+// left untouched.
 func TrustDirectory(home, dir string) error {
 	path := filepath.Join(home, ".claude.json")
 
@@ -31,13 +34,19 @@ func TrustDirectory(home, dir string) error {
 		return err
 	}
 
-	entry, _ := root[dir].(map[string]any)
+	projects, _ := root["projects"].(map[string]any)
+	if projects == nil {
+		projects = map[string]any{}
+	}
+	entry, _ := projects[dir].(map[string]any)
 	if entry == nil {
 		entry = map[string]any{}
 	}
 	entry["hasTrustDialogAccepted"] = true
 	entry["hasCompletedProjectOnboarding"] = true
-	root[dir] = entry
+	entry["hasClaudeMdExternalIncludesApproved"] = true
+	projects[dir] = entry
+	root["projects"] = projects
 
 	data, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
