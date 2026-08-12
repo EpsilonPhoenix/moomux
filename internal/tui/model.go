@@ -87,6 +87,7 @@ const (
 	ModeProjectPicker
 	ModeThemePicker
 	ModeMultiView
+	ModeSearch
 )
 
 // agentNames lists the agent CLIs a session/project can run. Every form
@@ -232,6 +233,12 @@ type Model struct {
 	editProjectName         string
 	tagForm                 tagForm
 	pickerCursor            int // index into m.projects while ModeProjectPicker is open
+	searchInput             textinput.Model
+	// searchResults is the flattened, filtered session list (every project,
+	// active + archived) while ModeSearch is open, recomputed on every
+	// keystroke by refreshSearchResults. searchCursor indexes into it.
+	searchResults []session.Session
+	searchCursor  int
 	// confirmGit starts out as whatever's cached in m.gitStatus (possibly
 	// stale or empty) the instant ModeConfirmDelete opens, so the dialog
 	// never pauses. confirmChecking is true while a fresh fetchGitStatusCmd
@@ -424,6 +431,11 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 	pri.CharLimit = 256
 	pri.Width = 40
 
+	si := textinput.New()
+	si.Placeholder = "session name"
+	si.CharLimit = 64
+	si.Width = 40
+
 	pi := textarea.New()
 	pi.Placeholder = "first prompt (optional)"
 	pi.CharLimit = 4096
@@ -455,6 +467,7 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 		ticketInput:      tki,
 		prInput:          pri,
 		promptInput:      pi,
+		searchInput:      si,
 		overlayViewport:  viewport.New(1, 1),
 		overlayMode:      ModeList,
 		overlayFocus:     -1,

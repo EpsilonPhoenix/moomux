@@ -39,6 +39,7 @@ func (m *Model) helpGroups() []helpGroup {
 			title: "Sessions",
 			entries: []helpEntry{
 				{"n", "new session"},
+				{"f", "find session (all projects)"},
 				{"enter / o", "open (attach tmux)"},
 				{"x", "park (kill tmux)"},
 				{"d", "delete worktree"},

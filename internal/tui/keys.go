@@ -38,6 +38,7 @@ type KeyMap struct {
 	RemoteLinks    key.Binding
 	ProjectPicker  key.Binding
 	ThemePicker    key.Binding
+	Search         key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -98,5 +99,10 @@ func DefaultKeyMap() KeyMap {
 		// collide with.
 		ProjectPicker: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "pick project")),
 		ThemePicker:   key.NewBinding(key.WithKeys("T"), key.WithHelp("T", "theme")),
+		// "/" is already ProjectPicker, so search gets its own mnemonic
+		// letter. Unlike ProjectPicker (a plain cursor list), this one opens
+		// straight into a text field, so it searches every project's
+		// sessions at once rather than needing its own scoping key.
+		Search: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "find session")),
 	}
 }
