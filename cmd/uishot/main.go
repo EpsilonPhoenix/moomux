@@ -48,6 +48,12 @@ var screens = map[string][]string{
 	"new-project":    {"/", "n"},
 	"tag":            {"t"},
 	"project-picker": {"/"},
+	// Empty query browses every session across every project (see
+	// matchSessions), demonstrating the default "nothing typed yet" state.
+	"search": {"f"},
+	// "old" only matches "old-spike", the archived sample session, showing
+	// its dim "archived" tag in a filtered result.
+	"search-typed": {"f", "old"},
 	// Picks "spare" (the sessionless sample project) from the picker,
 	// confirming multi-view pins it in alongside "demo" instead of it
 	// staying invisible (see multiViewEligibleProjects/multiPinned).

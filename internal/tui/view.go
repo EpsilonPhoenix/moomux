@@ -225,6 +225,10 @@ func (m *Model) focusedOverlayLine(content string) int {
 		}
 	case ModeThemePicker:
 		return lineContaining(content, themePickerRowMarker+themeNames[m.themeCursor])
+	case ModeSearch:
+		if m.searchCursor < len(m.searchResults) {
+			return lineContaining(content, searchRowMarker+m.searchResults[m.searchCursor].Name)
+		}
 	}
 	return -1
 }
@@ -370,6 +374,9 @@ func (m *Model) View() string {
 	case ModeThemePicker:
 		content := m.compactOverlayContent(m.renderThemePicker())
 		return m.renderOverlay(content, m.themePickerFooter(), m.focusedOverlayLine(content))
+	case ModeSearch:
+		content := m.compactOverlayContent(m.renderSearch())
+		return m.renderOverlay(content, m.searchFooter(), m.focusedOverlayLine(content))
 	}
 	return base
 }

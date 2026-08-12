@@ -397,6 +397,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateThemePicker(msg)
 		case ModeMultiView:
 			return m.updateMultiView(msg)
+		case ModeSearch:
+			return m.updateSearch(msg)
 		default:
 			return m.updateList(msg)
 		}
@@ -625,6 +627,15 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, m.keys.ThemePicker):
 		m.openThemePicker()
+		return m, nil
+	case key.Matches(msg, m.keys.Search):
+		m.searchInput.SetValue("")
+		m.searchInput.Focus()
+		m.searchCursor = 0
+		m.refreshSearchResults()
+		m.mode = ModeSearch
+		m.sessionDialogReturn = ModeList
+		m.resetOverlayViewport()
 		return m, nil
 	case key.Matches(msg, m.keys.DelProject):
 		if len(m.projects) == 0 {
@@ -1357,6 +1368,53 @@ func (m *Model) updateConfirmDeleteProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		m.mode = m.projectDialogReturn
 	}
 	return m, nil
+}
+
+// updateSearch handles keys while ModeSearch is open: typing narrows
+// m.searchResults live (via refreshSearchResults), FormUp/FormDown (arrow-
+// only — j/k must stay literal text here, unlike updateProjectPicker's
+// cursor list) move the selection, enter jumps to the selected session and
+// closes the dialog, esc backs out to wherever search was opened from.
+func (m *Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Cancel):
+		m.mode = m.sessionDialogReturn
+		return m, nil
+	case key.Matches(msg, m.keys.FormUp):
+		if len(m.searchResults) > 0 {
+			m.searchCursor = (m.searchCursor - 1 + len(m.searchResults)) % len(m.searchResults)
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.FormDown):
+		if len(m.searchResults) > 0 {
+			m.searchCursor = (m.searchCursor + 1) % len(m.searchResults)
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Enter):
+		if len(m.searchResults) == 0 || m.searchCursor >= len(m.searchResults) {
+			return m, nil
+		}
+		s := m.searchResults[m.searchCursor]
+		// Land in the classic single-project view regardless of whether
+		// search was opened from ModeList or ModeMultiView — jumping to a
+		// specific session is a ModeList-shaped action (see the design note
+		// in the brainstorm: re-deriving a MultiView panel/cursor target adds
+		// real complexity for no benefit over just switching views).
+		if idx := indexOfProject(m.projects, s.Project); idx >= 0 {
+			m.activeProj = idx
+		}
+		// The target session only appears once m.showArchived matches its
+		// own Archived state — refreshSessions filters on that equality.
+		m.showArchived = s.Archived
+		m.refreshSessions()
+		m.focusSession(s.ID)
+		m.mode = ModeList
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.searchInput, cmd = m.searchInput.Update(msg)
+	m.refreshSearchResults()
+	return m, cmd
 }
 
 // updateProjectPicker handles keys while ModeProjectPicker is open: ↑↓/jk
