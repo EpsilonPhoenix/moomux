@@ -462,6 +462,38 @@ func TestMultiViewTagFormRoundTripsToMultiView(t *testing.T) {
 	}
 }
 
+// TestMultiViewSearchJumpRoundTripsToMultiView is the regression test for
+// jumping to a session via the 'f' search dialog while in ModeMultiView: it
+// must return to ModeMultiView (not fall back to ModeList) and must focus
+// the jumped-to session's own panel/row, not leave the previously-focused
+// panel's stale selection in place.
+func TestMultiViewSearchJumpRoundTripsToMultiView(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+		{ID: "b1", Project: "beta", Name: "b1"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.mode = ModeMultiView
+	m.multiFocus = 0 // alpha
+
+	run(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	if m.mode != ModeSearch {
+		t.Fatalf("mode after 'f' = %v, want ModeSearch", m.mode)
+	}
+	typeText(m, "b1")
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if m.mode != ModeMultiView {
+		t.Fatalf("mode after search jump = %v, want back to ModeMultiView", m.mode)
+	}
+	if m.multiFocus != 1 {
+		t.Fatalf("multiFocus after jumping to b1 = %d, want 1 (beta's panel)", m.multiFocus)
+	}
+	if got := m.multiCursors["beta"]; got != 0 {
+		t.Fatalf("multiCursors[beta] = %d, want 0 (b1 selected)", got)
+	}
+}
+
 // TestMultiViewEligibilityFollowsShowArchived is the regression test for
 // switching the archived toggle: multiViewEligibleProjects must flip which
 // projects qualify along with it — a project with only archived sessions is

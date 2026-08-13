@@ -1395,11 +1395,6 @@ func (m *Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		s := m.searchResults[m.searchCursor]
-		// Land in the classic single-project view regardless of whether
-		// search was opened from ModeList or ModeMultiView — jumping to a
-		// specific session is a ModeList-shaped action (see the design note
-		// in the brainstorm: re-deriving a MultiView panel/cursor target adds
-		// real complexity for no benefit over just switching views).
 		if idx := indexOfProject(m.projects, s.Project); idx >= 0 {
 			m.activeProj = idx
 		}
@@ -1408,7 +1403,20 @@ func (m *Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showArchived = s.Archived
 		m.refreshSessions()
 		m.focusSession(s.ID)
-		m.mode = ModeList
+		// Return to wherever search was opened from. If that's MultiView,
+		// fold the newly-focused session into that project's own panel
+		// state (m.multiCursors) and move panel focus (m.multiFocus) to it
+		// — the same bookkeeping delegateToList does around updateList —
+		// so the jump lands on the right panel/row instead of leaving the
+		// previously-focused panel still highlighted.
+		m.mode = m.sessionDialogReturn
+		if m.mode == ModeMultiView {
+			m.leaveSingleProjectContext(s.Project)
+			if pi := indexOfProject(m.multiViewEligibleProjects(), s.Project); pi >= 0 {
+				m.multiFocus = pi
+				m.ensureMultiFocusVisible()
+			}
+		}
 		return m, nil
 	}
 	var cmd tea.Cmd
