@@ -30,6 +30,10 @@ func updateTitlesCmd(backend Backend, changed map[string]watcher.State) tea.Cmd 
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case UpdateAvailableMsg:
+		m.UpdateVersion = msg.Version
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.resizeFormInputs()

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -21,6 +22,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/prompt"
 	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/session"
+	"github.com/erickgnclvs/moomux/internal/updatecheck"
 	"github.com/erickgnclvs/moomux/internal/watcher"
 )
 
@@ -187,6 +189,9 @@ type Model struct {
 	keys    KeyMap
 	// Version is shown in the bottom-right corner of the footer; empty hides it.
 	Version string
+	// UpdateVersion is the latest GitHub release, set by checkUpdateCmd once
+	// it resolves; empty unless it's newer than Version.
+	UpdateVersion string
 
 	projects     []string
 	activeProj   int
@@ -932,7 +937,21 @@ func (m *Model) Init() tea.Cmd {
 	// the startup tmux-alive check runs immediately rather than waiting for
 	// the first tick — see the StatusRefreshedMsg case for what happens once
 	// it resolves.
-	return tea.Batch(listenStatus(m.statusCh), tickFlash(), refreshStatusCmd(m))
+	return tea.Batch(listenStatus(m.statusCh), tickFlash(), refreshStatusCmd(m), checkUpdateCmd(m.Version))
+}
+
+// checkUpdateCmd asynchronously checks GitHub Releases for a version newer
+// than current. It's a background nicety, not a feature — any failure
+// (offline, GitHub down, rate-limited) or a "dev" build with no real
+// version to compare just means no message comes back.
+func checkUpdateCmd(current string) tea.Cmd {
+	return func() tea.Msg {
+		latest, err := updatecheck.Latest(context.Background())
+		if err != nil || !updatecheck.Newer(current, latest) {
+			return nil
+		}
+		return UpdateAvailableMsg{Version: strings.TrimPrefix(latest, "v")}
+	}
 }
 
 func listenStatus(ch <-chan watcher.Snapshot) tea.Cmd {
