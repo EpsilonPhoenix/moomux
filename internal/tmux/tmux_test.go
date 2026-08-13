@@ -180,6 +180,100 @@ func TestHasSessionAbsent(t *testing.T) {
 	}
 }
 
+func TestEnsureEnvRefreshNoopOutsideTmux(t *testing.T) {
+	t.Setenv("TMUX", "")
+	fr := &fakeRunner{}
+	c := &Client{Runner: fr}
+	if err := c.EnsureEnvRefresh(); err != nil {
+		t.Fatal(err)
+	}
+	if len(fr.calls) != 0 {
+		t.Fatalf("must not touch tmux outside a tmux session; calls = %v", fr.calls)
+	}
+}
+
+func TestEnsureEnvRefreshAppendsWhenMissing(t *testing.T) {
+	t.Setenv("TMUX", "/private/tmp/tmux-501/default,1234,0")
+	t.Setenv("MOSHI_CLIENT", "1")
+	fr := &fakeRunner{out: map[string]string{
+		"show-options -g update-environment": "update-environment[0] SSH_CONNECTION\n",
+	}}
+	c := &Client{Runner: fr}
+	if err := c.EnsureEnvRefresh(); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{
+		{"show-options", "-g", "update-environment"},
+		{"set-option", "-ga", "update-environment", "MOSHI_CLIENT"},
+		{"set-environment", "-g", "MOSHI_CLIENT", "1"},
+	}
+	if !reflect.DeepEqual(fr.calls, want) {
+		t.Fatalf("calls = %v", fr.calls)
+	}
+}
+
+func TestEnsureEnvRefreshSkipsAppendWhenAlreadyPresent(t *testing.T) {
+	t.Setenv("TMUX", "/private/tmp/tmux-501/default,1234,0")
+	t.Setenv("MOSHI_CLIENT", "1")
+	fr := &fakeRunner{out: map[string]string{
+		"show-options -g update-environment": "update-environment[0] MOSHI_CLIENT\nupdate-environment[1] SSH_CONNECTION\n",
+	}}
+	c := &Client{Runner: fr}
+	if err := c.EnsureEnvRefresh(); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{
+		{"show-options", "-g", "update-environment"},
+		{"set-environment", "-g", "MOSHI_CLIENT", "1"},
+	}
+	if !reflect.DeepEqual(fr.calls, want) {
+		t.Fatalf("must not re-append when already present; calls = %v", fr.calls)
+	}
+}
+
+// TestEnsureEnvRefreshSyncsGlobalTable covers the fallback fix: even once
+// update-environment lists MOSHI_CLIENT, a brand-new session/window with no
+// session-local override falls back to the server's global environment
+// table, which update-environment never touches — so EnsureEnvRefresh must
+// push this process's own live value there directly on every run.
+func TestEnsureEnvRefreshSyncsGlobalTable(t *testing.T) {
+	t.Setenv("TMUX", "/private/tmp/tmux-501/default,1234,0")
+	t.Setenv("MOSHI_CLIENT", "1")
+	fr := &fakeRunner{out: map[string]string{
+		"show-options -g update-environment": "update-environment[0] MOSHI_CLIENT\n",
+	}}
+	c := &Client{Runner: fr}
+	if err := c.EnsureEnvRefresh(); err != nil {
+		t.Fatal(err)
+	}
+	last := fr.calls[len(fr.calls)-1]
+	want := []string{"set-environment", "-g", "MOSHI_CLIENT", "1"}
+	if !reflect.DeepEqual(last, want) {
+		t.Fatalf("last call = %v, want %v", last, want)
+	}
+}
+
+// TestEnsureEnvRefreshUnsetsGlobalWhenNotSet covers a process launched
+// without MOSHI_CLIENT (e.g. attaching over plain SSH): the global table
+// must be actively cleared, not left holding an old value from a prior
+// Moshi connection.
+func TestEnsureEnvRefreshUnsetsGlobalWhenNotSet(t *testing.T) {
+	t.Setenv("TMUX", "/private/tmp/tmux-501/default,1234,0")
+	t.Setenv("MOSHI_CLIENT", "")
+	fr := &fakeRunner{out: map[string]string{
+		"show-options -g update-environment": "update-environment[0] MOSHI_CLIENT\n",
+	}}
+	c := &Client{Runner: fr}
+	if err := c.EnsureEnvRefresh(); err != nil {
+		t.Fatal(err)
+	}
+	last := fr.calls[len(fr.calls)-1]
+	want := []string{"set-environment", "-gu", "MOSHI_CLIENT"}
+	if !reflect.DeepEqual(last, want) {
+		t.Fatalf("last call = %v, want %v", last, want)
+	}
+}
+
 func TestPaneCwd(t *testing.T) {
 	fr := &fakeRunner{out: map[string]string{"list-panes -t =moomux-foo: -F #{pane_current_path}": "/tmp/wt\n"}}
 	c := &Client{Runner: fr}

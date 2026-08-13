@@ -247,11 +247,21 @@ func newApp() (*app.App, error) {
 		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	}
 
+	tmuxClient := tmux.New()
+	// moomux itself commonly runs inside a long-lived "moomux" tmux session
+	// (see relaunchInTmux); without this, that session's copy of
+	// MOSHI_CLIENT can get stuck at whatever it was on first attach and
+	// never reflect a later, different connection. Best-effort: a failure
+	// here shouldn't block startup.
+	if err := tmuxClient.EnsureEnvRefresh(); err != nil {
+		slog.Warn("tmux EnsureEnvRefresh failed", "err", err)
+	}
+
 	return &app.App{
 		Cfg:          cfg,
 		CfgPath:      cfgPath,
 		Store:        store,
-		Tmux:         tmux.New(),
+		Tmux:         tmuxClient,
 		Terminal:     terminal.Detect(),
 		Git:          gitwt.New(),
 		PR:           prstatus.New(),
