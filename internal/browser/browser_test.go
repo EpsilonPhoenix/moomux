@@ -10,6 +10,7 @@ func TestRemoteIgnoresStaleClientEnv(t *testing.T) {
 	t.Setenv("SSH_TTY", "")
 	t.Setenv("SSH_CONNECTION", "")
 	t.Setenv("SSH_CLIENT", "100.91.153.105 59586 22")
+	t.Setenv("MOSHI_CLIENT", "")
 
 	if Remote() {
 		t.Errorf("Remote() = true with only stale SSH_CLIENT set, want false")
@@ -18,6 +19,22 @@ func TestRemoteIgnoresStaleClientEnv(t *testing.T) {
 	t.Setenv("SSH_TTY", "/dev/ttys002")
 	if !Remote() {
 		t.Errorf("Remote() = false with SSH_TTY set, want true")
+	}
+}
+
+func TestRemoteDetectsMoshiClient(t *testing.T) {
+	t.Setenv("SSH_TTY", "")
+	t.Setenv("SSH_CONNECTION", "")
+	t.Setenv("SSH_CLIENT", "")
+	t.Setenv("MOSHI_CLIENT", "")
+
+	if Remote() {
+		t.Errorf("Remote() = true with no signals set, want false")
+	}
+
+	t.Setenv("MOSHI_CLIENT", "1")
+	if !Remote() {
+		t.Errorf("Remote() = false with MOSHI_CLIENT set, want true")
 	}
 }
 
