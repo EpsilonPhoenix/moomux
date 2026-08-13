@@ -17,12 +17,11 @@ type TerminalOpener interface {
 
 // TabReopener is an optional capability: implement it on a TerminalOpener
 // whose terminal has an addressable tab/window concept and exposes a way to
-// bring a specific one back to the front (currently iTerm2, via AppleScript,
-// and kitty, via `kitten @ focus-tab --match id:N`; wezterm's
-// `wezterm cli activate-pane --pane-id N` is a candidate once someone
-// wants it). Callers (see app.go's openTerminal) type-assert for this
-// interface rather than calling it directly, so terminals without the
-// capability are unaffected.
+// bring a specific one back to the front (currently iTerm2, via AppleScript;
+// kitty, via `kitten @ focus-tab --match id:N`; and wezterm, via
+// `wezterm cli activate-pane --pane-id N` over its mux server). Callers
+// (see app.go's openTerminal) type-assert for this interface rather than
+// calling it directly, so terminals without the capability are unaffected.
 //
 // OpenTab brings tabID back to the front instead of always creating a new
 // tab; if tabID is empty or no longer exists, it falls back to opening a
@@ -77,11 +76,7 @@ func Detect() TerminalOpener {
 		// WEZTERM_PANE means a wezterm mux server is running, so `cli spawn`
 		// can open a tab in the current window; fall back to a fresh
 		// process if the server can't be reached (e.g. stale env in tmux).
-		return &remoteOpener{
-			binary:   "wezterm",
-			args:     weztermArgs,
-			fallback: &windowOpener{binary: "wezterm", args: weztermStartArgs},
-		}
+		return newWeztermClient(&windowOpener{binary: "wezterm", args: weztermStartArgs})
 	case os.Getenv("TERM") == "alacritty" || os.Getenv("ALACRITTY_WINDOW_ID") != "":
 		newWindow := &windowOpener{binary: "alacritty", args: alacrittyArgs}
 		// `alacritty msg create-window` opens a window in the running

@@ -80,15 +80,6 @@ func TestWindowOpenerGhosttyArgs(t *testing.T) {
 	assertContains(t, fe.args, "=moomux-foo")
 }
 
-func TestWezTermArgsSpawnTab(t *testing.T) {
-	args := weztermArgs("feat/bar", "moomux-foo")
-	assertContains(t, args, "cli")
-	assertContains(t, args, "spawn")
-	assertContains(t, args, "--")
-	assertContains(t, args, "tmux")
-	assertContains(t, args, "moomux-foo")
-}
-
 func TestWezTermStartArgsFallback(t *testing.T) {
 	args := weztermStartArgs("feat/bar", "moomux-foo")
 	assertContains(t, args, "start")

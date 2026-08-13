@@ -79,22 +79,19 @@ func TestDetectReturnsWindowOpenerForGhostty(t *testing.T) {
 	}
 }
 
-func TestDetectReturnsRemoteOpenerForWezTerm(t *testing.T) {
+func TestDetectReturnsWeztermClientForWezTerm(t *testing.T) {
 	t.Setenv("TERM_PROGRAM", "")
 	t.Setenv("__CFBundleIdentifier", "")
 	t.Setenv("KITTY_WINDOW_ID", "")
 	t.Setenv("WEZTERM_PANE", "1")
 	got := Detect()
-	ro, ok := got.(*remoteOpener)
+	wc, ok := got.(*weztermClient)
 	if !ok {
-		t.Fatalf("expected *remoteOpener, got %T", got)
+		t.Fatalf("expected *weztermClient, got %T", got)
 	}
-	if ro.binary != "wezterm" {
-		t.Fatalf("expected wezterm binary, got %s", ro.binary)
-	}
-	fb, ok := ro.fallback.(*windowOpener)
+	fb, ok := wc.fallback.(*windowOpener)
 	if !ok || fb.binary != "wezterm" {
-		t.Fatalf("expected wezterm fallback, got %#v", ro.fallback)
+		t.Fatalf("expected wezterm fallback, got %#v", wc.fallback)
 	}
 }
 
