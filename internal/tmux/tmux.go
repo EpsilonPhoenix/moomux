@@ -96,6 +96,47 @@ func (c *Client) LiveSessions() map[string]bool {
 	return result
 }
 
+// EnsureEnvRefresh keeps the tmux server's notion of MOSHI_CLIENT in sync
+// with reality, so browser.Remote() doesn't false-positive from a stale
+// value. Two separate tmux mechanisms need fixing:
+//
+//  1. update-environment only refreshes a *session's own* local environment
+//     table, and only on that session's next attach. A var missing from
+//     that option's list (as MOSHI_CLIENT is by default) is never refreshed
+//     at all — captured once and stuck for that session's whole lifetime.
+//  2. Even with that fixed, brand-new sessions/windows (which start with no
+//     session-local override) fall back to the tmux *server's global*
+//     environment table — captured once when the server first started and
+//     never touched by update-environment, so it stays stuck forever
+//     regardless of what any later client's own environment looks like.
+//
+// This appends MOSHI_CLIENT to update-environment (fixing case 1 for this
+// session's future attaches) and pushes this process's own live
+// MOSHI_CLIENT value into the global table (fixing case 2 for every new
+// session/window from now on) — the value moomux itself was just launched
+// with is the freshest signal available for what the global table should
+// hold. No-op outside tmux.
+func (c *Client) EnsureEnvRefresh() error {
+	if os.Getenv("TMUX") == "" {
+		return nil
+	}
+	out, err := c.Runner.Run("show-options", "-g", "update-environment")
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(out, "MOSHI_CLIENT") {
+		if _, err := c.Runner.Run("set-option", "-ga", "update-environment", "MOSHI_CLIENT"); err != nil {
+			return err
+		}
+	}
+	if v := os.Getenv("MOSHI_CLIENT"); v != "" {
+		_, err = c.Runner.Run("set-environment", "-g", "MOSHI_CLIENT", v)
+	} else {
+		_, err = c.Runner.Run("set-environment", "-gu", "MOSHI_CLIENT")
+	}
+	return err
+}
+
 // NewSession creates a detached tmux session at cwd, split into two
 // side-by-side panes: a left pane (~2/3 width) running `cmd`, and a right
 // pane (~1/3 width) left as a plain interactive shell.

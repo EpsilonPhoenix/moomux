@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/erickgnclvs/moomux/internal/browser"
 	"github.com/erickgnclvs/moomux/internal/claudehook"
 	"github.com/erickgnclvs/moomux/internal/codexhook"
 	"github.com/erickgnclvs/moomux/internal/config"
@@ -766,11 +767,20 @@ func (a *App) OpenSession(id string) (string, error) {
 		}
 	}
 	a.Tmux.ConfigureTitleTracking(s.TmuxSession, s.Name)
-	tabID, hint, err := a.openTerminal(s.TermTabID, s.TmuxSession, s.Name)
-	if err != nil {
-		// The tmux session is up regardless; give the user a way in.
-		slog.Error("Terminal.OpenSession failed", "id", id, "tmux_session", s.TmuxSession, "name", s.Name, "err", err)
-		hint = fmt.Sprintf("couldn't open a terminal (%v) — attach yourself: tmux attach -t %s", err, s.TmuxSession)
+	var tabID, hint string
+	if browser.Remote() {
+		// Over SSH, the desktop terminal (iTerm/kitty/etc.) lives on a
+		// different machine than this process — jumping to or opening a
+		// tab there would target the wrong host. The tmux session is
+		// already up; just point the user at it.
+		hint = fmt.Sprintf("tmux attach -t %s", s.TmuxSession)
+	} else {
+		tabID, hint, err = a.openTerminal(s.TermTabID, s.TmuxSession, s.Name)
+		if err != nil {
+			// The tmux session is up regardless; give the user a way in.
+			slog.Error("Terminal.OpenSession failed", "id", id, "tmux_session", s.TmuxSession, "name", s.Name, "err", err)
+			hint = fmt.Sprintf("couldn't open a terminal (%v) — attach yourself: tmux attach -t %s", err, s.TmuxSession)
+		}
 	}
 	if hooksHint != "" {
 		hint = joinHints(hooksHint, hint)

@@ -144,6 +144,12 @@ func newTestApp(t *testing.T, projects map[string]config.Project) (*App, *fakeGi
 	// comments). Sandbox HOME so no test run touches the developer's actual
 	// ~/.claude/settings.json or ~/.codex/hooks.json.
 	t.Setenv("HOME", t.TempDir())
+	// Sandbox against the developer's own remote-session signals (e.g. this
+	// suite may itself run inside Moshi) so tests assuming a local
+	// environment aren't at the mercy of ambient env vars; tests that want
+	// browser.Remote() to report true set these explicitly.
+	t.Setenv("SSH_TTY", "")
+	t.Setenv("MOSHI_CLIENT", "")
 	git := &fakeGitRunner{failOn: map[string]bool{}, out: map[string]string{}}
 	tm := &fakeTmuxRunner{out: map[string]string{}, failOn: map[string]bool{}}
 	term := &fakeTerminal{}
@@ -771,6 +777,36 @@ func TestOpenSessionAlive(t *testing.T) {
 	}
 	if len(term.calls) != 1 {
 		t.Fatalf("terminal calls = %v", term.calls)
+	}
+}
+
+func TestOpenSessionOverSSHSkipsTerminalTab(t *testing.T) {
+	a, _, tm, term := newTestApp(t, gitProject("/repo"))
+	t.Setenv("SSH_TTY", "/dev/ttys001")
+	// Pre-install codex's hooks so repairNeedsInputHooks's call is a no-op;
+	// see TestOpenSessionAlive for why.
+	home, _ := os.UserHomeDir()
+	if _, err := codexhook.EnsureHooks(home); err != nil {
+		t.Fatal(err)
+	}
+	_ = a.Store.Put(session.Session{
+		ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat",
+		WorktreePath: "/wt/feat", Agent: "codex",
+	})
+	tm.out["list-panes -t =moomux-feat: -F #{pane_current_path}"] = "/wt/feat\n"
+
+	hint, err := a.OpenSession("demo:feat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(term.calls) != 0 {
+		t.Fatalf("must not open a terminal tab over SSH; calls = %v", term.calls)
+	}
+	if !tm.called("has-session") {
+		t.Fatalf("tmux session must still be ensured over SSH; calls = %v", tm.calls)
+	}
+	if want := "tmux attach -t moomux-feat"; hint != want {
+		t.Fatalf("hint = %q, want %q", hint, want)
 	}
 }
 

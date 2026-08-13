@@ -469,11 +469,16 @@ func TestMouseWheelIsNoop(t *testing.T) {
 	}
 }
 
-// TestRemoteLinksToggleOverridesAutoDetection covers the R toggle: since
-// transports like mosh set none of SSH_TTY/SSH_CONNECTION/SSH_CLIENT,
-// browser.Remote()'s auto-detection has no signal for them, so a user needs
-// to be able to force copy mode from inside the running session.
+// TestRemoteLinksToggleOverridesAutoDetection covers the R toggle: for
+// transports browser.Remote() has no signal for (e.g. mosh without Moshi's
+// MOSHI_CLIENT env var), a user needs to be able to force copy mode from
+// inside the running session.
 func TestRemoteLinksToggleOverridesAutoDetection(t *testing.T) {
+	// Sandbox against the developer's own remote-session signals (e.g. this
+	// suite may itself run inside Moshi/SSH) so the "no signal" assertion
+	// below isn't at the mercy of ambient env vars.
+	t.Setenv("SSH_TTY", "")
+	t.Setenv("MOSHI_CLIENT", "")
 	cfg := &config.Config{Projects: map[string]config.Project{"demo": {Repo: "/tmp/demo"}}}
 	be := &fakeBackend{}
 	statusCh := make(chan watcher.Snapshot)
@@ -504,6 +509,10 @@ func TestRemoteLinksToggleOverridesAutoDetection(t *testing.T) {
 // remote — unlike ticket/PR rows it isn't a URL, so browser.Open would
 // reject it outright, and opening a browser wouldn't make sense either way.
 func TestTmuxRowClickAlwaysCopies(t *testing.T) {
+	// See TestRemoteLinksToggleOverridesAutoDetection for why these are
+	// cleared: this test needs a genuinely local (non-remote) environment.
+	t.Setenv("SSH_TTY", "")
+	t.Setenv("MOSHI_CLIENT", "")
 	cfg := &config.Config{Projects: map[string]config.Project{"demo": {Repo: "/tmp/demo"}}}
 	be := &fakeBackend{sessions: []session.Session{
 		{ID: "demo:one", Project: "demo", Name: "one", TmuxSession: "moomux-one"},
