@@ -48,23 +48,20 @@ func TestDetectReturnsWindowOpenerForKitty(t *testing.T) {
 	}
 }
 
-func TestDetectReturnsRemoteOpenerForKittyWithSocket(t *testing.T) {
+func TestDetectReturnsKittyClientForKittyWithSocket(t *testing.T) {
 	t.Setenv("TERM_PROGRAM", "")
 	t.Setenv("__CFBundleIdentifier", "")
 	t.Setenv("KITTY_WINDOW_ID", "1")
 	t.Setenv("KITTY_LISTEN_ON", "unix:/tmp/kitty-sock")
 	t.Setenv("WEZTERM_PANE", "")
 	got := Detect()
-	ro, ok := got.(*remoteOpener)
+	kc, ok := got.(*kittyClient)
 	if !ok {
-		t.Fatalf("expected *remoteOpener, got %T", got)
+		t.Fatalf("expected *kittyClient, got %T", got)
 	}
-	if ro.binary != "kitten" {
-		t.Fatalf("expected kitten binary, got %s", ro.binary)
-	}
-	fb, ok := ro.fallback.(*windowOpener)
+	fb, ok := kc.fallback.(*windowOpener)
 	if !ok || fb.binary != "kitty" {
-		t.Fatalf("expected kitty fallback, got %#v", ro.fallback)
+		t.Fatalf("expected kitty fallback, got %#v", kc.fallback)
 	}
 }
 
