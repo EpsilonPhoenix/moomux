@@ -53,8 +53,12 @@ func Open(rawURL string) error {
 // windows) until logout — so checking them false-positives as "remote" long
 // after the SSH session ended. SSH_TTY is tied to the actual pty and isn't
 // cached that way.
+//
+// MOSHI_CLIENT is also checked: it's set by the Moshi mobile/remote client
+// (https://getmoshi.app), which typically connects over mosh rather than
+// ssh and so leaves SSH_TTY unset — this is the signal for that transport.
 func Remote() bool {
-	return os.Getenv("SSH_TTY") != ""
+	return os.Getenv("SSH_TTY") != "" || os.Getenv("MOSHI_CLIENT") != ""
 }
 
 // Copy writes text to the user's local clipboard via an OSC 52 escape
