@@ -92,13 +92,6 @@ func ghosttyArgs(title, tmuxSession string) []string {
 	return args
 }
 
-// weztermArgs opens the session as a new tab in the current wezterm window
-// via the mux server (`wezterm cli spawn`). The tab title follows the tmux
-// window name through set-titles, so no title flag is needed here.
-func weztermArgs(title, tmuxSession string) []string {
-	return []string{"cli", "spawn", "--", "tmux", "attach", "-t", tmuxSession}
-}
-
 // weztermStartArgs launches a fresh wezterm process (new window); used as
 // the fallback when the mux server can't be reached.
 func weztermStartArgs(title, tmuxSession string) []string {
