@@ -523,3 +523,30 @@ func TestHelpOverlayScrollsWhileControlsRemainVisible(t *testing.T) {
 		t.Fatalf("sticky help controls are not visible after scrolling:\n%s", view)
 	}
 }
+
+func TestFooterUpdateNoticeFallsBackAsWidthShrinks(t *testing.T) {
+	m := layoutTestModel(1)
+	m.Version = "0.5.3"
+	m.UpdateVersion = "0.5.4"
+
+	full := "v0.5.3 → v0.5.4 (brew update && brew upgrade moomux)"
+	short := "v0.5.3 → v0.5.4"
+	plain := "v0.5.3"
+
+	// Wide enough for the full instruction.
+	if got := m.hintRowWithVersion("? help", lipgloss.Width("? help")+lipgloss.Width(full)+1); !strings.Contains(got, full) {
+		t.Fatalf("wide footer = %q, want it to contain %q", got, full)
+	}
+	// Too narrow for the instruction, wide enough for the arrow form.
+	if got := m.hintRowWithVersion("? help", lipgloss.Width("? help")+lipgloss.Width(short)+1); !strings.Contains(got, short) || strings.Contains(got, "brew") {
+		t.Fatalf("medium footer = %q, want it to contain %q but not the brew command", got, short)
+	}
+	// Too narrow for the arrow form, wide enough for the plain version.
+	if got := m.hintRowWithVersion("? help", lipgloss.Width("? help")+lipgloss.Width(plain)+1); !strings.Contains(got, plain) || strings.Contains(got, "→") {
+		t.Fatalf("narrow footer = %q, want it to contain %q but not an update arrow", got, plain)
+	}
+	// Too narrow for even the plain version: dropped entirely, same as today.
+	if got := m.hintRowWithVersion("? help", lipgloss.Width("? help")); strings.Contains(got, "v0.5.3") {
+		t.Fatalf("too-narrow footer unexpectedly contains version: %q", got)
+	}
+}

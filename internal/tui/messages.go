@@ -38,6 +38,10 @@ type StatusChannelClosedMsg struct{}
 
 type ErrorMsg struct{ Err error }
 
+// UpdateAvailableMsg is delivered by checkUpdateCmd when GitHub Releases
+// reports a version newer than the one currently running.
+type UpdateAvailableMsg struct{ Version string }
+
 type InfoMsg struct {
 	When time.Time
 }

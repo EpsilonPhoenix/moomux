@@ -602,12 +602,28 @@ func (m *Model) hintRowWithVersion(hint string, width int) string {
 	if m.Version == "" {
 		return lipgloss.NewStyle().Width(width).Render(hint)
 	}
-	version := helpDescStyle.Render("v" + m.Version)
-	gap := width - lipgloss.Width(hint) - lipgloss.Width(version)
-	if gap < 1 {
-		return lipgloss.NewStyle().Width(width).Render(hint)
+	for _, text := range m.versionCandidates() {
+		version := helpDescStyle.Render(text)
+		gap := width - lipgloss.Width(hint) - lipgloss.Width(version)
+		if gap >= 1 {
+			return hint + strings.Repeat(" ", gap) + version
+		}
 	}
-	return hint + strings.Repeat(" ", gap) + version
+	return lipgloss.NewStyle().Width(width).Render(hint)
+}
+
+// versionCandidates returns footer version text from most to least detailed,
+// so hintRowWithVersion can fall back as terminal width shrinks instead of
+// truncating mid-word. Only one candidate when there's no update to report.
+func (m *Model) versionCandidates() []string {
+	if m.UpdateVersion == "" {
+		return []string{"v" + m.Version}
+	}
+	return []string{
+		"v" + m.Version + " → v" + m.UpdateVersion + " (brew update && brew upgrade moomux)",
+		"v" + m.Version + " → v" + m.UpdateVersion,
+		"v" + m.Version,
+	}
 }
 
 // flashLine renders the current flash message styled by kind (or "" if

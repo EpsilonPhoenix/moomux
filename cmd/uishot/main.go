@@ -113,6 +113,10 @@ var screens = map[string][]string{
 	"multi-view-delete":   {"d"},
 	"multi-view-tag":      {"t"},
 	"multi-view-archived": {"A"},
+	// No keys of its own; renderScreen sets m.UpdateVersion directly to show
+	// the footer's "update available" notice (checkUpdateCmd never runs in
+	// this harness, since Init() is never called).
+	"update-available": {},
 }
 
 var namedKeys = map[string]tea.KeyType{
@@ -363,6 +367,10 @@ func renderScreen(screenName string, width, height int, theme, appearance string
 	tui.ApplySettings(cfg)
 	m := tui.New(cfg, be, statusCh, func() {})
 	m.Version = "dev"
+	if screenName == "update-available" {
+		m.Version = "0.5.3"
+		m.UpdateVersion = "0.5.4"
+	}
 	// tui.New() no longer calls TmuxAliveAll() synchronously (that now
 	// happens async, via Init(), so a slow tmux server can't block the real
 	// app's first render) — this harness never calls Init() at all, so
