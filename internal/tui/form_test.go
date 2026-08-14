@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 // TestRenderFormHintClampsLongHintToFixedHeight guards the "every form's
@@ -25,6 +26,31 @@ func TestRenderFormHintPadsShortHintToFixedHeight(t *testing.T) {
 	rendered := m.renderFormHint("short hint")
 	if got := lipgloss.Height(rendered); got != formHintLines {
 		t.Fatalf("height = %d, want %d (short hint):\n%s", got, formHintLines, rendered)
+	}
+}
+
+// TestRenderNewFormAgentSelectorFollowsFocus guards against the agent
+// selector always rendering as focused regardless of m.newFormFocus, which
+// made it highlight blue even while another field had focus.
+func TestRenderNewFormAgentSelectorFollowsFocus(t *testing.T) {
+	origProfile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(origProfile)
+
+	m := newTestModel(&fakeBackend{})
+	m.newFormAgentIdx = 0
+
+	m.newFormFocus = newFormProjFocus
+	unfocused := m.renderNewFormAgentSelector()
+	want := renderSelector(agentNames, 0, false, m.overlayWidth(formHintWidth)-lipgloss.Width("agent:  "))
+	if unfocused != want {
+		t.Fatalf("unfocused render = %q, want %q", unfocused, want)
+	}
+
+	m.newFormFocus = newFormAgentFocus
+	focused := m.renderNewFormAgentSelector()
+	if focused == unfocused {
+		t.Fatalf("agent selector rendered identically whether focused or not: %q", focused)
 	}
 }
 

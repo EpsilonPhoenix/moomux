@@ -264,7 +264,7 @@ func (m *Model) renderNewFormAgentSelector() string {
 		return warnStyle.Render("choose an agent (←→)")
 	}
 	return renderSelector(
-		agentNames, m.newFormAgentIdx, true,
+		agentNames, m.newFormAgentIdx, m.newFormFocus == newFormAgentFocus,
 		m.overlayWidth(formHintWidth)-lipgloss.Width("agent:  "),
 	)
 }
