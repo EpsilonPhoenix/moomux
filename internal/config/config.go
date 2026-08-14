@@ -100,6 +100,9 @@ type Config struct {
 	// Appearance forces which half of every theme's light/dark color pairs
 	// renders ("light" or "dark"); empty means auto-detect from the terminal.
 	Appearance string `toml:"appearance,omitempty"`
+	// AutoSubmitDefault is the initial state of the new-session form's
+	// auto-submit toggle, remembered from whatever the user last set it to.
+	AutoSubmitDefault bool `toml:"auto_submit_default,omitempty"`
 }
 
 func Load(path string) (*Config, error) {

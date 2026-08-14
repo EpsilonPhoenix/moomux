@@ -250,6 +250,13 @@ func (f *fakeBackend) SetTheme(theme, appearance string) error {
 	return nil
 }
 
+func (f *fakeBackend) SetAutoSubmitDefault(autoSubmit bool) error {
+	if f.cfg != nil {
+		f.cfg.AutoSubmitDefault = autoSubmit
+	}
+	return nil
+}
+
 func sampleSessions() []session.Session {
 	now := time.Now().UTC()
 	return []session.Session{

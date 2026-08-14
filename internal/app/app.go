@@ -1009,6 +1009,22 @@ func (a *App) SetTheme(theme, appearance string) error {
 	return nil
 }
 
+// SetAutoSubmitDefault persists the remembered default for the new-session
+// form's auto-submit toggle, following the same reload -> mutate -> save
+// idiom as SetTheme.
+func (a *App) SetAutoSubmitDefault(autoSubmit bool) error {
+	if err := config.Reload(a.CfgPath, a.Cfg); err != nil {
+		return fmt.Errorf("reload config: %w", err)
+	}
+	prev := a.Cfg.AutoSubmitDefault
+	a.Cfg.AutoSubmitDefault = autoSubmit
+	if err := config.Save(a.CfgPath, a.Cfg); err != nil {
+		a.Cfg.AutoSubmitDefault = prev
+		return fmt.Errorf("save config: %w", err)
+	}
+	return nil
+}
+
 func (a *App) RemoveProject(name string) error {
 	if err := config.Reload(a.CfgPath, a.Cfg); err != nil {
 		return fmt.Errorf("reload config: %w", err)

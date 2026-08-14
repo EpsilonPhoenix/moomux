@@ -63,6 +63,9 @@ type fakeBackend struct {
 	setThemeCalls []setThemeCall
 	setThemeErr   error
 
+	setAutoSubmitDefaultCalls []bool
+	setAutoSubmitDefaultErr   error
+
 	// worktreeStatus, keyed by session id, backs WorktreeStatus. A missing
 	// entry means "unknown" (ok=false) rather than "clean".
 	worktreeStatus      map[string]gitStatusInfo
@@ -242,6 +245,11 @@ func (f *fakeBackend) RemoveProject(name string) error {
 func (f *fakeBackend) SetTheme(theme, appearance string) error {
 	f.setThemeCalls = append(f.setThemeCalls, setThemeCall{theme, appearance})
 	return f.setThemeErr
+}
+
+func (f *fakeBackend) SetAutoSubmitDefault(autoSubmit bool) error {
+	f.setAutoSubmitDefaultCalls = append(f.setAutoSubmitDefaultCalls, autoSubmit)
+	return f.setAutoSubmitDefaultErr
 }
 
 // TestLinkHitsResolveClicks renders a full frame and asserts that clicking
