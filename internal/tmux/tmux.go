@@ -232,6 +232,16 @@ func (c *Client) SetWindowName(session, name string) error {
 	return err
 }
 
+// WindowName returns session's current tmux window name, e.g. to preserve a
+// user's manual rename when only a status prefix needs updating.
+func (c *Client) WindowName(session string) (string, error) {
+	out, err := c.Runner.Run("display-message", "-p", "-t", exactWindow(session), "#{window_name}")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // ConfigureTitleTracking ensures the tmux session keeps its window name stable
 // and continuously emits it as the terminal title. Safe to call on existing
 // sessions — idempotent tmux set-option calls never break anything.
