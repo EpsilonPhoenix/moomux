@@ -1519,6 +1519,89 @@ func TestSetSessionStatusTitlePreservesUserRename(t *testing.T) {
 	}
 }
 
+// TestRenameSession verifies a rename updates the display name, the live
+// tmux session, and the window title, while leaving ID/worktree/branch
+// alone — the failure mode without the fix is the tmux session and its
+// window title going stale, out of sync with the new stored name.
+func TestRenameSession(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
+	s := session.Session{
+		ID: "demo:a", Project: "demo", Name: "a",
+		TmuxSession: "moomux-a", WorktreePath: "/wt/a", Branch: "a",
+	}
+	if err := a.Store.Put(s); err != nil {
+		t.Fatal(err)
+	}
+	tm.out["display-message -p -t =moomux-a: #{window_name}"] = "a"
+	tm.calls = nil
+
+	got, err := a.RenameSession(s.ID, "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTmux := TmuxSessionName(s.ID, "b")
+	if got.Name != "b" || got.ID != "demo:a" || got.TmuxSession != wantTmux ||
+		got.WorktreePath != "/wt/a" || got.Branch != "a" {
+		t.Fatalf("session = %+v", got)
+	}
+	wantCalls := [][]string{
+		{"has-session", "-t", "=moomux-a"},
+		{"display-message", "-p", "-t", "=moomux-a:", "#{window_name}"},
+		{"rename-window", "-t", "=moomux-a:", "b"},
+		{"rename-session", "-t", "=moomux-a", wantTmux},
+	}
+	if !reflect.DeepEqual(tm.calls, wantCalls) {
+		t.Fatalf("calls = %v, want %v", tm.calls, wantCalls)
+	}
+
+	stored, ok := a.Store.Get(s.ID)
+	if !ok || stored.Name != "b" || stored.TmuxSession != wantTmux {
+		t.Fatalf("stored session = %+v, ok=%v", stored, ok)
+	}
+}
+
+// TestRenameSessionPreservesUserWindowRename mirrors
+// TestSetSessionStatusTitlePreservesUserRename: a window name the user set
+// directly (not the plain session name) must not be clobbered by a rename.
+func TestRenameSessionPreservesUserWindowRename(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
+	s := session.Session{ID: "demo:a", Project: "demo", Name: "a", TmuxSession: "moomux-a"}
+	if err := a.Store.Put(s); err != nil {
+		t.Fatal(err)
+	}
+	tm.out["display-message -p -t =moomux-a: #{window_name}"] = "my custom name"
+	tm.calls = nil
+
+	if _, err := a.RenameSession(s.ID, "b"); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range tm.calls {
+		if len(c) > 0 && c[0] == "rename-window" {
+			t.Fatalf("must not overwrite a manually renamed window, got %v", c)
+		}
+	}
+}
+
+func TestRenameSessionRejectsCollision(t *testing.T) {
+	a, _, _, _ := newTestApp(t, gitProject("/repo"))
+	for _, name := range []string{"a", "b"} {
+		if err := a.Store.Put(session.Session{ID: "demo:" + name, Project: "demo", Name: name}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := a.RenameSession("demo:a", "b"); err == nil {
+		t.Fatal("renaming onto an existing session's name must fail")
+	}
+}
+
+func TestRenameSessionUnknownID(t *testing.T) {
+	a, _, _, _ := newTestApp(t, gitProject("/repo"))
+	if _, err := a.RenameSession("demo:missing", "b"); err == nil {
+		t.Fatal("unknown session must fail")
+	}
+}
+
 func TestSetSessionAgentDoesNotTouchTmux(t *testing.T) {
 	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
 	original := session.Session{

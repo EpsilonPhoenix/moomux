@@ -611,13 +611,8 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = ModeEditSession
 			m.sessionDialogReturn = ModeList
 			m.resetOverlayViewport()
-			m.sessionForm = sessionForm{
-				id:        s.ID,
-				project:   s.Project,
-				name:      s.Name,
-				agentIdx:  agentNameIndex(s.AgentName()),
-				dangerous: s.Dangerous,
-			}
+			m.sessionForm = newSessionForm(s.ID, s.Project, s.Name, agentNameIndex(s.AgentName()), s.Dangerous)
+			m.resizeFormInputs()
 		}
 	case key.Matches(msg, m.keys.ProjectPicker):
 		// No zero-projects guard: the picker is now the only way to add a
@@ -1157,10 +1152,15 @@ func (m *Model) updateEditSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = m.sessionDialogReturn
 	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.ShiftTab),
 		key.Matches(msg, m.keys.FormDown), key.Matches(msg, m.keys.FormUp):
-		if m.sessionForm.focus == sessionFormAgentFocus {
-			m.sessionForm.focus = sessionFormDangerousFocus
+		forward := !(key.Matches(msg, m.keys.ShiftTab) || key.Matches(msg, m.keys.FormUp))
+		m.sessionForm.nameInput.Blur()
+		if forward {
+			m.sessionForm.focus = (m.sessionForm.focus + 1) % 3
 		} else {
-			m.sessionForm.focus = sessionFormAgentFocus
+			m.sessionForm.focus = (m.sessionForm.focus + 2) % 3
+		}
+		if m.sessionForm.focus == sessionFormNameFocus {
+			m.sessionForm.nameInput.Focus()
 		}
 	case key.Matches(msg, m.keys.Left), key.Matches(msg, m.keys.Right):
 		switch m.sessionForm.focus {
@@ -1172,16 +1172,30 @@ func (m *Model) updateEditSession(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case sessionFormDangerousFocus:
 			m.sessionForm.dangerous = !m.sessionForm.dangerous
+		case sessionFormNameFocus:
+			var cmd tea.Cmd
+			m.sessionForm.nameInput, cmd = m.sessionForm.nameInput.Update(msg)
+			return m, cmd
 		}
 	case key.Matches(msg, m.keys.Enter):
 		id := m.sessionForm.id
+		newName := m.sessionForm.nameInput.Value()
 		agent := agentNames[m.sessionForm.agentIdx]
 		dangerous := m.sessionForm.dangerous
 		m.busy = true
 		m.sessionForm.err = ""
 		return m, func() tea.Msg {
+			if _, err := m.backend.RenameSession(id, newName); err != nil {
+				return SessionAgentUpdatedMsg{Err: err}
+			}
 			s, err := m.backend.SetSessionAgent(id, agent, dangerous)
 			return SessionAgentUpdatedMsg{Session: s, Err: err}
+		}
+	default:
+		if m.sessionForm.focus == sessionFormNameFocus {
+			var cmd tea.Cmd
+			m.sessionForm.nameInput, cmd = m.sessionForm.nameInput.Update(msg)
+			return m, cmd
 		}
 	}
 	return m, nil

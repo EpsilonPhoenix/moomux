@@ -69,6 +69,7 @@ func (m *Model) resizeFormInputs() {
 	avail := m.overlayWidth(72)
 
 	setInputWidth(&m.nameInput, textInputWidth(&m.nameInput, 40, avail))
+	setInputWidth(&m.sessionForm.nameInput, textInputWidth(&m.sessionForm.nameInput, 40, avail))
 	setInputWidth(&m.branchInput, textInputWidth(&m.branchInput, 40, avail))
 	setInputWidth(&m.ticketInput, textInputWidth(&m.ticketInput, 40, avail))
 	setInputWidth(&m.prInput, textInputWidth(&m.prInput, 40, avail))
@@ -291,8 +292,8 @@ func (m *Model) renderEditSession() string {
 	b.WriteString(muteStyle.Render("project: "))
 	b.WriteString(m.sessionForm.project)
 	b.WriteString("\n")
-	b.WriteString(muteStyle.Render("session: "))
-	b.WriteString(m.sessionForm.name)
+	b.WriteString(muteStyle.Render("name:    "))
+	b.WriteString(m.sessionForm.nameInput.View())
 	b.WriteString("\n\n")
 	b.WriteString(muteStyle.Render("agent:  "))
 	b.WriteString(m.renderSessionAgentSelector())
@@ -317,6 +318,7 @@ func (m *Model) renderSessionDangerousToggle() string {
 // editSessionFieldHints gives a one-line explanation for whichever control of
 // the edit-session form is currently focused.
 var editSessionFieldHints = []string{
+	sessionFormNameFocus:      "display name; also renames the live tmux session so it stays aligned",
 	sessionFormAgentFocus:     "agent used the next time this session's tmux process is created",
 	sessionFormDangerousFocus: "on: skips permission prompts (--dangerously-skip-permissions / --yolo); no effect for opencode",
 }

@@ -53,6 +53,8 @@ type Backend interface {
 	SetSessionTags(id, ticket, pr string) (session.Session, error)
 	SetSessionPrompt(id, prompt string) (session.Session, error)
 	SetSessionAgent(id, agent string, dangerous bool) (session.Session, error)
+	// RenameSession changes id's display name and its live tmux session name.
+	RenameSession(id, newName string) (session.Session, error)
 	// SetSessionArchived hides (or restores) a session from the default
 	// list without touching its tmux session or worktree.
 	SetSessionArchived(id string, archived bool) (session.Session, error)
@@ -150,21 +152,36 @@ type tagForm struct {
 	focus  int
 }
 
-// sessionFormAgentFocus and sessionFormDangerousFocus are the sessionForm.focus
-// values for the edit-session form's two controls.
+// sessionFormNameFocus, sessionFormAgentFocus, and sessionFormDangerousFocus
+// are the sessionForm.focus values for the edit-session form's controls.
 const (
-	sessionFormAgentFocus     = 0
-	sessionFormDangerousFocus = 1
+	sessionFormNameFocus      = 0
+	sessionFormAgentFocus     = 1
+	sessionFormDangerousFocus = 2
 )
 
 type sessionForm struct {
 	id        string
 	project   string
-	name      string
+	nameInput textinput.Model
 	agentIdx  int
 	dangerous bool
-	focus     int // sessionFormAgentFocus or sessionFormDangerousFocus
+	focus     int // sessionFormNameFocus, sessionFormAgentFocus, or sessionFormDangerousFocus
 	err       string
+}
+
+func newSessionForm(id, project, name string, agentIdx int, dangerous bool) sessionForm {
+	ni := textinput.New()
+	ni.CharLimit = 256
+	ni.SetValue(name)
+	ni.Focus()
+	return sessionForm{
+		id:        id,
+		project:   project,
+		nameInput: ni,
+		agentIdx:  agentIdx,
+		dangerous: dangerous,
+	}
 }
 
 func newTagForm(ticket, pr string) tagForm {

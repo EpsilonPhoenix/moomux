@@ -993,9 +993,13 @@ func TestEditSessionFlow(t *testing.T) {
 		t.Fatalf("edit session view:\n%s", view)
 	}
 
+	press(m, tea.KeyTab)   // name -> agent
 	press(m, tea.KeyTab)   // agent -> dangerous
 	press(m, tea.KeyRight) // dangerous off -> on
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(be.renameCalls) != 1 || be.renameCalls[0] != (renameCall{"demo:a", "a"}) {
+		t.Fatalf("renameCalls = %v", be.renameCalls)
+	}
 	if len(be.sessionAgentCalls) != 1 ||
 		be.sessionAgentCalls[0] != (sessionAgentCall{"demo:a", "codex", true}) {
 		t.Fatalf("sessionAgentCalls = %v", be.sessionAgentCalls)
@@ -1005,6 +1009,32 @@ func TestEditSessionFlow(t *testing.T) {
 	}
 	if _, ok := m.prompts["demo:a"]; ok {
 		t.Fatal("agent edit must invalidate the cached prompt")
+	}
+}
+
+// TestEditSessionFlowRenames covers the name field itself: typing a new name
+// and saving must call RenameSession with the edited value, keeping the live
+// tmux session's name aligned with what's shown on screen.
+func TestEditSessionFlowRenames(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "demo:a", Project: "demo", Name: "a", Agent: "codex"},
+	}}
+	m := newTestModel(be)
+
+	m.Update(keyRune("e"))
+	if m.sessionForm.focus != sessionFormNameFocus {
+		t.Fatalf("initial focus = %d, want sessionFormNameFocus", m.sessionForm.focus)
+	}
+	for _, r := range "bb" {
+		run(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if len(be.renameCalls) != 1 || be.renameCalls[0] != (renameCall{"demo:a", "abb"}) {
+		t.Fatalf("renameCalls = %v", be.renameCalls)
+	}
+	if m.mode != ModeList || !strings.Contains(m.flash, "updated session abb") {
+		t.Fatalf("mode=%v flash=%q", m.mode, m.flash)
 	}
 }
 
