@@ -1482,13 +1482,40 @@ func TestSetSessionStatusTitle(t *testing.T) {
 	if err := a.SetSessionStatusTitle(s.ID, watcher.Working); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"rename-window", "-t", "=moomux-a:", "● a"}
-	if len(tm.calls) != 1 || !reflect.DeepEqual(tm.calls[0], want) {
-		t.Fatalf("calls = %v", tm.calls)
+	wantCalls := [][]string{
+		{"display-message", "-p", "-t", "=moomux-a:", "#{window_name}"},
+		{"rename-window", "-t", "=moomux-a:", "● a"},
+	}
+	if !reflect.DeepEqual(tm.calls, wantCalls) {
+		t.Fatalf("calls = %v, want %v", tm.calls, wantCalls)
 	}
 
 	if err := a.SetSessionStatusTitle("demo:missing", watcher.Working); err != nil {
 		t.Fatalf("unknown session should be a no-op, got err %v", err)
+	}
+}
+
+// TestSetSessionStatusTitlePreservesUserRename verifies a status update only
+// swaps the leading glyph and leaves a name the user typed directly via
+// tmux's own rename-window (Ctrl-B ,) untouched, instead of clobbering it
+// with the session's stored name.
+func TestSetSessionStatusTitlePreservesUserRename(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, gitProject("/repo"))
+	s := session.Session{ID: "demo:a", Project: "demo", Name: "a", TmuxSession: "moomux-a"}
+	if err := a.Store.Put(s); err != nil {
+		t.Fatal(err)
+	}
+	tm.out = map[string]string{
+		"display-message -p -t =moomux-a: #{window_name}": "● my custom name",
+	}
+	tm.calls = nil
+
+	if err := a.SetSessionStatusTitle(s.ID, watcher.NeedsInput); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"rename-window", "-t", "=moomux-a:", "⚠ my custom name"}
+	if len(tm.calls) != 2 || !reflect.DeepEqual(tm.calls[1], want) {
+		t.Fatalf("calls = %v, want rename call %v", tm.calls, want)
 	}
 }
 

@@ -570,6 +570,24 @@ func (a *App) MoveSession(id string, delta int) error {
 	return a.Store.Reorder(peers)
 }
 
+// statusGlyphs are the status prefixes titleGlyph applies, checked in order
+// so a name that happens to start with one glyph doesn't get double-stripped
+// by another (none currently overlap, but order stays explicit).
+var statusGlyphs = []string{"● ", "⚠ ", "✓ "}
+
+// stripStatusGlyph removes a leading status glyph titleGlyph previously
+// applied, recovering the user-facing name underneath (which may be the
+// session's stored name, or a name the user typed directly via tmux's own
+// rename-window, e.g. Ctrl-B ,).
+func stripStatusGlyph(name string) string {
+	for _, g := range statusGlyphs {
+		if trimmed, ok := strings.CutPrefix(name, g); ok {
+			return trimmed
+		}
+	}
+	return name
+}
+
 // titleGlyph prefixes name with a marker for the given status so terminals
 // tracking the tmux window name as their tab title (see
 // tmux.Client.ConfigureTitleTracking) show it at a glance.
@@ -587,13 +605,19 @@ func titleGlyph(st watcher.State, name string) string {
 }
 
 // SetSessionStatusTitle renames id's tmux window to reflect st, so its
-// terminal tab title updates live as the session's status changes.
+// terminal tab title updates live as the session's status changes. If the
+// user renamed the window directly (e.g. via tmux's own rename-window), that
+// name is preserved and only the status prefix is updated.
 func (a *App) SetSessionStatusTitle(id string, st watcher.State) error {
 	s, ok := a.Store.Get(id)
 	if !ok {
 		return nil
 	}
-	return a.Tmux.SetWindowName(s.TmuxSession, titleGlyph(st, s.Name))
+	name := s.Name
+	if current, err := a.Tmux.WindowName(s.TmuxSession); err == nil && current != "" {
+		name = stripStatusGlyph(current)
+	}
+	return a.Tmux.SetWindowName(s.TmuxSession, titleGlyph(st, name))
 }
 
 func (a *App) SetSessionTags(id, ticket, pr string) (session.Session, error) {
