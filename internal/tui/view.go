@@ -215,7 +215,10 @@ func (m *Model) focusedOverlayLine(content string) int {
 			return lineContaining(content, m.tagForm.inputs[m.tagForm.focus].View())
 		}
 	case ModeEditSession:
-		if m.sessionForm.focus == sessionFormDangerousFocus {
+		switch m.sessionForm.focus {
+		case sessionFormNameFocus:
+			return lineContaining(content, m.sessionForm.nameInput.View())
+		case sessionFormDangerousFocus:
 			return lineContaining(content, m.renderSessionDangerousToggle())
 		}
 		return lineContaining(content, m.renderSessionAgentSelector())

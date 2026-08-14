@@ -44,6 +44,9 @@ type fakeBackend struct {
 	sessionAgentCalls []sessionAgentCall
 	sessionAgentErr   error
 
+	renameCalls []renameCall
+	renameErr   error
+
 	archiveCalls []archiveCall
 	archiveErr   error
 
@@ -96,6 +99,7 @@ type sessionAgentCall struct {
 	id, agent string
 	dangerous bool
 }
+type renameCall struct{ id, newName string }
 type archiveCall struct {
 	id       string
 	archived bool
@@ -196,6 +200,19 @@ func (f *fakeBackend) SetSessionAgent(id, agent string, dangerous bool) (session
 		}
 	}
 	return session.Session{ID: id, Agent: agent, Dangerous: dangerous}, nil
+}
+func (f *fakeBackend) RenameSession(id, newName string) (session.Session, error) {
+	f.renameCalls = append(f.renameCalls, renameCall{id, newName})
+	if f.renameErr != nil {
+		return session.Session{}, f.renameErr
+	}
+	for i, s := range f.sessions {
+		if s.ID == id {
+			f.sessions[i].Name = newName
+			return f.sessions[i], nil
+		}
+	}
+	return session.Session{ID: id, Name: newName}, nil
 }
 func (f *fakeBackend) SetSessionArchived(id string, archived bool) (session.Session, error) {
 	f.archiveCalls = append(f.archiveCalls, archiveCall{id, archived})

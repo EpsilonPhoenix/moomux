@@ -675,6 +675,44 @@ func (a *App) SetSessionPrompt(id, prompt string) (session.Session, error) {
 	return s, nil
 }
 
+// RenameSession changes id's display name and, to keep what's on screen
+// aligned, its live tmux session name too — leaving ID (the store's key),
+// WorktreePath, and Branch untouched, since nothing else derives from Name
+// after creation. If the window title is still the plain session name (no
+// manual tmux rename-window), it's updated to match; a user's own manual
+// rename is preserved, same as SetSessionStatusTitle.
+func (a *App) RenameSession(id, newName string) (session.Session, error) {
+	s, ok := a.Store.Get(id)
+	if !ok {
+		return session.Session{}, fmt.Errorf("unknown session %q", id)
+	}
+	newName = sanitizeName(newName)
+	if newName == s.Name {
+		return s, nil
+	}
+	if _, exists := a.Store.Get(session.MakeID(s.Project, newName)); exists {
+		return session.Session{}, fmt.Errorf("session %q already exists in project %q", newName, s.Project)
+	}
+	oldTmux := s.TmuxSession
+	newTmux := TmuxSessionName(s.ID, newName)
+	if has, err := a.Tmux.HasSession(oldTmux); err == nil && has {
+		if current, err := a.Tmux.WindowName(oldTmux); err == nil {
+			if stripped := stripStatusGlyph(current); stripped == s.Name {
+				_ = a.Tmux.SetWindowName(oldTmux, current[:len(current)-len(stripped)]+newName)
+			}
+		}
+		if err := a.Tmux.RenameSession(oldTmux, newTmux); err != nil {
+			return session.Session{}, fmt.Errorf("tmux rename: %w", err)
+		}
+	}
+	s.Name = newName
+	s.TmuxSession = newTmux
+	if err := a.Store.Put(s); err != nil {
+		return s, fmt.Errorf("store: %w", err)
+	}
+	return s, nil
+}
+
 func (a *App) SetSessionAgent(id, agent string, dangerous bool) (session.Session, error) {
 	if err := validateAgent(agent); err != nil {
 		return session.Session{}, err

@@ -213,6 +213,9 @@ func (f *fakeBackend) SetSessionTags(id, ticket, pr string) (session.Session, er
 func (f *fakeBackend) SetSessionAgent(id, agent string, dangerous bool) (session.Session, error) {
 	return session.Session{}, nil
 }
+func (f *fakeBackend) RenameSession(id, newName string) (session.Session, error) {
+	return session.Session{}, nil
+}
 func (f *fakeBackend) SetSessionPrompt(id, prompt string) (session.Session, error) {
 	return session.Session{}, nil
 }

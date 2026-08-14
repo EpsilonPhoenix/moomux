@@ -273,6 +273,12 @@ func (c *Client) CapturePane(name string) (string, error) {
 	return c.Runner.Run("capture-pane", "-p", "-t", exactWindow(name))
 }
 
+// RenameSession renames a live tmux session in place.
+func (c *Client) RenameSession(old, new string) error {
+	_, err := c.Runner.Run("rename-session", "-t", Exact(old), new)
+	return err
+}
+
 func (c *Client) KillSession(name string) error {
 	_, err := c.Runner.Run("kill-session", "-t", Exact(name))
 	return err
