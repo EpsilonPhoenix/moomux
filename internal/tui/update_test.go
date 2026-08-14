@@ -134,10 +134,41 @@ func TestNewSessionFormAutoSubmitToggle(t *testing.T) {
 	if len(be.firstPromptCalls) != 1 || !be.firstPromptCalls[0].autoSubmit {
 		t.Fatalf("firstPromptCalls = %v, want autoSubmit=true", be.firstPromptCalls)
 	}
+	if len(be.setAutoSubmitDefaultCalls) != 1 || !be.setAutoSubmitDefaultCalls[0] {
+		t.Fatalf("setAutoSubmitDefaultCalls = %v, want [true] since the toggle changed from the form's default", be.setAutoSubmitDefaultCalls)
+	}
 
 	m.Update(keyRune("n")) // reopen
 	if m.newFormAutoSubmit {
 		t.Fatal("auto-submit carried over into the reopened form")
+	}
+}
+
+// TestNewSessionFormAutoSubmitDefaultsFromConfigAndOnlyPersistsOnChange
+// guards the sticky-default behavior: the form seeds its toggle from
+// cfg.AutoSubmitDefault (rather than always starting off), and submitting
+// without changing the toggle must not re-persist the same value.
+func TestNewSessionFormAutoSubmitDefaultsFromConfigAndOnlyPersistsOnChange(t *testing.T) {
+	be := &fakeBackend{}
+	m := newTestModel(be)
+	m.cfg.AutoSubmitDefault = true
+
+	m.Update(keyRune("n"))
+	if !m.newFormAutoSubmit {
+		t.Fatal("form did not seed auto-submit from cfg.AutoSubmitDefault")
+	}
+	typeText(m, "myfeat")
+	for i := 0; i < 2; i++ {
+		press(m, tea.KeyTab) // name -> branch -> prompt
+	}
+	typeText(m, "do the thing")
+
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(be.firstPromptCalls) != 1 || !be.firstPromptCalls[0].autoSubmit {
+		t.Fatalf("firstPromptCalls = %v, want autoSubmit=true", be.firstPromptCalls)
+	}
+	if len(be.setAutoSubmitDefaultCalls) != 0 {
+		t.Fatalf("setAutoSubmitDefaultCalls = %v, want none since the toggle matched the existing default", be.setAutoSubmitDefaultCalls)
 	}
 }
 

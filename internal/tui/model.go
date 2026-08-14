@@ -71,6 +71,9 @@ type Backend interface {
 	// SetTheme persists the chosen theme name and appearance override
 	// ("light"/"dark"/"" for auto) to config.
 	SetTheme(theme, appearance string) error
+	// SetAutoSubmitDefault persists the remembered default for the
+	// new-session form's auto-submit toggle.
+	SetAutoSubmitDefault(autoSubmit bool) error
 }
 
 type Mode int

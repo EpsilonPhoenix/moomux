@@ -442,7 +442,7 @@ func (m *Model) openNewSessionForm() {
 	}
 	m.newFormOpenInBackground = false
 	m.newFormDangerous = false
-	m.newFormAutoSubmit = false
+	m.newFormAutoSubmit = m.cfg.AutoSubmitDefault
 	m.nameInput.SetValue("")
 	m.branchInput.SetValue("")
 	m.ticketInput.SetValue("")
@@ -879,7 +879,13 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.setFlash("info", "creating "+label+"…")
 		m.busy = true
+		autoSubmit := m.newFormAutoSubmit
 		return m, func() tea.Msg {
+			if autoSubmit != m.cfg.AutoSubmitDefault {
+				// Best-effort: remembering the new default shouldn't block
+				// session creation if the config write fails.
+				_ = m.backend.SetAutoSubmitDefault(autoSubmit)
+			}
 			s, hint, err := m.backend.CreateSession(proj, name, agent, branch, ticket, openTerminal, dangerous)
 			if err != nil {
 				return ErrorMsg{Err: err}
@@ -904,7 +910,7 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if updated, promptErr := m.backend.SetSessionPrompt(s.ID, firstPrompt); promptErr == nil {
 					s = updated
 				}
-				if err := m.backend.StartFirstPrompt(s.TmuxSession, firstPrompt, m.newFormAutoSubmit); err != nil {
+				if err := m.backend.StartFirstPrompt(s.TmuxSession, firstPrompt, autoSubmit); err != nil {
 					hint = joinHint(hint, fmt.Sprintf("couldn't send first prompt: %v", err))
 				}
 			}

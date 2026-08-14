@@ -1335,6 +1335,27 @@ func TestUpdateProject(t *testing.T) {
 	}
 }
 
+func TestSetAutoSubmitDefault(t *testing.T) {
+	a, _, _, _ := newTestApp(t, map[string]config.Project{
+		"demo": {Kind: "git", Repo: t.TempDir(), Agent: "claude"},
+	})
+
+	if err := a.SetAutoSubmitDefault(true); err != nil {
+		t.Fatal(err)
+	}
+	if !a.Cfg.AutoSubmitDefault {
+		t.Fatal("AutoSubmitDefault not set in memory")
+	}
+
+	loaded, err := config.Load(a.CfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.AutoSubmitDefault {
+		t.Fatal("AutoSubmitDefault not persisted")
+	}
+}
+
 func TestUpdatePlainProjectPreservesKindAndClearsGitSettings(t *testing.T) {
 	repo := filepath.Join(t.TempDir(), "notes")
 	a, _, _, _ := newTestApp(t, map[string]config.Project{
