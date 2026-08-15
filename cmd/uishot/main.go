@@ -8,6 +8,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -37,11 +38,17 @@ var screens = map[string][]string{
 	// narrow stacked layout — see TestNarrowStackedDetailGrowsBeforeListClips.
 	"long-list":   {},
 	"new-session": {"n"},
+	// Branch field focused, so its hint (the field that most often needs
+	// correcting) is the one on screen — 2 tabs from the project selector.
+	"new-session-branch": {"n", "tab", "tab"},
 	// The form preselects the active project, so no "right" press is needed
 	// to pick one; 3 tabs from there lands on the first-prompt textarea (see
 	// newFormFieldCount) — ctrl+j inserts a newline there since Enter is
 	// reserved for submit.
 	"new-session-multiline": {"n", "tab", "tab", "tab", "first line", "ctrl+j", "second line"},
+	// Submitting against a backend whose CreateSession fails: the form stays
+	// open with everything typed still in it, plus the wrapped error.
+	"new-session-error":     {"n", "tab", "myfeat", "tab", "tab", "a first prompt that must survive the failure", "enter"},
 	"new-session-wide-line": {"n", "tab", "tab", "tab", "this is a single long line typed into the first prompt field that should only wrap once it actually reaches the right edge of the box on a wide terminal"},
 	// Adding/editing a project only happens inside the picker now (P/E were
 	// removed from the main list), so these open it first.
@@ -182,10 +189,13 @@ type fakeBackend struct {
 	// to show the detail panel's PR status row; a missing entry means
 	// "unknown" (ok=false), matching every other scenario's default.
 	prStatus map[string]prstatus.Info
+	// createErr, when set, makes CreateSession fail — for scenarios that
+	// show what the new-session form looks like after a failed create.
+	createErr error
 }
 
 func (f *fakeBackend) CreateSession(project, name, agent, existingBranch, ticket string, openTerminal, dangerous bool) (session.Session, string, error) {
-	return session.Session{}, "", nil
+	return session.Session{}, "", f.createErr
 }
 func (f *fakeBackend) StartFirstPrompt(tmuxSession, prompt string, autoSubmit bool) error {
 	return nil
@@ -349,6 +359,9 @@ func renderScreen(screenName string, width, height int, theme, appearance string
 	cfg.Theme = theme
 	cfg.Appearance = appearance
 	be := &fakeBackend{sessions: sessions, cfg: cfg}
+	if screenName == "new-session-error" {
+		be.createErr = errors.New("no branch \"merchant-physcal\" in /tmp/demo (checked local and origin) — fix the name, or clear the branch field to start a new branch off main")
+	}
 	if screenName == "confirm-delete" && len(sessions) > 0 {
 		// Must be set before the initial drive() below: git status is
 		// fetched for every session up front (regardless of agent state —

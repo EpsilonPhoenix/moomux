@@ -38,6 +38,12 @@ type StatusChannelClosedMsg struct{}
 
 type ErrorMsg struct{ Err error }
 
+// CreateFailedMsg reports a failed session creation. Unlike ErrorMsg it
+// reopens the new-session form with everything still typed in it — the first
+// prompt can be several paragraphs of work, and dropping back to the list
+// with only a flash message threw it away.
+type CreateFailedMsg struct{ Err error }
+
 // UpdateAvailableMsg is delivered by checkUpdateCmd when GitHub Releases
 // reports a version newer than the one currently running.
 type UpdateAvailableMsg struct{ Version string }

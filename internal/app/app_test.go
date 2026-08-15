@@ -537,6 +537,32 @@ func TestCreateSessionExistingBranch(t *testing.T) {
 	}
 }
 
+// A branch name typed into the branch field that doesn't resolve anywhere
+// (no local branch, no origin/<branch>) is a typo: fail with a message the
+// user can act on, and create nothing, so the form can stay open for a fix.
+func TestCreateSessionUnknownBranchFailsWithoutCreating(t *testing.T) {
+	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
+	tm.out["list-panes -t ="+TmuxSessionName("demo:merchant-physical", "merchant-physical")+": -F #{pane_id}"] = "%0\n"
+	noBranch(git, "merchant-physical")
+	git.failOn["rev-parse --verify --quiet refs/remotes/origin/merchant-physical"] = true
+
+	_, _, err := a.CreateSession("demo", "", "", "merchant-physical", "", true, false)
+	if err == nil {
+		t.Fatal("want an error for a branch that doesn't exist")
+	}
+	if !strings.Contains(err.Error(), "no branch \"merchant-physical\"") {
+		t.Fatalf("err = %v", err)
+	}
+	for _, c := range git.calls {
+		if slices.Contains(c, "add") && slices.Contains(c, "worktree") {
+			t.Fatalf("worktree was created anyway: %v", git.calls)
+		}
+	}
+	if len(a.Store.All()) != 0 {
+		t.Fatalf("session stored despite failure: %v", a.Store.All())
+	}
+}
+
 func TestCreateSessionExistingBranchRemovesStaleCleanWorktree(t *testing.T) {
 	a, git, tm, _ := newTestApp(t, gitProject("/repo"))
 	tm.out["list-panes -t ="+TmuxSessionName("demo:login-page", "login-page")+": -F #{pane_id}"] = "%0\n"
