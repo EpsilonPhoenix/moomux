@@ -542,3 +542,23 @@ func TestFooterUpdateNoticeFallsBackAsWidthShrinks(t *testing.T) {
 		t.Fatalf("too-narrow footer unexpectedly contains version: %q", got)
 	}
 }
+
+// A flash long enough to overflow the terminal wraps onto extra footer rows
+// instead of being cut off — backend errors put the useful part (what git
+// actually said) at the end.
+func TestFlashWrapsInsteadOfTruncating(t *testing.T) {
+	m := newTestModel(&fakeBackend{})
+	m.width, m.height = 60, 24
+	m.setFlash("error", "no branch \"merchant-physcal\" in /tmp/demo (checked local and origin) — fix the name, or clear the branch field")
+
+	line := m.flashLine(m.width - 2)
+	if lipgloss.Height(line) < 2 {
+		t.Fatalf("flash not wrapped: %q", line)
+	}
+	if !strings.Contains(line, "field") {
+		t.Fatalf("tail of the message was lost: %q", line)
+	}
+	if lipgloss.Height(line) > flashMaxLines {
+		t.Fatalf("flash grew past the cap: %d lines", lipgloss.Height(line))
+	}
+}

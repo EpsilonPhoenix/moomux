@@ -421,14 +421,24 @@ func TestNewSessionFormDefaultsProjectWithSingleProject(t *testing.T) {
 	}
 }
 
-func TestNewSessionCreateErrorFlashes(t *testing.T) {
+// A failed create keeps the form open with everything still typed in it —
+// the first prompt is often long, and re-typing it is the real cost of a
+// failure that's usually a one-character fix in the branch field.
+func TestNewSessionCreateErrorKeepsForm(t *testing.T) {
 	be := &fakeBackend{createErr: errors.New("boom")}
 	m := newTestModel(be)
 	m.Update(keyRune("n"))
 	typeText(m, "x")
+	m.promptInput.SetValue("a very long first prompt")
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.flashKind != "error" || !strings.Contains(m.flash, "boom") {
-		t.Fatalf("flash = %q (%s)", m.flash, m.flashKind)
+	if m.mode != ModeNewForm {
+		t.Fatalf("mode = %v, want the form to stay open", m.mode)
+	}
+	if !strings.Contains(m.newFormErr, "boom") {
+		t.Fatalf("newFormErr = %q", m.newFormErr)
+	}
+	if m.nameInput.Value() != "x" || m.promptInput.Value() != "a very long first prompt" {
+		t.Fatalf("inputs cleared: name=%q prompt=%q", m.nameInput.Value(), m.promptInput.Value())
 	}
 }
 

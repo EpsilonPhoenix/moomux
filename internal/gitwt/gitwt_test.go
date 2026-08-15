@@ -70,6 +70,27 @@ func TestAddWorktree(t *testing.T) {
 	}
 }
 
+// A base branch that no longer exists upstream (a finished release branch,
+// say) fails before anything is created, naming the base branch rather than
+// git's "invalid reference: origin/<base>".
+func TestAddWorktreeMissingBaseBranch(t *testing.T) {
+	fr := &fakeRunner{}
+	fr.failCommand("rev-parse", "--verify", "--quiet", "origin/release/202632^{commit}")
+	c := &Client{Runner: fr}
+	err := c.AddWorktree("/repo", "/wt/foo", "user/foo", "release/202632")
+	if err == nil {
+		t.Fatal("want an error for a missing base branch")
+	}
+	if !strings.Contains(err.Error(), `base branch "release/202632" not found`) {
+		t.Fatalf("err = %v", err)
+	}
+	for _, call := range fr.calls {
+		if len(call) > 2 && call[1] == "worktree" && call[2] == "add" {
+			t.Fatalf("worktree created anyway: %v", fr.calls)
+		}
+	}
+}
+
 func TestAddWorktreeExisting(t *testing.T) {
 	fr := &fakeRunner{}
 	c := &Client{Runner: fr}

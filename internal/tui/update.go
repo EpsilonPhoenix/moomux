@@ -164,6 +164,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setError(msg.Err)
 		return m, nil
 
+	case CreateFailedMsg:
+		m.busy = false
+		m.flash, m.flashKind = "", ""
+		m.mode = ModeNewForm
+		m.newFormErr = msg.Err.Error()
+		m.newFormFocusInput()
+		return m, nil
+
 	case SessionCreatedMsg:
 		m.busy = false
 		text := "created " + msg.Session.Name
@@ -883,7 +891,7 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			s, hint, err := m.backend.CreateSession(proj, name, agent, branch, ticket, openTerminal, dangerous)
 			if err != nil {
-				return ErrorMsg{Err: err}
+				return CreateFailedMsg{Err: err}
 			}
 			// The session (worktree + tmux pane) already exists at this
 			// point — a PR-tag or first-prompt failure below must not

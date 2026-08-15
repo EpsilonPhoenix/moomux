@@ -325,22 +325,33 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string,
 
 	slog.Info("create session", "project", project, "name", name, "agent", agent, "worktree", wt, "branch", existingBranch)
 
+	newBranch := existingBranch == ""
 	if proj.UsesWorktree() {
-		fetchTarget := proj.BaseBranch
+		hasRemote := a.Git.HasRemote(proj.Repo, "origin")
 		if existingBranch != "" {
 			branch = existingBranch
-			fetchTarget = existingBranch
+			if hasRemote {
+				_ = a.Git.Fetch(proj.Repo, existingBranch) // best-effort
+			}
+			// A branch that resolves to nothing is a typo far more often
+			// than an intent to create it (that's what leaving this field
+			// blank does). Fail before creating anything, with a message the
+			// user can act on — git's own "fatal: invalid reference" doesn't
+			// say which field was wrong or what to do about it.
+			if !a.Git.BranchExists(proj.Repo, branch) && !a.Git.RemoteBranchExists(proj.Repo, branch) {
+				return session.Session{}, "", fmt.Errorf("no branch %q in %s (checked local and origin) — fix the name, or clear the branch field to start a new branch off %s", branch, proj.Repo, proj.BaseBranch)
+			}
 		} else {
 			branch = name
 			if prefix := strings.TrimSuffix(proj.BranchPrefix, "/"); prefix != "" {
 				branch = prefix + "/" + name
 			}
 		}
-		if a.Git.HasRemote(proj.Repo, "origin") {
-			_ = a.Git.Fetch(proj.Repo, fetchTarget) // best-effort
+		if newBranch && hasRemote {
+			_ = a.Git.Fetch(proj.Repo, proj.BaseBranch) // best-effort
 		}
 		var err error
-		if existingBranch != "" {
+		if !newBranch {
 			if staleWT, ferr := a.Git.WorktreeForBranch(proj.Repo, branch); ferr == nil && staleWT != "" && staleWT != wt {
 				clean, cerr := a.Git.IsWorktreeClean(staleWT)
 				if cerr != nil {
@@ -413,7 +424,7 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string,
 		Project:      project,
 		Name:         name,
 		Branch:       branch,
-		NewBranch:    proj.UsesWorktree() && existingBranch == "",
+		NewBranch:    proj.UsesWorktree() && newBranch,
 		WorktreePath: wt,
 		TmuxSession:  tmuxName,
 		CreatedAt:    time.Now().UTC(),

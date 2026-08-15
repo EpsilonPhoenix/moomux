@@ -14,6 +14,9 @@ import (
 // panels stack vertically instead of side by side (phone-sized SSH clients).
 const narrowWidthBreak = 72
 
+// flashMaxLines caps how tall a wrapped flash message may grow in the footer.
+const flashMaxLines = 3
+
 // minStackedPaneHeight is the minimum usable content height for each panel in
 // the narrow stacked layout. When a mobile keyboard leaves fewer rows than
 // this for both panes, the list gets the full body instead of being pushed
@@ -118,7 +121,9 @@ func (m *Model) formFooter(hint, controls, errText string) string {
 		rows = append(rows, hint)
 	}
 	if errText != "" {
-		rows = append(rows, dangerStyle.Render(errText))
+		// Wrapped, not truncated: backend errors (git, tmux) are long, and a
+		// clipped one loses the part that says what actually went wrong.
+		rows = append(rows, dangerStyle.Width(m.overlayWidth(formHintWidth)).Render(errText))
 	}
 	rows = append(rows, muteStyle.Render(controls))
 	return strings.Join(rows, "\n")
@@ -645,5 +650,9 @@ func (m *Model) flashLine(width int) string {
 		flashStyle = errorFlashStyle
 		prefix = "✖ "
 	}
-	return flashStyle.Render(truncateToWidth(prefix+m.flash, width))
+	// Wrapped, not truncated — flashes carry backend errors (git, tmux) whose
+	// useful half is at the end. Capped at flashMaxLines so a pathological
+	// one can't push the list off the screen; both callers measure the
+	// rendered height, so the extra rows are accounted for.
+	return flashStyle.Width(width).MaxHeight(flashMaxLines).Render(prefix + m.flash)
 }

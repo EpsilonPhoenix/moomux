@@ -106,6 +106,13 @@ func (c *Client) AddWorktree(repoDir, worktreePath, branch, baseBranch string) e
 	if c.HasRemote(repoDir, "origin") {
 		start = "origin/" + baseBranch
 	}
+	// Usually the project's base branch was renamed or deleted upstream (a
+	// finished release branch, say). Say which ref is missing and where it
+	// came from — git alone reports "fatal: invalid reference: origin/x",
+	// which reads as if the new branch name were the broken one.
+	if _, err := c.Runner.Run(repoDir, "rev-parse", "--verify", "--quiet", start+"^{commit}"); err != nil {
+		return fmt.Errorf("base branch %q not found (looked for %s) — set a base branch that still exists in the project's settings", baseBranch, start)
+	}
 	if c.BranchExists(repoDir, branch) {
 		// Usually a leftover from an orphaned worktree (branch survives,
 		// checkout doesn't) — but it could equally be the user's own branch
@@ -192,6 +199,13 @@ func (c *Client) HasUnpushedCommits(worktreePath string) (bool, error) {
 // BranchExists reports whether a local branch with the given name exists.
 func (c *Client) BranchExists(repoDir, branch string) bool {
 	_, err := c.Runner.Run(repoDir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
+	return err == nil
+}
+
+// RemoteBranchExists reports whether origin has the branch (as a
+// remote-tracking ref), which is what git's worktree-add DWIM checks out.
+func (c *Client) RemoteBranchExists(repoDir, branch string) bool {
+	_, err := c.Runner.Run(repoDir, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch)
 	return err == nil
 }
 
