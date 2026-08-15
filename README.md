@@ -193,3 +193,34 @@ moomux spawn -project <project> [-name <name>] [-agent claude|codex|opencode] \
 ```
 
 It's fire-and-forget: prints the new tmux session's name and exits immediately, without waiting for the agent or reporting anything back. Run `moomux spawn -h` for the full flag list, or `moomux --help` for top-level usage.
+
+## Userscripts
+
+Drop an executable script into `~/.config/moomux/userscripts/worktree-create/` and moomux runs it right after every new worktree is created (both from the TUI and `moomux spawn`), before the agent starts. Scripts run in name-sorted order, each with a 30s timeout; a failing script only logs a warning and never blocks session creation.
+
+This directory lives in your global config, outside any repo moomux manages — scripts here are local to your machine and never committed or pushed by a project.
+
+Each script gets these environment variables:
+
+| Variable          | Value                                    |
+|--------------------|-------------------------------------------|
+| `MOOMUX_PROJECT`  | project name                             |
+| `MOOMUX_WORKTREE` | path to the new worktree (also the cwd)  |
+| `MOOMUX_REPO`     | path to the project's main repo          |
+| `MOOMUX_BRANCH`   | branch checked out in the new worktree   |
+
+Example — copy `.env` from the main repo into every new worktree (worktrees don't get it since `.env` is normally gitignored):
+
+```bash
+#!/bin/sh
+# ~/.config/moomux/userscripts/worktree-create/copy-env.sh
+if [ -f "$MOOMUX_REPO/.env" ]; then
+	cp "$MOOMUX_REPO/.env" "$MOOMUX_WORKTREE/.env"
+fi
+```
+
+```bash
+chmod +x ~/.config/moomux/userscripts/worktree-create/copy-env.sh
+```
+
+Only scripts with the executable bit set are run; anything else in the directory is ignored.
