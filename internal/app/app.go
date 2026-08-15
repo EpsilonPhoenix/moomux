@@ -20,6 +20,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/terminal"
 	"github.com/erickgnclvs/moomux/internal/tmux"
+	"github.com/erickgnclvs/moomux/internal/userscript"
 	"github.com/erickgnclvs/moomux/internal/watcher"
 )
 
@@ -379,6 +380,18 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string,
 			return session.Session{}, "", fmt.Errorf("git worktree add: %w", err)
 		}
 		slog.Info("worktree added", "path", wt, "branch", branch)
+		if home, err := os.UserHomeDir(); err != nil {
+			slog.Warn("userscript run skipped", "err", err)
+		} else {
+			for _, w := range userscript.RunWorktreeCreate(home, userscript.Env{
+				Project:  project,
+				Worktree: wt,
+				Repo:     proj.Repo,
+				Branch:   branch,
+			}) {
+				slog.Warn("userscript", "warning", w)
+			}
+		}
 	}
 	hooksHint := installAgentSupport(agent)
 	if agent == "claude" {
