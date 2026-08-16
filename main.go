@@ -44,7 +44,8 @@ Usage:
   moomux spawn ...   Create a session non-interactively and hand it a prompt.
                      Run 'moomux spawn -h' for its flags.
   moomux tag ...    Tag the session whose worktree you're currently in with
-                     a ticket and/or PR URL. Run 'moomux tag -h' for its flags.
+                     a ticket and/or PR URL, or with no flags print its
+                     current ticket/PR. Run 'moomux tag -h' for its flags.
   moomux park       Stop tmux and close the terminal tab for the session
                      whose worktree you're currently in, keeping its
                      worktree/branch (same as pressing 'x' in the TUI).
@@ -332,16 +333,15 @@ func runSpawn(args []string) error {
 // moomux session's worktree the current directory is inside (or a
 // subdirectory of), so it can be run from an agent's own pane right after
 // opening a PR. Flags left unset keep the session's existing value rather
-// than clearing it.
+// than clearing it. Called with neither flag set, it just prints the
+// session's current ticket/PR instead of erroring, so an agent can check
+// what's already tracked before deciding whether it needs to go find a link.
 func runTag(args []string) error {
 	fs := flag.NewFlagSet("tag", flag.ExitOnError)
 	ticket := fs.String("ticket", "", "ticket URL to attach (kept as-is if omitted)")
 	pr := fs.String("pr", "", "pull request URL to attach (kept as-is if omitted)")
 	if err := fs.Parse(args); err != nil {
 		return err
-	}
-	if *ticket == "" && *pr == "" {
-		return fmt.Errorf("tag: pass -ticket and/or -pr")
 	}
 
 	a, err := newApp()
@@ -351,6 +351,11 @@ func runTag(args []string) error {
 	s, err := currentSession(a)
 	if err != nil {
 		return fmt.Errorf("tag: %w", err)
+	}
+
+	if *ticket == "" && *pr == "" {
+		fmt.Printf("ticket: %s\npr: %s\n", orNone(s.Ticket), orNone(s.PR))
+		return nil
 	}
 
 	if *ticket == "" {
@@ -364,6 +369,15 @@ func runTag(args []string) error {
 	}
 	fmt.Println("tagged " + s.Name)
 	return nil
+}
+
+// orNone renders an empty tag value as "none" for `moomux tag`'s status
+// output, rather than a blank line that reads as an error.
+func orNone(s string) string {
+	if s == "" {
+		return "none"
+	}
+	return s
 }
 
 // runPark implements `moomux park`: stop the tmux session and close its

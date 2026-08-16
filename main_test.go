@@ -84,3 +84,15 @@ func TestCurrentSessionPrefersTmuxOverStaleCwd(t *testing.T) {
 		t.Fatalf("currentSession = %+v, want session a (the tmux session we're actually in), not the stale-cwd session", s)
 	}
 }
+
+// TestOrNone covers the formatting `moomux tag` (called with neither flag
+// set) relies on to report an untagged field as "none" rather than a blank,
+// easy-to-miss line.
+func TestOrNone(t *testing.T) {
+	if got := orNone(""); got != "none" {
+		t.Fatalf("orNone(%q) = %q, want %q", "", got, "none")
+	}
+	if got := orNone("https://example.com/x"); got != "https://example.com/x" {
+		t.Fatalf("orNone did not pass through a non-empty value: %q", got)
+	}
+}

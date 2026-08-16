@@ -66,16 +66,25 @@ const tagPrompt = `---
 description: Tag this moomux session with its PR (and ticket, if one is already tracked)
 ---
 
-Find the open pull request for the current branch (e.g. ` + "`gh pr view --json url --jq .url`" + `) and run:
+Run ` + "`moomux tag`" + ` with no flags first to see what's already tracked on this
+session.
+
+Find the open pull request for the current branch (e.g. ` + "`gh pr view --json url,body --jq '.url + \"\\n\" + .body'`" + `) and run:
 
     moomux tag -pr <that PR URL>
 
 Leave out ` + "`-ticket`" + ` — moomux keeps this session's existing ticket automatically
-when you don't pass one. If you know a ticket URL for this work that isn't
-tracked on the session yet, pass it too:
+when you don't pass one. If ` + "`moomux tag`" + ` showed no ticket tracked yet, look for
+a ticket link in the PR title/body, the branch name, and recent commit
+messages (` + "`git log --oneline -20`" + `). Recognize common
+formats: Asana (` + "`https://app.asana.com/.../task/...`" + `), Jira
+(` + "`https://<org>.atlassian.net/browse/<KEY>-<num>`" + ` or a bare ` + "`<KEY>-<num>`" + `
+you can expand to that URL), and Linear (` + "`https://linear.app/<org>/issue/<KEY>-<num>`" + `).
+If you find one, pass it too:
 ` + "`moomux tag -pr <PR URL> -ticket <ticket URL>`" + `.
 
-If there's no open PR yet, say so instead of guessing one.
+If there's no open PR yet, say so instead of guessing one. Don't guess a
+ticket link either — only pass ` + "`-ticket`" + ` when you actually found one.
 `
 
 // EnsureTagPrompt installs the /tag custom prompt — see ensurePrompt.
