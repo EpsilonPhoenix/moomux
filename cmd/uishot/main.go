@@ -43,12 +43,14 @@ var screens = map[string][]string{
 	"new-session-branch": {"n", "tab", "tab"},
 	// The form preselects the active project, so no "right" press is needed
 	// to pick one; 3 tabs from there lands on the first-prompt textarea (see
-	// newFormFieldCount) — ctrl+j inserts a newline there since Enter is
-	// reserved for submit.
+	// newFormFieldCount) — both Enter and ctrl+j insert a newline there,
+	// since that field is the one exception to Enter submitting the form.
 	"new-session-multiline": {"n", "tab", "tab", "tab", "first line", "ctrl+j", "second line"},
 	// Submitting against a backend whose CreateSession fails: the form stays
-	// open with everything typed still in it, plus the wrapped error.
-	"new-session-error":     {"n", "tab", "myfeat", "tab", "tab", "a first prompt that must survive the failure", "enter"},
+	// open with everything typed still in it, plus the wrapped error. The
+	// trailing tab moves off the prompt textarea first, since Enter there
+	// inserts a newline instead of submitting.
+	"new-session-error":     {"n", "tab", "myfeat", "tab", "tab", "a first prompt that must survive the failure", "tab", "enter"},
 	"new-session-wide-line": {"n", "tab", "tab", "tab", "this is a single long line typed into the first prompt field that should only wrap once it actually reaches the right edge of the box on a wide terminal"},
 	// Adding/editing a project only happens inside the picker now (P/E were
 	// removed from the main list), so these open it first.

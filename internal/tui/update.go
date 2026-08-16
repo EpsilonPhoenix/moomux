@@ -853,6 +853,11 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case key.Matches(msg, m.keys.Enter):
+		if m.newFormFocus == 3 {
+			// Enter inserts a newline in the multi-line prompt field instead
+			// of submitting — tab to another field to submit with Enter.
+			break
+		}
 		if m.newFormProjIdx < 0 {
 			m.newFormErr = "choose a project — tab to the project row, then ←→"
 			return m, nil

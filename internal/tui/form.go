@@ -151,7 +151,7 @@ var newFormFieldHints = []string{
 	0: "which project this session belongs to — ←→ to choose",
 	1: "shown in the list and worktree folder — blank uses branch",
 	2: "resume an existing branch; blank = new branch off base",
-	3: "optional — the agent's first task; ctrl+j for a newline",
+	3: "optional — the agent's first task; enter for a newline, tab away to submit",
 	4: "optional — shown as a clickable ticket icon next to the session",
 	5: "optional — shown as a clickable PR icon next to the session",
 	6: "which agent CLI runs in the session's pane — ←→ to choose",
