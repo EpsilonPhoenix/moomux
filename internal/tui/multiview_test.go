@@ -215,6 +215,47 @@ func TestMultiViewArrowKeysSlideFocusBetweenProjects(t *testing.T) {
 	}
 }
 
+// TestMultiViewReorderFollowsFocusToNewColumn is the regression test for the
+// bug report that reordering a project in multi-view left the highlighted
+// panel behind: ProjectMovedMsg used to re-anchor m.activeProj (and, while
+// the picker is open, m.pickerCursor) by name, but never m.multiFocus — the
+// index that actually drives which panel renders focused in multi-view. So
+// shifting "alpha" right slid alpha into beta's old column while multiFocus
+// stayed at index 0, making the highlight appear to stay on beta instead of
+// following alpha to its new position.
+func TestMultiViewReorderFollowsFocusToNewColumn(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+		{ID: "b1", Project: "beta", Name: "b1"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.mode = ModeMultiView
+	m.multiFocus = 0 // alpha
+
+	_, cmd := m.updateMultiView(tea.KeyMsg{Type: tea.KeyShiftRight})
+	if cmd == nil {
+		t.Fatalf("expected a command to dispatch MoveProject")
+	}
+	resultMsg := cmd()
+	if len(be.moveProjectCalls) != 1 {
+		t.Fatalf("expected 1 MoveProject call, got %d", len(be.moveProjectCalls))
+	}
+	if got := be.moveProjectCalls[0]; got.name != "alpha" || got.delta != 1 {
+		t.Fatalf("MoveProject called with %+v, want {alpha 1}", got)
+	}
+
+	// Backend reorders "alpha" after "beta"; simulate the persisted order.
+	m.cfg.Order = []string{"beta", "alpha"}
+	m.Update(resultMsg)
+
+	if m.projects[1] != "alpha" {
+		t.Fatalf("expected alpha second after reorder, got %v", m.projects)
+	}
+	if m.multiFocus != 1 {
+		t.Fatalf("expected multiFocus to follow alpha to column 1, got %d", m.multiFocus)
+	}
+}
+
 // TestMultiViewCursorIsPerProject is the regression test for the bug this
 // per-project map fixes: without it, moving the cursor in one panel would
 // have to share a single index with every other panel (as m.cursor does for
