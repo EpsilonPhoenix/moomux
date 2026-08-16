@@ -319,6 +319,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.pickerCursor = i
 			}
 		}
+		if m.mode == ModeMultiView {
+			if i := indexOfProject(m.multiViewEligibleProjects(), msg.Name); i >= 0 {
+				m.multiFocus = i
+			}
+		}
 		return m, nil
 
 	case ProjectUpdatedMsg:
