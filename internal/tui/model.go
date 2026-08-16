@@ -468,10 +468,12 @@ func New(cfg *config.Config, backend Backend, statusCh <-chan watcher.Snapshot, 
 	pi.Prompt = "> "
 	pi.SetHeight(4)
 	pi.SetWidth(40)
-	// Enter is reserved as the form's global submit key (see updateNewForm),
-	// so it never reaches the textarea — ctrl+j and shift+enter insert a
-	// newline while typing a multi-line prompt instead.
-	pi.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("ctrl+j", "shift+enter"), key.WithHelp("ctrl+j", "newline"))
+	// "shift+enter" can't be told apart from plain "enter" over a raw
+	// terminal (no kitty keyboard protocol here), so binding it as a
+	// separate newline key silently submitted the form instead — see
+	// updateNewForm's Enter case, which only treats Enter as a global
+	// submit outside this field.
+	pi.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("enter", "ctrl+j", "ctrl+m"), key.WithHelp("enter", "newline"))
 
 	m := &Model{
 		cfg:              cfg,

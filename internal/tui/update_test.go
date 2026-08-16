@@ -89,6 +89,7 @@ func TestNewSessionFormSendsFirstPrompt(t *testing.T) {
 		press(m, tea.KeyTab) // name -> branch -> prompt
 	}
 	typeText(m, "do the thing")
+	press(m, tea.KeyTab) // prompt -> ticket, so Enter submits rather than adding a newline
 
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if len(be.createCalls) != 1 {
@@ -162,6 +163,7 @@ func TestNewSessionFormAutoSubmitDefaultsFromConfigAndOnlyPersistsOnChange(t *te
 		press(m, tea.KeyTab) // name -> branch -> prompt
 	}
 	typeText(m, "do the thing")
+	press(m, tea.KeyTab) // prompt -> ticket, so Enter submits rather than adding a newline
 
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if len(be.firstPromptCalls) != 1 || !be.firstPromptCalls[0].autoSubmit {
@@ -173,10 +175,16 @@ func TestNewSessionFormAutoSubmitDefaultsFromConfigAndOnlyPersistsOnChange(t *te
 }
 
 // TestNewSessionFormPromptSupportsMultilineNavigation guards the prompt
-// field's textarea behavior: ctrl+j inserts a newline (Enter is reserved for
-// form submit) and, once a second line exists, up/down move the cursor
-// between lines instead of leaving the field the way they do for every other
-// row in the form.
+// field's textarea behavior: both Enter and ctrl+j insert a newline while
+// this field is focused — the form's global Enter-submits binding only
+// applies to every other field — and, once a second line exists, up/down
+// move the cursor between lines instead of leaving the field the way they
+// do for every other row in the form.
+//
+// Enter (rather than ctrl+j) is the one a user actually reaches for, and
+// terminals without the kitty keyboard protocol can't tell shift+enter apart
+// from plain enter, so treating Enter as a global submit while this field is
+// focused silently submitted the whole form instead of adding a line.
 func TestNewSessionFormPromptSupportsMultilineNavigation(t *testing.T) {
 	be := &fakeBackend{}
 	m := newTestModel(be)
@@ -191,9 +199,21 @@ func TestNewSessionFormPromptSupportsMultilineNavigation(t *testing.T) {
 	}
 
 	typeText(m, "line one")
-	press(m, tea.KeyCtrlJ)
+	press(m, tea.KeyEnter)
 	typeText(m, "line two")
 	if got := m.promptInput.Value(); got != "line one\nline two" {
+		t.Fatalf("promptInput value = %q", got)
+	}
+	if m.mode != ModeNewForm {
+		t.Fatalf("mode = %v, Enter in the prompt field must not submit the form", m.mode)
+	}
+	if len(be.createCalls) != 0 {
+		t.Fatalf("createCalls = %v, Enter in the prompt field must not submit the form", be.createCalls)
+	}
+
+	press(m, tea.KeyCtrlJ)
+	typeText(m, "line three")
+	if got := m.promptInput.Value(); got != "line one\nline two\nline three" {
 		t.Fatalf("promptInput value = %q", got)
 	}
 
@@ -260,6 +280,7 @@ func TestNewSessionFormSurvivesPostCreateFirstPromptFailure(t *testing.T) {
 		press(m, tea.KeyTab) // name -> branch -> prompt
 	}
 	typeText(m, "do the thing")
+	press(m, tea.KeyTab) // prompt -> ticket, so Enter submits rather than adding a newline
 
 	run(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.mode != ModeList || !strings.Contains(m.flash, "created myfeat") {
