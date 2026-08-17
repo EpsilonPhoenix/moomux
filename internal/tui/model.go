@@ -937,8 +937,13 @@ func (m *Model) Init() tea.Cmd {
 	// the startup tmux-alive check runs immediately rather than waiting for
 	// the first tick — see the StatusRefreshedMsg case for what happens once
 	// it resolves.
-	return tea.Batch(listenStatus(m.statusCh), tickFlash(), refreshStatusCmd(m), checkUpdateCmd(m.Version))
+	return tea.Batch(listenStatus(m.statusCh), tickFlash(), refreshStatusCmd(m), checkUpdateCmd(m.Version), tickUpdateCheck())
 }
+
+// updateCheckInterval is how often a long-running session re-polls GitHub
+// Releases, so a session left open for days still notices new versions
+// instead of only checking once at startup.
+const updateCheckInterval = 6 * time.Hour
 
 // checkUpdateCmd asynchronously checks GitHub Releases for a version newer
 // than current. It's a background nicety, not a feature — any failure
@@ -952,6 +957,12 @@ func checkUpdateCmd(current string) tea.Cmd {
 		}
 		return UpdateAvailableMsg{Version: strings.TrimPrefix(latest, "v")}
 	}
+}
+
+// tickUpdateCheck schedules the next recheck; see UpdateCheckTickMsg handling
+// in Update() for what fires when it lands.
+func tickUpdateCheck() tea.Cmd {
+	return tea.Tick(updateCheckInterval, func(t time.Time) tea.Msg { return UpdateCheckTickMsg{} })
 }
 
 func listenStatus(ch <-chan watcher.Snapshot) tea.Cmd {

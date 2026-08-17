@@ -34,6 +34,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.UpdateVersion = msg.Version
 		return m, nil
 
+	case UpdateCheckTickMsg:
+		return m, tea.Batch(checkUpdateCmd(m.Version), tickUpdateCheck())
+
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.resizeFormInputs()
