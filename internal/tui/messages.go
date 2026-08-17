@@ -48,6 +48,10 @@ type CreateFailedMsg struct{ Err error }
 // reports a version newer than the one currently running.
 type UpdateAvailableMsg struct{ Version string }
 
+// UpdateCheckTickMsg fires every updateCheckInterval to re-poll GitHub
+// Releases, so long-running sessions still notice new versions.
+type UpdateCheckTickMsg struct{}
+
 type InfoMsg struct {
 	When time.Time
 }
