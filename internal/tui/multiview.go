@@ -248,7 +248,7 @@ func (m *Model) delegateToList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// own nested add/edit/delete flows, and that must NOT be clobbered into
 	// bouncing out to multi-view instead of back to the picker.
 	switch m.mode {
-	case ModeNewForm, ModeConfirmDelete, ModeTagForm, ModeEditSession, ModeHelp, ModeProjectPicker, ModeThemePicker, ModeSearch:
+	case ModeNewForm, ModeConfirmDelete, ModeTagForm, ModeEditSession, ModeHelp, ModeProjectPicker, ModeThemePicker, ModeSearch, ModeSettings:
 		if m.sessionDialogReturn == ModeList {
 			m.sessionDialogReturn = ModeMultiView
 		}
