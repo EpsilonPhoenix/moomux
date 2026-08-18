@@ -419,6 +419,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateMultiView(msg)
 		case ModeSearch:
 			return m.updateSearch(msg)
+		case ModeSettings:
+			return m.updateSettings(msg)
 		default:
 			return m.updateList(msg)
 		}
@@ -510,7 +512,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(msg, m.keys.MoveUp):
 		if m.cfg.SortRecentFirst {
-			m.setFlash("info", "manual reorder is off while sorting by most-recently-opened (O to change)")
+			m.setFlash("info", "manual reorder is off while sorting by most-recently-opened (change in settings, s)")
 			return m, nil
 		}
 		if len(m.sessions) > 0 && m.cursor > 0 {
@@ -518,7 +520,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(msg, m.keys.MoveDown):
 		if m.cfg.SortRecentFirst {
-			m.setFlash("info", "manual reorder is off while sorting by most-recently-opened (O to change)")
+			m.setFlash("info", "manual reorder is off while sorting by most-recently-opened (change in settings, s)")
 			return m, nil
 		}
 		if len(m.sessions) > 0 && m.cursor < len(m.sessions)-1 {
@@ -648,18 +650,8 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sessionDialogReturn = ModeList
 		m.resetOverlayViewport()
 		return m, nil
-	case key.Matches(msg, m.keys.ThemePicker):
-		m.openThemePicker()
-		return m, nil
-	case key.Matches(msg, m.keys.SortMode):
-		m.cfg.SortRecentFirst = !m.cfg.SortRecentFirst
-		state := "manual (shift+↑↓)"
-		if m.cfg.SortRecentFirst {
-			state = "most-recently-opened first"
-		}
-		m.setFlash("info", "session sort: "+state)
-		_ = m.backend.SetSortRecentFirst(m.cfg.SortRecentFirst)
-		m.refreshSessions()
+	case key.Matches(msg, m.keys.Settings):
+		m.openSettings()
 		return m, nil
 	case key.Matches(msg, m.keys.Search):
 		m.searchInput.SetValue("")
@@ -1589,12 +1581,69 @@ func (m *Model) updateProjectPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // openThemePicker opens ModeThemePicker, seeding the cursor and live-preview
 // appearance from the persisted config so Esc has something to revert to.
+// Only reachable from the settings screen's Theme row, so it always returns
+// to ModeSettings rather than ModeList.
 func (m *Model) openThemePicker() {
 	m.themeCursor = themeIndex(m.cfg.Theme)
 	m.previewAppearance = m.cfg.Appearance
 	m.mode = ModeThemePicker
-	m.sessionDialogReturn = ModeList
+	m.sessionDialogReturn = ModeSettings
 	m.resetOverlayViewport()
+}
+
+// openSettings opens ModeSettings at its first row.
+func (m *Model) openSettings() {
+	m.settingsCursor = 0
+	m.mode = ModeSettings
+	m.resetOverlayViewport()
+}
+
+// updateSettings handles keys while ModeSettings is open. Up/down move the
+// cursor; enter (or left/right, for the boolean rows) applies the row's
+// change immediately — same as the O key it replaces for sort mode. The
+// theme row is the exception: enter drills into ModeThemePicker instead of
+// toggling anything itself, since a theme is a choice among many, not a
+// boolean.
+func (m *Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Cancel):
+		m.mode = ModeList
+		return m, nil
+	case key.Matches(msg, m.keys.Up):
+		m.settingsCursor = (m.settingsCursor - 1 + len(settingsRows)) % len(settingsRows)
+		return m, nil
+	case key.Matches(msg, m.keys.Down):
+		m.settingsCursor = (m.settingsCursor + 1) % len(settingsRows)
+		return m, nil
+	case key.Matches(msg, m.keys.Enter):
+		return m.applySettingsRow(m.settingsCursor)
+	case key.Matches(msg, m.keys.Left), key.Matches(msg, m.keys.Right):
+		if settingsRows[m.settingsCursor].kind == settingsRowToggle {
+			return m.applySettingsRow(m.settingsCursor)
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
+// applySettingsRow applies row i's action: toggling a boolean setting and
+// persisting it through the backend (errors aren't surfaced — same as the O
+// key this replaces, config saves have no user-visible failure mode worth a
+// dialog), or — for the theme row — drilling into ModeThemePicker.
+func (m *Model) applySettingsRow(i int) (tea.Model, tea.Cmd) {
+	row := settingsRows[i]
+	if row.kind == settingsRowDrill {
+		m.openThemePicker()
+		return m, nil
+	}
+	next := !row.get(m.cfg)
+	row.set(m.cfg, next)
+	m.setFlash("info", row.flash(next))
+	_ = row.persist(m.backend, next)
+	if row.refreshSessions {
+		m.refreshSessions()
+	}
+	return m, nil
 }
 
 // updateThemePicker handles keys while ModeThemePicker is open. Up/down and

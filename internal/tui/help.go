@@ -35,10 +35,8 @@ func (m *Model) helpGroups() []helpGroup {
 		linkDesc = "force-copy ticket/PR links: on"
 	}
 	reorderDesc := "reorder session"
-	sortDesc := "sort: most-recently-opened"
 	if m.cfg.SortRecentFirst {
-		reorderDesc = "reorder session (off, see O)"
-		sortDesc = "sort: manual (shift+↑↓)"
+		reorderDesc = "reorder session (off, see settings)"
 	}
 	return []helpGroup{
 		{
@@ -87,8 +85,7 @@ func (m *Model) helpGroups() []helpGroup {
 				{"?", "toggle this help"},
 				{"q", "quit"},
 				{"r", "refresh"},
-				{"T", "themes"},
-				{"O", sortDesc},
+				{"s", "settings (theme, sort mode, auto-tmux, auto-submit)"},
 			},
 		},
 	}

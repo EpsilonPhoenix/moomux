@@ -128,7 +128,7 @@ func TestShiftUpNoOpWhenSortRecentFirst(t *testing.T) {
 	}
 }
 
-func TestSortModeKeyTogglesConfigAndPersists(t *testing.T) {
+func TestSettingsSortRowTogglesConfigAndPersists(t *testing.T) {
 	be := &fakeBackend{sessions: []session.Session{
 		{ID: "demo:a", Project: "demo", Name: "a"},
 	}}
@@ -137,17 +137,22 @@ func TestSortModeKeyTogglesConfigAndPersists(t *testing.T) {
 		t.Fatal("expected SortRecentFirst to start false")
 	}
 
-	m.Update(runeKey('O'))
+	m.Update(runeKey('s'))
+	if m.mode != ModeSettings {
+		t.Fatalf("expected 's' to open ModeSettings, got %v", m.mode)
+	}
+	// Sort mode is the first settings row.
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if !m.cfg.SortRecentFirst {
-		t.Fatal("expected O to flip SortRecentFirst on")
+		t.Fatal("expected enter on the sort row to flip SortRecentFirst on")
 	}
 	if len(be.setSortRecentFirstCalls) != 1 || !be.setSortRecentFirstCalls[0] {
 		t.Fatalf("expected backend.SetSortRecentFirst(true), got %v", be.setSortRecentFirstCalls)
 	}
 
-	m.Update(runeKey('O'))
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.cfg.SortRecentFirst {
-		t.Fatal("expected a second O to flip SortRecentFirst back off")
+		t.Fatal("expected a second enter to flip SortRecentFirst back off")
 	}
 	if len(be.setSortRecentFirstCalls) != 2 || be.setSortRecentFirstCalls[1] {
 		t.Fatalf("expected backend.SetSortRecentFirst(false), got %v", be.setSortRecentFirstCalls)

@@ -78,6 +78,9 @@ type Backend interface {
 	SetAutoSubmitDefault(autoSubmit bool) error
 	// SetSortRecentFirst persists the session list's sort mode.
 	SetSortRecentFirst(recentFirst bool) error
+	// SetAutoTmux persists whether moomux always relaunches itself inside a
+	// dedicated tmux session on startup.
+	SetAutoTmux(autoTmux bool) error
 }
 
 type Mode int
@@ -97,6 +100,7 @@ const (
 	ModeThemePicker
 	ModeMultiView
 	ModeSearch
+	ModeSettings
 )
 
 // agentNames lists the agent CLIs a session/project can run. Every form
@@ -282,6 +286,8 @@ type Model struct {
 	// m.cfg.Appearance — cfg itself isn't touched until the user confirms.
 	themeCursor       int
 	previewAppearance string
+	// settingsCursor is an index into settingsRows while ModeSettings is open.
+	settingsCursor int
 	// projectDialogReturn is where ModeConfirmDeleteProject/ModeEditProject/
 	// ModeNewProject send the user back to (cancel, error, or success) —
 	// ModeList when P/D/E was pressed there, ModeProjectPicker when

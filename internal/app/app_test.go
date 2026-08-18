@@ -1430,6 +1430,27 @@ func TestSetSortRecentFirst(t *testing.T) {
 	}
 }
 
+func TestSetAutoTmux(t *testing.T) {
+	a, _, _, _ := newTestApp(t, map[string]config.Project{
+		"demo": {Kind: "git", Repo: t.TempDir(), Agent: "claude"},
+	})
+
+	if err := a.SetAutoTmux(true); err != nil {
+		t.Fatal(err)
+	}
+	if !a.Cfg.AutoTmux {
+		t.Fatal("AutoTmux not set in memory")
+	}
+
+	loaded, err := config.Load(a.CfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.AutoTmux {
+		t.Fatal("AutoTmux not persisted")
+	}
+}
+
 func TestSessionsSortsByLastOpenedWhenSortRecentFirstIsOn(t *testing.T) {
 	a, _, _, _ := newTestApp(t, map[string]config.Project{
 		"demo": {Kind: "git", Repo: t.TempDir(), Agent: "claude"},
