@@ -256,6 +256,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case SessionOpenedMsg:
+		// Opening a session bumps its LastOpened, which can sort it to a new
+		// position (recently-opened sort, or the tmux-alive float once its
+		// window comes up) — follow it there instead of leaving the cursor
+		// on the old index.
+		m.refreshSessions()
+		m.focusSession(msg.ID)
 		text := "opened " + msg.ID
 		if msg.Hint != "" {
 			text += " — " + msg.Hint
