@@ -58,6 +58,23 @@ func TestMatchSessionsEmptyQueryReturnsAllSortedByProjectThenName(t *testing.T) 
 	}
 }
 
+func TestMatchSessionsArchivedSortedLast(t *testing.T) {
+	all := []session.Session{
+		{ID: "1", Project: "alpha", Name: "a-session", Archived: true},
+		{ID: "2", Project: "zeta", Name: "z-session", Archived: false},
+		{ID: "3", Project: "alpha", Name: "b-session", Archived: false},
+	}
+
+	got := matchSessions(all, "")
+
+	wantOrder := []string{"3", "2", "1"} // active sessions (project/name order) before archived
+	for i, id := range wantOrder {
+		if got[i].ID != id {
+			t.Errorf("position %d: got id %s, want %s (order=%+v)", i, got[i].ID, id, got)
+		}
+	}
+}
+
 func TestMatchSessionsNoMatchReturnsEmpty(t *testing.T) {
 	all := []session.Session{{ID: "1", Project: "moomux", Name: "feature-auth"}}
 
