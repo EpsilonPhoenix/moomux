@@ -14,6 +14,26 @@
 
 A TUI for managing [Claude Code](https://claude.com/claude-code) agent sessions across git worktrees. Creates a worktree + branch, starts a tmux session, launches the session's agent (`claude`, `codex`, or `opencode`), and opens a terminal tab — all in one keypress. Single Go binary, no daemon.
 
+## Install
+
+```bash
+# Homebrew (recommended)
+brew tap erickgnclvs/moomux
+brew install moomux
+
+# Go
+go install github.com/erickgnclvs/moomux@latest
+
+# From source
+git clone https://github.com/erickgnclvs/moomux && cd moomux && make install
+```
+
+Requires `tmux`, `git`, and `claude` on `$PATH`.
+
+**Linux**: moomux detects the terminal it's running in from environment variables. It opens each session as a **new tab** in GNOME Terminal, Konsole, WezTerm, and kitty (kitty needs `allow_remote_control yes` + `listen_on unix:/tmp/kitty` in `kitty.conf`; without it you get a new window), and as a **new window** in Ghostty, Alacritty, foot, Tilix, and xterm. Other VTE-based terminals (Ptyxis, GNOME Console, Xfce Terminal, ...) open via `gnome-terminal` when it's installed. In anything else — including over SSH — moomux shows a `tmux attach -t <session>` hint instead of failing.
+
+**Windows**: tmux has no native Windows build. Run moomux inside [WSL](https://learn.microsoft.com/windows/wsl/install) — the Linux binary above works as-is. In Windows Terminal, moomux opens a new tab and attaches automatically; in any other terminal it prints a `tmux attach -t <session>` hint instead.
+
 ## Session layout
 
 Each session is a tmux window split into two panes, both in the worktree directory:
@@ -33,6 +53,8 @@ It's a regular tmux window, so regular tmux pane controls apply — mouse click/
 | Close pane | `Ctrl-b x` |
 
 These are plain tmux, not a moomux feature — see `man tmux` for the full list.
+
+A project can override this default with its own window/pane arrangement — see [Custom pane layouts](docs/pane-layouts.md).
 
 ### Remote and mobile use
 
@@ -99,27 +121,6 @@ Each session can be tagged with a ticket and/or PR link (`t`), shown as icons in
 - **Over SSH** — copies the link to your clipboard (via the OSC 52 escape sequence above) instead of opening it, since `open`/`xdg-open` would launch a browser on the remote machine rather than the one you're actually looking at.
 
 SSH is auto-detected. Other transports (e.g. mosh) don't set anything moomux can detect, so press `R` to force copy mode on (or back off, toggling) — the current state is shown in the `?` help overlay.
-
-
-## Install
-
-```bash
-# Homebrew (recommended)
-brew tap erickgnclvs/moomux
-brew install moomux
-
-# Go
-go install github.com/erickgnclvs/moomux@latest
-
-# From source
-git clone https://github.com/erickgnclvs/moomux && cd moomux && make install
-```
-
-Requires `tmux`, `git`, and `claude` on `$PATH`.
-
-**Linux**: moomux detects the terminal it's running in from environment variables. It opens each session as a **new tab** in GNOME Terminal, Konsole, WezTerm, and kitty (kitty needs `allow_remote_control yes` + `listen_on unix:/tmp/kitty` in `kitty.conf`; without it you get a new window), and as a **new window** in Ghostty, Alacritty, foot, Tilix, and xterm. Other VTE-based terminals (Ptyxis, GNOME Console, Xfce Terminal, ...) open via `gnome-terminal` when it's installed. In anything else — including over SSH — moomux shows a `tmux attach -t <session>` hint instead of failing.
-
-**Windows**: tmux has no native Windows build. Run moomux inside [WSL](https://learn.microsoft.com/windows/wsl/install) — the Linux binary above works as-is. In Windows Terminal, moomux opens a new tab and attaches automatically; in any other terminal it prints a `tmux attach -t <session>` hint instead.
 
 ## Build
 

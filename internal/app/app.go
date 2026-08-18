@@ -16,6 +16,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/codexhook"
 	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/gitwt"
+	"github.com/erickgnclvs/moomux/internal/layout"
 	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/terminal"
@@ -70,6 +71,22 @@ func buildAgentCmd(agent string, dangerous bool) string {
 		}
 	}
 	return cmd
+}
+
+// newTmuxSession creates tmuxName's tmux session at cwd, using the pane
+// layout defined by cwd's optional .moomux-panes.toml if present and valid,
+// falling back to the default two-pane split otherwise — a malformed layout
+// file only logs a warning, it never blocks session creation.
+func (a *App) newTmuxSession(tmuxName, cwd, cmd, windowName string) error {
+	spec, err := layout.Load(cwd)
+	if err != nil {
+		slog.Warn("pane layout invalid, using default layout", "path", cwd, "err", err)
+		spec = nil
+	}
+	if spec == nil {
+		return a.Tmux.NewSession(tmuxName, cwd, cmd, windowName)
+	}
+	return a.Tmux.NewSessionWithLayout(tmuxName, cwd, windowName, spec, cmd)
 }
 
 // agentInstallers are the per-agent writers that wire moomux's integrations
@@ -412,7 +429,7 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string,
 		cmd = fmt.Sprintf("opencode --port %d", agentPort)
 	}
 
-	if err := a.Tmux.NewSession(tmuxName, wt, cmd, name); err != nil {
+	if err := a.newTmuxSession(tmuxName, wt, cmd, name); err != nil {
 		slog.Error("tmux new-session failed", "name", tmuxName, "cwd", wt, "err", err)
 		return session.Session{}, "", fmt.Errorf("tmux new-session: %w", err)
 	}
@@ -851,7 +868,7 @@ func (a *App) OpenSession(id string) (string, error) {
 			}
 			cmd = fmt.Sprintf("opencode --port %d", s.AgentPort)
 		}
-		if err := a.Tmux.NewSession(s.TmuxSession, s.WorktreePath, cmd, s.Name); err != nil {
+		if err := a.newTmuxSession(s.TmuxSession, s.WorktreePath, cmd, s.Name); err != nil {
 			slog.Error("NewSession failed", "id", id, "tmux_session", s.TmuxSession, "cwd", s.WorktreePath, "err", err)
 			return "", err
 		}
