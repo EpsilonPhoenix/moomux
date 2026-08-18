@@ -475,6 +475,29 @@ func TestMultiViewArchiveStaysInMultiView(t *testing.T) {
 	}
 }
 
+// TestMultiViewSettingsEscReturnsToMultiView is the regression test for
+// openSettings/updateSettings not routing through sessionDialogReturn the
+// way every other dialog does: opening Settings from ModeMultiView and
+// backing out with Esc used to hardcode ModeList, silently dropping the
+// user out of multi-view.
+func TestMultiViewSettingsEscReturnsToMultiView(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+		{ID: "b1", Project: "beta", Name: "b1"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.mode = ModeMultiView
+
+	run(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	if m.mode != ModeSettings {
+		t.Fatalf("mode after 's' = %v, want ModeSettings", m.mode)
+	}
+	run(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.mode != ModeMultiView {
+		t.Fatalf("mode after esc = %v, want back to ModeMultiView", m.mode)
+	}
+}
+
 // TestMultiViewTagFormRoundTripsToMultiView checks the tag dialog (opened
 // with 't') both prefills from the focused panel's session and returns to
 // ModeMultiView, not ModeList, once submitted.

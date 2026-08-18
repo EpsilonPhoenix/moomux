@@ -1597,10 +1597,13 @@ func (m *Model) openThemePicker() {
 	m.resetOverlayViewport()
 }
 
-// openSettings opens ModeSettings at its first row.
+// openSettings opens ModeSettings at its first row. Like the other dialogs,
+// it records where Esc should return to via sessionDialogReturn — delegateToList
+// bumps this to ModeMultiView when opened from there (see its switch).
 func (m *Model) openSettings() {
 	m.settingsCursor = 0
 	m.mode = ModeSettings
+	m.sessionDialogReturn = ModeList
 	m.resetOverlayViewport()
 }
 
@@ -1613,7 +1616,7 @@ func (m *Model) openSettings() {
 func (m *Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Cancel):
-		m.mode = ModeList
+		m.mode = m.sessionDialogReturn
 		return m, nil
 	case key.Matches(msg, m.keys.Up):
 		m.settingsCursor = (m.settingsCursor - 1 + len(settingsRows)) % len(settingsRows)
