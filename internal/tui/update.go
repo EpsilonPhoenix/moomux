@@ -509,10 +509,18 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor = (m.cursor + 1) % len(m.sessions)
 		}
 	case key.Matches(msg, m.keys.MoveUp):
+		if m.cfg.SortRecentFirst {
+			m.setFlash("info", "manual reorder is off while sorting by most-recently-opened (O to change)")
+			return m, nil
+		}
 		if len(m.sessions) > 0 && m.cursor > 0 {
 			return m, m.moveSessionCmd(m.sessions[m.cursor].ID, -1)
 		}
 	case key.Matches(msg, m.keys.MoveDown):
+		if m.cfg.SortRecentFirst {
+			m.setFlash("info", "manual reorder is off while sorting by most-recently-opened (O to change)")
+			return m, nil
+		}
 		if len(m.sessions) > 0 && m.cursor < len(m.sessions)-1 {
 			return m, m.moveSessionCmd(m.sessions[m.cursor].ID, 1)
 		}
@@ -642,6 +650,16 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, m.keys.ThemePicker):
 		m.openThemePicker()
+		return m, nil
+	case key.Matches(msg, m.keys.SortMode):
+		m.cfg.SortRecentFirst = !m.cfg.SortRecentFirst
+		state := "manual (shift+↑↓)"
+		if m.cfg.SortRecentFirst {
+			state = "most-recently-opened first"
+		}
+		m.setFlash("info", "session sort: "+state)
+		_ = m.backend.SetSortRecentFirst(m.cfg.SortRecentFirst)
+		m.refreshSessions()
 		return m, nil
 	case key.Matches(msg, m.keys.Search):
 		m.searchInput.SetValue("")

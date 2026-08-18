@@ -76,6 +76,8 @@ type Backend interface {
 	// SetAutoSubmitDefault persists the remembered default for the
 	// new-session form's auto-submit toggle.
 	SetAutoSubmitDefault(autoSubmit bool) error
+	// SetSortRecentFirst persists the session list's sort mode.
+	SetSortRecentFirst(recentFirst bool) error
 }
 
 type Mode int

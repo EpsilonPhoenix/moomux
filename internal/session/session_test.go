@@ -189,6 +189,32 @@ func TestAllSortedByCreatedDesc(t *testing.T) {
 	}
 }
 
+func TestSortByRecentOrdersByLastOpenedDescFallingBackToCreatedAt(t *testing.T) {
+	t0 := time.Now()
+	sessions := []Session{
+		{ID: "manual-first", CreatedAt: t0.Add(-2 * time.Hour), LastOpened: t0.Add(-time.Minute)},
+		{ID: "never-opened-old", CreatedAt: t0.Add(-3 * time.Hour)},
+		{ID: "never-opened-new", CreatedAt: t0.Add(-time.Hour)},
+		{ID: "opened-most-recently", CreatedAt: t0.Add(-4 * time.Hour), LastOpened: t0},
+	}
+	SortByRecent(sessions)
+
+	want := []string{"opened-most-recently", "manual-first", "never-opened-new", "never-opened-old"}
+	for i, id := range want {
+		if sessions[i].ID != id {
+			t.Fatalf("position %d: want %s, got %s (order: %v)", i, id, sessions[i].ID, ids(sessions))
+		}
+	}
+}
+
+func ids(sessions []Session) []string {
+	out := make([]string, len(sessions))
+	for i, s := range sessions {
+		out[i] = s.ID
+	}
+	return out
+}
+
 func TestReorderPersistsAndOverridesCreatedAt(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sessions.json")

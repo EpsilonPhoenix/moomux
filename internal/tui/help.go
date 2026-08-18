@@ -34,6 +34,12 @@ func (m *Model) helpGroups() []helpGroup {
 	if m.forceCopyLinks {
 		linkDesc = "force-copy ticket/PR links: on"
 	}
+	reorderDesc := "reorder session"
+	sortDesc := "sort: most-recently-opened"
+	if m.cfg.SortRecentFirst {
+		reorderDesc = "reorder session (off, see O)"
+		sortDesc = "sort: manual (shift+↑↓)"
+	}
 	return []helpGroup{
 		{
 			title: "Sessions",
@@ -57,7 +63,7 @@ func (m *Model) helpGroups() []helpGroup {
 				// Plain-letter alternates share a row with the chord they stand in
 				// for; the chords need terminal extended-keys support, the letters
 				// don't. Keep these labels short — the overlay is height-limited.
-				{"shift+↑↓ / KJ", "reorder session"},
+				{"shift+↑↓ / KJ", reorderDesc},
 				{"tab / ] / →", "next project"},
 				{"shift+tab / [ / ←", "prev project"},
 				{"} / {", "...incl. empty ones"},
@@ -82,6 +88,7 @@ func (m *Model) helpGroups() []helpGroup {
 				{"q", "quit"},
 				{"r", "refresh"},
 				{"T", "themes"},
+				{"O", sortDesc},
 			},
 		},
 	}
