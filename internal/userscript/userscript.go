@@ -1,5 +1,6 @@
 // Package userscript runs user-provided scripts at points in a session's
-// lifecycle (currently: right after a worktree is created).
+// lifecycle (currently: right after a worktree is created, and right before
+// one is removed).
 package userscript
 
 import (
@@ -12,14 +13,22 @@ import (
 	"time"
 )
 
-// runTimeout bounds each script so a hung one can't stall session creation.
+// runTimeout bounds each script so a hung one can't stall session
+// creation/deletion.
 var runTimeout = 30 * time.Second
 
-// Dir returns the directory moomux scans for worktree-create scripts. It
-// lives under the user's config dir, outside any repo moomux manages, so
-// scripts placed here are never committed or pushed by the project itself.
-func Dir(home string) string {
-	return filepath.Join(home, ".config", "moomux", "userscripts", "worktree-create")
+// globalDir returns the directory moomux scans for scripts that run for
+// every project, for the given lifecycle event. It lives under the user's
+// config dir, outside any repo moomux manages, so scripts placed here are
+// never committed or pushed by the project itself.
+func globalDir(home, event string) string {
+	return filepath.Join(home, ".config", "moomux", "userscripts", event)
+}
+
+// projectDir returns the directory moomux scans for scripts scoped to a
+// single project, for the given lifecycle event.
+func projectDir(home, project, event string) string {
+	return filepath.Join(home, ".config", "moomux", "userscripts", project, event)
 }
 
 // Env carries the values passed to every script as environment variables.
@@ -30,12 +39,34 @@ type Env struct {
 	Branch   string
 }
 
-// RunWorktreeCreate runs every executable file directly inside Dir(home), in
-// name-sorted order, with cwd set to env.Worktree. Best-effort: a failing or
-// timed-out script is reported in the returned warnings rather than as an
-// error — one broken script shouldn't stop session creation.
+// RunWorktreeCreate runs every executable worktree-create script (global
+// scripts first, then any scoped to env.Project), with cwd set to
+// env.Worktree.
 func RunWorktreeCreate(home string, env Env) []string {
-	dir := Dir(home)
+	return run(home, "worktree-create", env)
+}
+
+// RunWorktreeDelete runs every executable worktree-delete script (global
+// scripts first, then any scoped to env.Project), with cwd set to
+// env.Worktree. Callers should run this before the worktree is removed, so
+// scripts can still read files from it.
+func RunWorktreeDelete(home string, env Env) []string {
+	return run(home, "worktree-delete", env)
+}
+
+// run runs every executable file in the global and then the project-specific
+// script directory for the given event, in name-sorted order within each.
+// Best-effort: a failing or timed-out script is reported in the returned
+// warnings rather than as an error — one broken script shouldn't stop
+// session creation or deletion.
+func run(home, event string, env Env) []string {
+	var warnings []string
+	warnings = append(warnings, runDir(globalDir(home, event), env)...)
+	warnings = append(warnings, runDir(projectDir(home, env.Project, event), env)...)
+	return warnings
+}
+
+func runDir(dir string, env Env) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil // no userscripts dir: nothing to do

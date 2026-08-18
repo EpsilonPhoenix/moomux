@@ -196,9 +196,11 @@ It's fire-and-forget: prints the new tmux session's name and exits immediately, 
 
 ## Userscripts
 
-Drop an executable script into `~/.config/moomux/userscripts/worktree-create/` and moomux runs it right after every new worktree is created (both from the TUI and `moomux spawn`), before the agent starts. Scripts run in name-sorted order, each with a 30s timeout; a failing script only logs a warning and never blocks session creation.
+Drop an executable script into `~/.config/moomux/userscripts/worktree-create/` and moomux runs it right after every new worktree is created (both from the TUI and `moomux spawn`), before the agent starts. Drop one into `~/.config/moomux/userscripts/worktree-delete/` and moomux runs it right before a worktree is removed (session delete), while the worktree still exists on disk. Scripts run in name-sorted order, each with a 30s timeout; a failing script only logs a warning and never blocks session creation or deletion.
 
-This directory lives in your global config, outside any repo moomux manages — scripts here are local to your machine and never committed or pushed by a project.
+To scope a script to one project instead of every project, put it under `~/.config/moomux/userscripts/<project>/worktree-create/` or `~/.config/moomux/userscripts/<project>/worktree-delete/` (`<project>` is the project name as configured in moomux). Global scripts run first, then any project-specific ones for the same event.
+
+These directories live in your global config, outside any repo moomux manages — scripts here are local to your machine and never committed or pushed by a project.
 
 Each script gets these environment variables:
 

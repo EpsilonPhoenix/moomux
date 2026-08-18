@@ -1185,6 +1185,18 @@ func (a *App) DeleteSession(id string) error {
 	}
 	if proj, ok := a.Cfg.Projects[s.Project]; ok {
 		if proj.UsesWorktree() {
+			if home, err := os.UserHomeDir(); err != nil {
+				slog.Warn("userscript run skipped", "err", err)
+			} else {
+				for _, w := range userscript.RunWorktreeDelete(home, userscript.Env{
+					Project:  s.Project,
+					Worktree: s.WorktreePath,
+					Repo:     proj.Repo,
+					Branch:   s.Branch,
+				}) {
+					slog.Warn("userscript", "warning", w)
+				}
+			}
 			if err := a.Git.RemoveWorktree(proj.Repo, s.WorktreePath); err != nil {
 				return fmt.Errorf("remove worktree: %w", err)
 			}
