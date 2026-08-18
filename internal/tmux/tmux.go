@@ -137,14 +137,12 @@ func (c *Client) EnsureEnvRefresh() error {
 	return err
 }
 
-// NewSession creates a detached tmux session at cwd, split into two
-// side-by-side panes: a left pane (~2/3 width) running `cmd`, and a right
-// pane (~1/3 width) left as a plain interactive shell.
+// newSessionBase creates a detached tmux session at cwd with the
+// window-name/title/mouse setup shared by NewSession and NewSessionWithLayout.
 // If windowName is non-empty it is set as the initial window name via -n so
 // terminals that read the tmux title (iTerm2, kitty, etc.) display it immediately.
 // automatic-rename is disabled so the name is not overwritten by the shell.
-// If cmd is empty, no command is sent to the left pane.
-func (c *Client) NewSession(name, cwd, cmd, windowName string) error {
+func (c *Client) newSessionBase(name, cwd, windowName string) error {
 	args := []string{"new-session", "-d", "-s", name, "-c", cwd}
 	if windowName != "" {
 		args = append(args, "-n", windowName)
@@ -164,6 +162,17 @@ func (c *Client) NewSession(name, cwd, cmd, windowName string) error {
 	// Enable mouse support so users can click/scroll/resize panes without
 	// memorizing tmux prefix keybindings.
 	_, _ = c.Runner.Run("set-option", "-t", exactWindow(name), "mouse", "on")
+	return nil
+}
+
+// NewSession creates a detached tmux session at cwd, split into two
+// side-by-side panes: a left pane (~2/3 width) running `cmd`, and a right
+// pane (~1/3 width) left as a plain interactive shell.
+// If cmd is empty, no command is sent to the left pane.
+func (c *Client) NewSession(name, cwd, cmd, windowName string) error {
+	if err := c.newSessionBase(name, cwd, windowName); err != nil {
+		return err
+	}
 	// Capture the original (left) pane's stable pane_id before splitting.
 	// We can't assume its index is 0: a user's tmux.conf may set
 	// pane-base-index to 1 (as this README itself recommends), which would
