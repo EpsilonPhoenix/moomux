@@ -19,8 +19,9 @@ const searchRowMarker = "▸ "
 // archived — whose Name contains query, case-insensitively. An empty query
 // matches everything, letting the search overlay double as a browse-all-
 // sessions list before the user types anything. Results are sorted by
-// project then name for a stable, predictable order (sessions carry no
-// "last used" timestamp to rank by instead).
+// archived status (active first), then project, then name for a stable,
+// predictable order (sessions carry no "last used" timestamp to rank by
+// instead).
 func matchSessions(all []session.Session, query string) []session.Session {
 	query = strings.ToLower(strings.TrimSpace(query))
 	out := make([]session.Session, 0, len(all))
@@ -30,6 +31,9 @@ func matchSessions(all []session.Session, query string) []session.Session {
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Archived != out[j].Archived {
+			return !out[i].Archived
+		}
 		if out[i].Project != out[j].Project {
 			return out[i].Project < out[j].Project
 		}
