@@ -272,6 +272,13 @@ func (f *fakeBackend) SetAutoSubmitDefault(autoSubmit bool) error {
 	return nil
 }
 
+func (f *fakeBackend) SetSortRecentFirst(recentFirst bool) error {
+	if f.cfg != nil {
+		f.cfg.SortRecentFirst = recentFirst
+	}
+	return nil
+}
+
 func sampleSessions() []session.Session {
 	now := time.Now().UTC()
 	return []session.Session{

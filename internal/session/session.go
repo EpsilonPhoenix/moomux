@@ -29,6 +29,7 @@ type Session struct {
 	Ticket       string    `json:"ticket,omitempty"`      // ticket URL (e.g. Asana, Jira, Linear)
 	PR           string    `json:"pr,omitempty"`          // pull request URL (e.g. GitHub, GitLab)
 	Order        int64     `json:"order,omitempty"`       // manual sort position within a project; 0 = unset, falls back to CreatedAt
+	LastOpened   time.Time `json:"last_opened,omitempty"` // when OpenSession last attached to this session; zero if never opened
 	Archived     bool      `json:"archived,omitempty"`    // hidden from the default list, but not deleted
 	NewBranch    bool      `json:"new_branch,omitempty"`  // true if moomux created Branch fresh (vs. checking out an existing one); safe to delete on session delete
 	TermTabID    string    `json:"term_tab_id,omitempty"` // terminal-specific tab/window id this session was last opened in (currently only iTerm2 sets it); lets reopen jump back to it instead of creating a new tab
@@ -170,6 +171,19 @@ func (s *Store) All() []Session {
 		return out[i].CreatedAt.After(out[j].CreatedAt)
 	})
 	return out
+}
+
+// SortByRecent reorders sessions most-recently-opened first, falling back to
+// CreatedAt descending for sessions that share a LastOpened (including the
+// zero value shared by every never-opened session). Used in place of the
+// manual Order sort when Config.SortRecentFirst is on.
+func SortByRecent(sessions []Session) {
+	sort.SliceStable(sessions, func(i, j int) bool {
+		if !sessions[i].LastOpened.Equal(sessions[j].LastOpened) {
+			return sessions[i].LastOpened.After(sessions[j].LastOpened)
+		}
+		return sessions[i].CreatedAt.After(sessions[j].CreatedAt)
+	})
 }
 
 func (s *Store) ByProject(project string) []Session {

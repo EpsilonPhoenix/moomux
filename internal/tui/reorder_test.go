@@ -113,6 +113,47 @@ func TestShiftDownAtBottomIsNoOp(t *testing.T) {
 	}
 }
 
+func TestShiftUpNoOpWhenSortRecentFirst(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "demo:a", Project: "demo", Name: "a"},
+		{ID: "demo:b", Project: "demo", Name: "b"},
+	}}
+	m := newTestModel(be)
+	m.cfg.SortRecentFirst = true
+	m.cursor = 1 // not at top, so this would move if manual reorder were active
+
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftUp})
+	if len(be.moveSessionCalls) != 0 {
+		t.Fatalf("expected shift+up to no-op while sorting by recent, got %d MoveSession calls", len(be.moveSessionCalls))
+	}
+}
+
+func TestSortModeKeyTogglesConfigAndPersists(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "demo:a", Project: "demo", Name: "a"},
+	}}
+	m := newTestModel(be)
+	if m.cfg.SortRecentFirst {
+		t.Fatal("expected SortRecentFirst to start false")
+	}
+
+	m.Update(runeKey('O'))
+	if !m.cfg.SortRecentFirst {
+		t.Fatal("expected O to flip SortRecentFirst on")
+	}
+	if len(be.setSortRecentFirstCalls) != 1 || !be.setSortRecentFirstCalls[0] {
+		t.Fatalf("expected backend.SetSortRecentFirst(true), got %v", be.setSortRecentFirstCalls)
+	}
+
+	m.Update(runeKey('O'))
+	if m.cfg.SortRecentFirst {
+		t.Fatal("expected a second O to flip SortRecentFirst back off")
+	}
+	if len(be.setSortRecentFirstCalls) != 2 || be.setSortRecentFirstCalls[1] {
+		t.Fatalf("expected backend.SetSortRecentFirst(false), got %v", be.setSortRecentFirstCalls)
+	}
+}
+
 func TestShiftLeftMovesProjectLeftAndFollowsCursor(t *testing.T) {
 	be := &fakeBackend{}
 	m := newMultiProjectTestModel(be)

@@ -103,6 +103,11 @@ type Config struct {
 	// AutoSubmitDefault is the initial state of the new-session form's
 	// auto-submit toggle, remembered from whatever the user last set it to.
 	AutoSubmitDefault bool `toml:"auto_submit_default,omitempty"`
+	// SortRecentFirst, when true, lists sessions most-recently-opened first
+	// instead of the manual Order set by shift+↑↓. The two don't compose —
+	// manual reordering is disabled while this is on, since every open would
+	// otherwise undo it.
+	SortRecentFirst bool `toml:"sort_recent_first,omitempty"`
 }
 
 func Load(path string) (*Config, error) {

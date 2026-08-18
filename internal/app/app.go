@@ -219,7 +219,11 @@ func (a *App) MoveProject(name string, delta int) error {
 // effect.
 func (a *App) Sessions() []session.Session {
 	_ = a.Store.Reload()
-	return a.Store.All()
+	all := a.Store.All()
+	if a.Cfg.SortRecentFirst {
+		session.SortByRecent(all)
+	}
+	return all
 }
 
 // sanitizeName collapses anything that isn't alphanumeric/-/_ to "-", so the
@@ -871,11 +875,10 @@ func (a *App) OpenSession(id string) (string, error) {
 	if hooksHint != "" {
 		hint = joinHints(hooksHint, hint)
 	}
-	if tabID != s.TermTabID {
-		s.TermTabID = tabID
-		if err := a.Store.Put(s); err != nil {
-			slog.Error("store iterm tab id failed", "id", id, "err", err)
-		}
+	s.TermTabID = tabID
+	s.LastOpened = time.Now()
+	if err := a.Store.Put(s); err != nil {
+		slog.Error("store last-opened failed", "id", id, "err", err)
 	}
 	slog.Info("session opened", "id", id)
 	return hint, nil
@@ -1106,6 +1109,22 @@ func (a *App) SetAutoSubmitDefault(autoSubmit bool) error {
 	a.Cfg.AutoSubmitDefault = autoSubmit
 	if err := config.Save(a.CfgPath, a.Cfg); err != nil {
 		a.Cfg.AutoSubmitDefault = prev
+		return fmt.Errorf("save config: %w", err)
+	}
+	return nil
+}
+
+// SetSortRecentFirst persists the session list's sort mode (manual Order vs.
+// most-recently-opened first), following the same reload -> mutate -> save
+// idiom as SetTheme.
+func (a *App) SetSortRecentFirst(recentFirst bool) error {
+	if err := config.Reload(a.CfgPath, a.Cfg); err != nil {
+		return fmt.Errorf("reload config: %w", err)
+	}
+	prev := a.Cfg.SortRecentFirst
+	a.Cfg.SortRecentFirst = recentFirst
+	if err := config.Save(a.CfgPath, a.Cfg); err != nil {
+		a.Cfg.SortRecentFirst = prev
 		return fmt.Errorf("save config: %w", err)
 	}
 	return nil

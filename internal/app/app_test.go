@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/erickgnclvs/moomux/internal/codexhook"
 	"github.com/erickgnclvs/moomux/internal/config"
@@ -806,6 +807,32 @@ func TestOpenSessionAlive(t *testing.T) {
 	}
 }
 
+func TestOpenSessionStampsLastOpened(t *testing.T) {
+	a, _, tm, term := newTestApp(t, gitProject("/repo"))
+	home, _ := os.UserHomeDir()
+	if _, err := codexhook.EnsureHooks(home); err != nil {
+		t.Fatal(err)
+	}
+	term.hint = "run: tmux attach -t moomux-feat"
+	_ = a.Store.Put(session.Session{
+		ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat",
+		WorktreePath: "/wt/feat", Agent: "codex",
+	})
+	tm.out["list-panes -t =moomux-feat: -F #{pane_current_path}"] = "/wt/feat\n"
+
+	before := time.Now()
+	if _, err := a.OpenSession("demo:feat"); err != nil {
+		t.Fatal(err)
+	}
+	sess, ok := a.Store.Get("demo:feat")
+	if !ok {
+		t.Fatal("session vanished")
+	}
+	if sess.LastOpened.Before(before) {
+		t.Fatalf("LastOpened = %v, want at/after %v", sess.LastOpened, before)
+	}
+}
+
 func TestOpenSessionOverSSHSkipsTerminalTab(t *testing.T) {
 	a, _, tm, term := newTestApp(t, gitProject("/repo"))
 	t.Setenv("SSH_TTY", "/dev/ttys001")
@@ -1379,6 +1406,48 @@ func TestSetAutoSubmitDefault(t *testing.T) {
 	}
 	if !loaded.AutoSubmitDefault {
 		t.Fatal("AutoSubmitDefault not persisted")
+	}
+}
+
+func TestSetSortRecentFirst(t *testing.T) {
+	a, _, _, _ := newTestApp(t, map[string]config.Project{
+		"demo": {Kind: "git", Repo: t.TempDir(), Agent: "claude"},
+	})
+
+	if err := a.SetSortRecentFirst(true); err != nil {
+		t.Fatal(err)
+	}
+	if !a.Cfg.SortRecentFirst {
+		t.Fatal("SortRecentFirst not set in memory")
+	}
+
+	loaded, err := config.Load(a.CfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.SortRecentFirst {
+		t.Fatal("SortRecentFirst not persisted")
+	}
+}
+
+func TestSessionsSortsByLastOpenedWhenSortRecentFirstIsOn(t *testing.T) {
+	a, _, _, _ := newTestApp(t, map[string]config.Project{
+		"demo": {Kind: "git", Repo: t.TempDir(), Agent: "claude"},
+	})
+	t0 := time.Now()
+	_ = a.Store.Put(session.Session{ID: "opened-earlier", Project: "demo", CreatedAt: t0.Add(-time.Hour), LastOpened: t0.Add(-time.Minute)})
+	_ = a.Store.Put(session.Session{ID: "opened-later", Project: "demo", CreatedAt: t0.Add(-2 * time.Hour), LastOpened: t0})
+
+	// Default (manual order unset on both): falls back to CreatedAt desc.
+	if got := a.Sessions(); got[0].ID != "opened-earlier" {
+		t.Fatalf("expected manual-order default to sort by CreatedAt desc, got %s first", got[0].ID)
+	}
+
+	if err := a.SetSortRecentFirst(true); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.Sessions(); got[0].ID != "opened-later" {
+		t.Fatalf("expected recent-first sort to put most-recently-opened first, got %s first", got[0].ID)
 	}
 }
 
