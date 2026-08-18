@@ -177,6 +177,29 @@ func TestThemePickerEnterPersistsSelection(t *testing.T) {
 	}
 }
 
+// TestSettingsEscClosesAfterThemePicker guards against openThemePicker
+// clobbering sessionDialogReturn, the same field ModeSettings itself relies
+// on for Esc: drilling into the theme picker and backing out of it must not
+// leave Settings unable to close.
+func TestSettingsEscClosesAfterThemePicker(t *testing.T) {
+	defer applyTheme("default")
+	defer applyAppearance("")
+
+	be := &fakeBackend{}
+	m := newTestModel(be)
+
+	openThemePickerViaSettings(m)
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc}) // back out of the theme picker
+	if m.mode != ModeSettings {
+		t.Fatalf("expected esc from theme picker to return to ModeSettings, got %v", m.mode)
+	}
+
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc}) // should close settings now
+	if m.mode != ModeList {
+		t.Fatalf("expected esc from settings to return to ModeList, got %v", m.mode)
+	}
+}
+
 // TestThemePickerFooterFitsNarrowWidths mirrors
 // TestProjectPickerFooterFitsNarrowWidths: the footer must never be wider
 // than the overlay, or it gets hard-clipped mid-word on mobile widths.

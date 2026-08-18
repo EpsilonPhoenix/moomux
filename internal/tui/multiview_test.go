@@ -498,6 +498,36 @@ func TestMultiViewSettingsEscReturnsToMultiView(t *testing.T) {
 	}
 }
 
+// TestMultiViewSettingsThemePickerEscReturnsToMultiView guards the same
+// sessionDialogReturn field against a second clobber: drilling from Settings
+// into the theme picker and backing out of both must still land back in
+// ModeMultiView, not ModeList or a stuck ModeSettings.
+func TestMultiViewSettingsThemePickerEscReturnsToMultiView(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a1", Project: "alpha", Name: "a1"},
+		{ID: "b1", Project: "beta", Name: "b1"},
+	}}
+	m := newMultiProjectTestModel(be)
+	m.mode = ModeMultiView
+
+	run(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	run(m, tea.KeyMsg{Type: tea.KeyDown}) // sort mode -> theme & appearance
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != ModeThemePicker {
+		t.Fatalf("mode after enter on theme row = %v, want ModeThemePicker", m.mode)
+	}
+
+	run(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.mode != ModeSettings {
+		t.Fatalf("mode after esc from theme picker = %v, want ModeSettings", m.mode)
+	}
+
+	run(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.mode != ModeMultiView {
+		t.Fatalf("mode after esc from settings = %v, want back to ModeMultiView", m.mode)
+	}
+}
+
 // TestMultiViewTagFormRoundTripsToMultiView checks the tag dialog (opened
 // with 't') both prefills from the focused panel's session and returns to
 // ModeMultiView, not ModeList, once submitted.

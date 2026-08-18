@@ -1588,12 +1588,13 @@ func (m *Model) updateProjectPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // openThemePicker opens ModeThemePicker, seeding the cursor and live-preview
 // appearance from the persisted config so Esc has something to revert to.
 // Only reachable from the settings screen's Theme row, so it always returns
-// to ModeSettings rather than ModeList.
+// to ModeSettings rather than ModeList — it deliberately leaves
+// sessionDialogReturn untouched, since ModeSettings itself still needs that
+// value for its own Esc handling.
 func (m *Model) openThemePicker() {
 	m.themeCursor = themeIndex(m.cfg.Theme)
 	m.previewAppearance = m.cfg.Appearance
 	m.mode = ModeThemePicker
-	m.sessionDialogReturn = ModeSettings
 	m.resetOverlayViewport()
 }
 
@@ -1663,7 +1664,7 @@ func (m *Model) updateThemePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Cancel):
 		applyTheme(m.cfg.Theme)
 		applyAppearance(m.cfg.Appearance)
-		m.mode = m.sessionDialogReturn
+		m.mode = ModeSettings
 		return m, nil
 	case key.Matches(msg, m.keys.Up):
 		m.themeCursor = (m.themeCursor - 1 + len(themeNames)) % len(themeNames)
@@ -1680,7 +1681,7 @@ func (m *Model) updateThemePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Enter):
 		theme := themeNames[m.themeCursor]
 		appearance := m.previewAppearance
-		m.mode = m.sessionDialogReturn
+		m.mode = ModeSettings
 		return m, func() tea.Msg {
 			if err := m.backend.SetTheme(theme, appearance); err != nil {
 				return ErrorMsg{Err: err}
