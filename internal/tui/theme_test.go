@@ -102,8 +102,16 @@ func TestNextAppearanceCyclesAutoLightDark(t *testing.T) {
 	}
 }
 
-func themeKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("T")} }
-func aKey() tea.KeyMsg     { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")} }
+func aKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")} }
+
+// openThemePickerViaSettings opens the settings screen and drills into the
+// theme picker from its "theme & appearance" row (index 1) — the only way
+// to reach ModeThemePicker now that T no longer opens it directly.
+func openThemePickerViaSettings(m *Model) {
+	m.Update(runeKey('s'))
+	m.Update(tea.KeyMsg{Type: tea.KeyDown}) // sort mode -> theme & appearance
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+}
 
 func TestThemePickerLivePreviewAndEscReverts(t *testing.T) {
 	defer applyTheme("default")
@@ -114,7 +122,7 @@ func TestThemePickerLivePreviewAndEscReverts(t *testing.T) {
 	be := &fakeBackend{}
 	m := newTestModel(be)
 
-	m.Update(themeKey())
+	openThemePickerViaSettings(m)
 	if m.mode != ModeThemePicker {
 		t.Fatalf("expected ModeThemePicker, got %v", m.mode)
 	}
@@ -131,8 +139,8 @@ func TestThemePickerLivePreviewAndEscReverts(t *testing.T) {
 	}
 
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.mode != ModeList {
-		t.Fatalf("expected esc to return to ModeList, got %v", m.mode)
+	if m.mode != ModeSettings {
+		t.Fatalf("expected esc to return to ModeSettings, got %v", m.mode)
 	}
 	if colFg != themes["default"].fg {
 		t.Fatal("expected esc to revert the live preview back to the persisted theme")
@@ -151,14 +159,14 @@ func TestThemePickerEnterPersistsSelection(t *testing.T) {
 	be := &fakeBackend{}
 	m := newTestModel(be)
 
-	m.Update(themeKey())
+	openThemePickerViaSettings(m)
 	m.Update(tea.KeyMsg{Type: tea.KeyDown}) // -> themeNames[1]
 	m.Update(aKey())                        // auto -> light
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	drainCmd(m, cmd)
 
-	if m.mode != ModeList {
-		t.Fatalf("expected enter to return to ModeList, got %v", m.mode)
+	if m.mode != ModeSettings {
+		t.Fatalf("expected enter to return to ModeSettings, got %v", m.mode)
 	}
 	if len(be.setThemeCalls) != 1 {
 		t.Fatalf("expected 1 SetTheme call, got %d: %v", len(be.setThemeCalls), be.setThemeCalls)

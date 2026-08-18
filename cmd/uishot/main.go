@@ -111,7 +111,10 @@ var screens = map[string][]string{
 	// reach (demo always has sessions, so it can never pass the delete
 	// guard), hence the dedicated single-project config below.
 	"project-picker-emptied": {"/", "d", "y"},
-	"theme-picker":           {"T"},
+	"settings":               {"s"},
+	// Theme is the settings screen's second row (index 1): one "down" from
+	// sort mode, then enter drills into the existing theme picker.
+	"theme-picker": {"s", "down", "enter"},
 	// "down" moves the cursor onto "bugfix-timeout", the sample session with
 	// a PR attached, so its detail panel shows the PR status row (see
 	// renderScreen's prStatus wiring below).
@@ -275,6 +278,13 @@ func (f *fakeBackend) SetAutoSubmitDefault(autoSubmit bool) error {
 func (f *fakeBackend) SetSortRecentFirst(recentFirst bool) error {
 	if f.cfg != nil {
 		f.cfg.SortRecentFirst = recentFirst
+	}
+	return nil
+}
+
+func (f *fakeBackend) SetAutoTmux(autoTmux bool) error {
+	if f.cfg != nil {
+		f.cfg.AutoTmux = autoTmux
 	}
 	return nil
 }

@@ -1130,6 +1130,24 @@ func (a *App) SetSortRecentFirst(recentFirst bool) error {
 	return nil
 }
 
+// SetAutoTmux persists whether moomux always relaunches itself inside a
+// dedicated tmux session on startup, following the same reload -> mutate ->
+// save idiom as SetSortRecentFirst. Previously this was only ever set once,
+// interactively, by promptAutoTmux in main.go before the TUI starts; this
+// gives it a second, always-available entry point via the settings screen.
+func (a *App) SetAutoTmux(autoTmux bool) error {
+	if err := config.Reload(a.CfgPath, a.Cfg); err != nil {
+		return fmt.Errorf("reload config: %w", err)
+	}
+	prev := a.Cfg.AutoTmux
+	a.Cfg.AutoTmux = autoTmux
+	if err := config.Save(a.CfgPath, a.Cfg); err != nil {
+		a.Cfg.AutoTmux = prev
+		return fmt.Errorf("save config: %w", err)
+	}
+	return nil
+}
+
 func (a *App) RemoveProject(name string) error {
 	if err := config.Reload(a.CfgPath, a.Cfg); err != nil {
 		return fmt.Errorf("reload config: %w", err)

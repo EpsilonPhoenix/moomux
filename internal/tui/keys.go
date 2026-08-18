@@ -37,8 +37,7 @@ type KeyMap struct {
 	Help           key.Binding
 	RemoteLinks    key.Binding
 	ProjectPicker  key.Binding
-	ThemePicker    key.Binding
-	SortMode       key.Binding
+	Settings       key.Binding
 	Search         key.Binding
 }
 
@@ -99,11 +98,10 @@ func DefaultKeyMap() KeyMap {
 		// key, and the picker has no session-level "n" shown alongside it to
 		// collide with.
 		ProjectPicker: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "pick project")),
-		ThemePicker:   key.NewBinding(key.WithKeys("T"), key.WithHelp("T", "theme")),
-		// Toggles between manual shift+↑↓ order and most-recently-opened
-		// first — the two don't compose (see MoveUp/MoveDown handling), so
-		// it's a straight on/off rather than a picker.
-		SortMode: key.NewBinding(key.WithKeys("O"), key.WithHelp("O", "sort: recent")),
+		// Opens the settings screen (theme/appearance, sort mode, auto-tmux,
+		// auto-submit default) — the single entry point for every togglable
+		// setting, in place of the standalone T/O shortcuts those used to be.
+		Settings: key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "settings")),
 		// "/" is already ProjectPicker, so search gets its own mnemonic
 		// letter. Unlike ProjectPicker (a plain cursor list), this one opens
 		// straight into a text field, so it searches every project's
