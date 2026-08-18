@@ -568,7 +568,45 @@ func (a *App) StartFirstPrompt(tmuxSession, prompt string, autoSubmit bool) erro
 		return nil
 	}
 	a.waitForPaneStable(tmuxSession, "", time.Now().Add(paneReadyTimeout))
-	return a.Tmux.PressEnter(tmuxSession)
+	return a.pressEnterUntilSubmitted(tmuxSession, prompt)
+}
+
+// enterConfirmPolls/enterConfirmRetries tune pressEnterUntilSubmitted: how
+// long a single Enter press is given to actually clear the typed prompt
+// before it's retried, and how many times it's retried.
+const (
+	enterConfirmPolls   = 5
+	enterConfirmRetries = 2
+)
+
+// pressEnterUntilSubmitted presses Enter and confirms the just-typed prompt
+// actually left the pane's input line, retrying if it didn't. waitForPaneReady
+// can only prove the pane looked stable at some point after the agent took
+// over — not that the plateau it caught was the agent's final, truly-idle
+// input rather than an earlier pause in a multi-phase startup (splash screen,
+// then connecting to MCP servers, then finally ready). Landing in an earlier
+// plateau can put the Enter in the same narrow window the agent's own
+// paste-safety heuristic swallows (see SendLiteral's doc comment), so instead
+// of trusting the first press, check whether the prompt is still sitting
+// there afterward and press again if so.
+func (a *App) pressEnterUntilSubmitted(tmuxSession, prompt string) error {
+	for attempt := 0; ; attempt++ {
+		if err := a.Tmux.PressEnter(tmuxSession); err != nil {
+			return err
+		}
+		submitted := false
+		for i := 0; i < enterConfirmPolls; i++ {
+			time.Sleep(paneStablePoll)
+			cur, err := a.Tmux.CapturePane(tmuxSession)
+			if err == nil && !strings.Contains(cur, prompt) {
+				submitted = true
+				break
+			}
+		}
+		if submitted || attempt >= enterConfirmRetries {
+			return nil
+		}
+	}
 }
 
 // MoveSession shifts the session with the given id by delta positions (-1

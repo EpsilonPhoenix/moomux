@@ -2171,6 +2171,46 @@ func TestStartFirstPromptWaitsForPaneToSettleAfterTypingBeforePressingEnter(t *t
 	}
 }
 
+// TestStartFirstPromptRetriesEnterWhenPromptStillShowing guards the bug
+// reported in practice on Claude specifically: waitForPaneReady's "stable for
+// two polls" check can latch onto an early plateau in a multi-phase startup
+// (splash screen frozen momentarily before the real input box renders)
+// rather than the agent's actual final idle state. When that happens, the
+// first Enter press can land in the narrow window where the agent's paste
+// heuristic swallows it, leaving the typed prompt still sitting in the pane
+// un-submitted. StartFirstPrompt must notice that and press Enter again
+// rather than silently leaving the prompt untouched.
+func TestStartFirstPromptRetriesEnterWhenPromptStillShowing(t *testing.T) {
+	a, _, tm, _ := newTestApp(t, map[string]config.Project{})
+	tm.seq = map[string][]string{
+		"capture-pane -p -t =demo:x:": {
+			"$ claude", "agent-idle", "agent-idle", // pre-type: change then stable
+			"agent-idle: do the thing", "agent-idle: do the thing", "agent-idle: do the thing", // consumed by waitForPaneReady's own stability check
+			"agent-idle: do the thing", "agent-idle: do the thing", "agent-idle: do the thing", // post-type: settled
+			// first Enter: swallowed — prompt is still sitting there for every
+			// confirm poll, exhausting the attempt.
+			"agent-idle: do the thing", "agent-idle: do the thing", "agent-idle: do the thing",
+			"agent-idle: do the thing", "agent-idle: do the thing",
+			// second Enter: actually submits.
+			"agent-idle",
+		},
+	}
+
+	if err := a.StartFirstPrompt("demo:x", "do the thing", true); err != nil {
+		t.Fatal(err)
+	}
+
+	enterCount := 0
+	for _, c := range tm.calls {
+		if strings.Join(c, " ") == "send-keys -t =demo:x: Enter" {
+			enterCount++
+		}
+	}
+	if enterCount < 2 {
+		t.Fatalf("prompt was still showing after the first Enter but no retry was sent: %v", tm.calls)
+	}
+}
+
 func TestStartFirstPromptNoopOnEmptyPrompt(t *testing.T) {
 	a, _, tm, _ := newTestApp(t, map[string]config.Project{})
 	if err := a.StartFirstPrompt("demo:x", "", true); err != nil {
