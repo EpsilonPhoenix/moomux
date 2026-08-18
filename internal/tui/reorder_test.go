@@ -85,6 +85,41 @@ func TestShiftUpMovesSessionUpAndFollowsCursor(t *testing.T) {
 	}
 }
 
+// TestOpenSessionFollowsSessionThatSortsToTop covers the "recently opened"
+// sort: opening a session bumps its LastOpened and the backend re-sorts it
+// to the front on the next Sessions() read. The cursor must follow it there
+// rather than staying on the old index, which would now point at whatever
+// session slid down into its place.
+func TestOpenSessionFollowsSessionThatSortsToTop(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "demo:a", Project: "demo", Name: "a"},
+		{ID: "demo:b", Project: "demo", Name: "b"},
+	}}
+	m := newTestModel(be)
+	m.cursor = 1 // on "b"
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatalf("expected a command to dispatch OpenSession")
+	}
+	resultMsg := cmd() // runs the closure, which calls backend.OpenSession
+
+	// Opening "b" bumped its LastOpened past "a"'s; simulate the backend
+	// now returning it first.
+	be.sessions = []session.Session{
+		{ID: "demo:b", Project: "demo", Name: "b"},
+		{ID: "demo:a", Project: "demo", Name: "a"},
+	}
+	m.Update(resultMsg)
+
+	if m.sessions[0].ID != "demo:b" {
+		t.Fatalf("expected demo:b first after reorder, got %s", m.sessions[0].ID)
+	}
+	if m.cursor != 0 {
+		t.Fatalf("expected cursor to follow opened session to 0, got %d", m.cursor)
+	}
+}
+
 func TestShiftUpAtTopIsNoOp(t *testing.T) {
 	be := &fakeBackend{sessions: []session.Session{
 		{ID: "demo:a", Project: "demo", Name: "a"},
