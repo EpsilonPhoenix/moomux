@@ -225,4 +225,18 @@ fi
 chmod +x ~/.config/moomux/userscripts/worktree-create/copy-env.sh
 ```
 
+Example — clone ignored build directories (`node_modules`, `target`, `.next/cache`) into new worktrees using copy-on-write where the filesystem supports it, so they don't have to be rebuilt/reinstalled from scratch:
+
+```bash
+#!/bin/sh
+# ~/.config/moomux/userscripts/worktree-create/10-copy-ignored.sh
+for d in node_modules target .next/cache; do
+  [ -e "$MOOMUX_REPO/$d" ] || continue
+  case "$(uname)" in
+    Darwin) cp -c -R "$MOOMUX_REPO/$d" "$MOOMUX_WORKTREE/$d" ;;
+    *)      cp -r --reflink=auto "$MOOMUX_REPO/$d" "$MOOMUX_WORKTREE/$d" ;;
+  esac
+done
+```
+
 Only scripts with the executable bit set are run; anything else in the directory is ignored.
