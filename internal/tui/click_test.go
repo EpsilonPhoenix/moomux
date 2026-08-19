@@ -146,7 +146,7 @@ func (f *fakeBackend) OpenSession(id string) (string, error) {
 	f.openCalls = append(f.openCalls, id)
 	return f.openHint, f.openErr
 }
-func (f *fakeBackend) DeleteSession(id string) error {
+func (f *fakeBackend) DeleteSession(id string) (string, error) {
 	f.deleteCalls = append(f.deleteCalls, id)
 	if f.deleteErr == nil {
 		for i, s := range f.sessions {
@@ -156,7 +156,7 @@ func (f *fakeBackend) DeleteSession(id string) error {
 			}
 		}
 	}
-	return f.deleteErr
+	return "", f.deleteErr
 }
 func (f *fakeBackend) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
 	f.worktreeStatusCalls = append(f.worktreeStatusCalls, id)

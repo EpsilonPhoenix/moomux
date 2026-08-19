@@ -65,6 +65,7 @@ type SessionCreatedMsg struct {
 	Session session.Session
 	Hint    string
 }
+
 // SessionDeletedMsg is the result of an async delete. NextID is whichever
 // session should take over the selection (the row below ID's, or above if it
 // was last), pinned from m.sessions at the moment the delete was confirmed —
@@ -75,6 +76,7 @@ type SessionCreatedMsg struct {
 type SessionDeletedMsg struct {
 	ID     string
 	NextID string
+	Hint   string
 }
 
 // SessionArchivedMsg is the result of an async archive/restore toggle.

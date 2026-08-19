@@ -41,7 +41,9 @@ type Env struct {
 
 // RunWorktreeCreate runs every executable worktree-create script (global
 // scripts first, then any scoped to env.Project), with cwd set to
-// env.Worktree.
+// env.Worktree. The returned messages include both warnings (failing or
+// timed-out scripts) and any output a successful script printed, so callers
+// can surface them to the user.
 func RunWorktreeCreate(home string, env Env) []string {
 	return run(home, "worktree-create", env)
 }
@@ -96,8 +98,11 @@ func runDir(dir string, env Env) []string {
 		cmd.Env = append(os.Environ(), extraEnv...)
 		out, err := cmd.CombinedOutput()
 		cancel()
-		if err != nil {
+		switch {
+		case err != nil:
 			warnings = append(warnings, fmt.Sprintf("userscript %s: %v (%s)", e.Name(), err, string(out)))
+		case len(out) > 0:
+			warnings = append(warnings, fmt.Sprintf("userscript %s: %s", e.Name(), string(out)))
 		}
 	}
 	return warnings

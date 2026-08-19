@@ -1870,7 +1870,7 @@ func TestDeleteSessionWorktree(t *testing.T) {
 		TmuxSession: "moomux-feat", WorktreePath: wt,
 	})
 
-	if err := a.DeleteSession("demo:feat"); err != nil {
+	if _, err := a.DeleteSession("demo:feat"); err != nil {
 		t.Fatal(err)
 	}
 	if !tm.called("kill-session -t =moomux-feat") {
@@ -1904,7 +1904,7 @@ func TestDeleteSessionMissingWorktree(t *testing.T) {
 		TmuxSession: "moomux-feat", WorktreePath: wt,
 	})
 
-	if err := a.DeleteSession("demo:feat"); err != nil {
+	if _, err := a.DeleteSession("demo:feat"); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := a.Store.Get("demo:feat"); ok {
@@ -1983,6 +1983,38 @@ func TestCreateSessionDoesNotTrustNonClaudeAgent(t *testing.T) {
 	}
 }
 
+// A worktree-delete userscript's stdout should reach the caller as a hint,
+// the same way a worktree-create script's output does for CreateSession.
+func TestDeleteSessionSurfacesUserscriptOutput(t *testing.T) {
+	a, _, _, _ := newTestApp(t, gitProject("/repo"))
+	wt := filepath.Join(a.WorktreeRoot, "demo", "feat")
+	if err := os.MkdirAll(wt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = a.Store.Put(session.Session{
+		ID: "demo:feat", Project: "demo", Name: "feat", Branch: "feat", NewBranch: true,
+		TmuxSession: "moomux-feat", WorktreePath: wt,
+	})
+
+	home := os.Getenv("HOME")
+	scriptDir := filepath.Join(home, ".config", "moomux", "userscripts", "worktree-delete")
+	if err := os.MkdirAll(scriptDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(scriptDir, "10-hello.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho bye from script\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	hint, err := a.DeleteSession("demo:feat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(hint, "bye from script") {
+		t.Fatalf("hint = %q, want it to contain script output", hint)
+	}
+}
+
 func TestDeleteSessionKeepsUserBranch(t *testing.T) {
 	a, git, _, _ := newTestApp(t, gitProject("/repo"))
 	wt := filepath.Join(a.WorktreeRoot, "demo", "feat")
@@ -1992,7 +2024,7 @@ func TestDeleteSessionKeepsUserBranch(t *testing.T) {
 	})
 	git.failOn["has-session"] = true
 
-	if err := a.DeleteSession("demo:feat"); err != nil {
+	if _, err := a.DeleteSession("demo:feat"); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range git.calls {
@@ -2013,7 +2045,7 @@ func TestDeleteSessionOrphanedProject(t *testing.T) {
 	}
 	_ = a.Store.Put(session.Session{ID: "gone:x", Project: "gone", Name: "x", TmuxSession: "moomux-x", WorktreePath: wt})
 
-	if err := a.DeleteSession("gone:x"); err != nil {
+	if _, err := a.DeleteSession("gone:x"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(wt); !os.IsNotExist(err) {
@@ -2022,7 +2054,7 @@ func TestDeleteSessionOrphanedProject(t *testing.T) {
 	if len(git.calls) != 0 {
 		t.Fatalf("git calls = %v", git.calls)
 	}
-	if err := a.DeleteSession("gone:nope"); err == nil {
+	if _, err := a.DeleteSession("gone:nope"); err == nil {
 		t.Fatal("unknown id must fail")
 	}
 }
@@ -2038,7 +2070,7 @@ func TestDeleteSessionOrphanedProjectKeepsRealFolder(t *testing.T) {
 	}
 	_ = a.Store.Put(session.Session{ID: "gone:x", Project: "gone", Name: "x", TmuxSession: "moomux-x", WorktreePath: repo})
 
-	if err := a.DeleteSession("gone:x"); err != nil {
+	if _, err := a.DeleteSession("gone:x"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(repo); err != nil {
