@@ -148,6 +148,14 @@ func (f *fakeBackend) OpenSession(id string) (string, error) {
 }
 func (f *fakeBackend) DeleteSession(id string) error {
 	f.deleteCalls = append(f.deleteCalls, id)
+	if f.deleteErr == nil {
+		for i, s := range f.sessions {
+			if s.ID == id {
+				f.sessions = append(f.sessions[:i:i], f.sessions[i+1:]...)
+				break
+			}
+		}
+	}
 	return f.deleteErr
 }
 func (f *fakeBackend) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
