@@ -127,3 +127,109 @@ func TestDetailShowsPRStatusRowOnlyWhenCached(t *testing.T) {
 		t.Fatalf("expected the cached pr status to render:\n%s", frame)
 	}
 }
+
+// TestCompactDetailTrimsFieldsAndShortensPR guards CompactDetail's whole
+// point: with it on, low-signal fields (project/agent/ticket/worktree/
+// created) disappear, the cowsay art shrinks to a one-line quip and face
+// instead of vanishing outright, and the PR link shrinks to just its number
+// — while pr status (merged/CI state) stays, since that's the whole reason
+// to keep looking at a tagged session. Without CompactDetail, none of that
+// trimming should happen.
+func TestCompactDetailTrimsFieldsAndShortensPR(t *testing.T) {
+	cfg := &config.Config{Projects: map[string]config.Project{"demo": {Repo: "/tmp/demo"}}}
+	be := &fakeBackend{sessions: []session.Session{
+		{
+			ID:           "demo:one",
+			Project:      "demo",
+			Name:         "one",
+			Agent:        "claude",
+			Ticket:       "https://tracker.example.com/TICK-1",
+			PR:           "https://github.com/example/repo/pull/5478",
+			WorktreePath: "/tmp/demo/one",
+		},
+	}}
+	statusCh := make(chan watcher.Snapshot)
+	m := New(cfg, be, statusCh, func() {})
+	m.width, m.height = 80, 24
+
+	frame, hits := m.renderDetail(80-2, 24-2)
+	for _, want := range []string{"project", "agent", "ticket", "worktree", "created", "^__^", "||----w"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("expected %q in the default (non-compact) frame\n%s", want, frame)
+		}
+	}
+	if !strings.Contains(frame, "https://github.com/example/repo/pull/5478") {
+		t.Fatalf("expected the full PR URL in the non-compact frame:\n%s", frame)
+	}
+
+	// pr status only ever shows once cached (TestDetailShowsPRStatusRowOnlyWhenCached
+	// guards that generally); set it here so this test can confirm compact
+	// mode keeps that row instead of accidentally guarding it on !compact.
+	m.prStatus["demo:one"] = prStatusInfo{ok: true, info: prstatus.Info{State: "MERGED"}}
+
+	cfg.CompactDetail = true
+	frame, hits = m.renderDetail(80-2, 24-2)
+	for _, unwanted := range []string{"project", "agent", "ticket", "worktree", "created", "||----w"} {
+		if strings.Contains(frame, unwanted) {
+			t.Fatalf("expected compact detail to drop %q:\n%s", unwanted, frame)
+		}
+	}
+	if !strings.Contains(frame, "#5478") {
+		t.Fatalf("expected compact detail to show the PR as #5478:\n%s", frame)
+	}
+	if strings.Contains(frame, "https://github.com/example/repo/pull/5478") {
+		t.Fatalf("expected compact detail to hide the full PR URL:\n%s", frame)
+	}
+	if !strings.Contains(frame, "pr status") || !strings.Contains(frame, "merged") {
+		t.Fatalf("expected compact detail to still show the cached pr status:\n%s", frame)
+	}
+	var found bool
+	for _, h := range hits {
+		if h.url == "https://github.com/example/repo/pull/5478" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected the #5478 label to still be clickable to the full PR URL, hits: %+v", hits)
+	}
+	if !strings.Contains(frame, "^__^") || !strings.Contains(frame, "(--)") {
+		t.Fatalf("expected compact detail to still show the small header-style cow (ears + eyes):\n%s", frame)
+	}
+}
+
+// TestCompactDetailHidesCowOnNarrowLayout guards against showing the same
+// small cow+quip twice: renderHeader's narrow-width branch already renders
+// it in the header, so the compact detail panel below should omit it there
+// (it still shows it at normal widths, and non-compact mode is unaffected
+// either way — see TestCompactDetailTrimsFieldsAndShortensPR).
+func TestCompactDetailHidesCowOnNarrowLayout(t *testing.T) {
+	cfg := &config.Config{Projects: map[string]config.Project{"demo": {Repo: "/tmp/demo"}}, CompactDetail: true}
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "demo:one", Project: "demo", Name: "one"},
+	}}
+	statusCh := make(chan watcher.Snapshot)
+	m := New(cfg, be, statusCh, func() {})
+
+	m.width, m.height = narrowWidthBreak, 24
+	if frame, _ := m.renderDetail(narrowWidthBreak-2, 24-2); !strings.Contains(frame, "^__^") {
+		t.Fatalf("expected the cow at a width right at the narrow break:\n%s", frame)
+	}
+
+	m.width = narrowWidthBreak - 1
+	if frame, _ := m.renderDetail(m.width-2, 24-2); strings.Contains(frame, "^__^") {
+		t.Fatalf("expected no cow in the detail panel below the narrow break (already shown in the header):\n%s", frame)
+	}
+}
+
+func TestPRNumberLabel(t *testing.T) {
+	cases := []struct{ url, want string }{
+		{"https://github.com/example/repo/pull/5478", "#5478"},
+		{"https://github.com/example/repo/pull/5478/", "#5478"},
+		{"not-a-url", "#not-a-url"},
+	}
+	for _, tc := range cases {
+		if got := prNumberLabel(tc.url); got != tc.want {
+			t.Fatalf("prNumberLabel(%q) = %q, want %q", tc.url, got, tc.want)
+		}
+	}
+}

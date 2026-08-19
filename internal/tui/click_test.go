@@ -75,6 +75,9 @@ type fakeBackend struct {
 	setAutoTmuxCalls []bool
 	setAutoTmuxErr   error
 
+	setCompactDetailCalls []bool
+	setCompactDetailErr   error
+
 	// worktreeStatus, keyed by session id, backs WorktreeStatus. A missing
 	// entry means "unknown" (ok=false) rather than "clean".
 	worktreeStatus      map[string]gitStatusInfo
@@ -291,6 +294,11 @@ func (f *fakeBackend) SetSortRecentFirst(recentFirst bool) error {
 func (f *fakeBackend) SetAutoTmux(autoTmux bool) error {
 	f.setAutoTmuxCalls = append(f.setAutoTmuxCalls, autoTmux)
 	return f.setAutoTmuxErr
+}
+
+func (f *fakeBackend) SetCompactDetail(compact bool) error {
+	f.setCompactDetailCalls = append(f.setCompactDetailCalls, compact)
+	return f.setCompactDetailErr
 }
 
 // TestLinkHitsResolveClicks renders a full frame and asserts that clicking

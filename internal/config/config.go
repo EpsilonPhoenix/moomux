@@ -108,6 +108,14 @@ type Config struct {
 	// manual reordering is disabled while this is on, since every open would
 	// otherwise undo it.
 	SortRecentFirst bool `toml:"sort_recent_first,omitempty"`
+	// CompactDetail, when true, trims the detail panel to the fields most
+	// useful at a glance — dropping project/agent/ticket/worktree/created,
+	// shrinking the cowsay art down to a one-line quip and face (or omitting
+	// it entirely on narrow layouts, where the header already shows one),
+	// and shortening the PR link to just its number (e.g. "#5478") — so the
+	// panel stays short even when a session has both a ticket and a PR
+	// attached. pr status (merged/CI state) is left alone either way.
+	CompactDetail bool `toml:"compact_detail,omitempty"`
 }
 
 func Load(path string) (*Config, error) {

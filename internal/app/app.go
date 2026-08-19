@@ -1188,6 +1188,22 @@ func (a *App) SetSortRecentFirst(recentFirst bool) error {
 	return nil
 }
 
+// SetCompactDetail persists whether the detail panel trims itself to the
+// fields most useful at a glance, following the same reload -> mutate ->
+// save idiom as SetSortRecentFirst.
+func (a *App) SetCompactDetail(compact bool) error {
+	if err := config.Reload(a.CfgPath, a.Cfg); err != nil {
+		return fmt.Errorf("reload config: %w", err)
+	}
+	prev := a.Cfg.CompactDetail
+	a.Cfg.CompactDetail = compact
+	if err := config.Save(a.CfgPath, a.Cfg); err != nil {
+		a.Cfg.CompactDetail = prev
+		return fmt.Errorf("save config: %w", err)
+	}
+	return nil
+}
+
 // SetAutoTmux persists whether moomux always relaunches itself inside a
 // dedicated tmux session on startup, following the same reload -> mutate ->
 // save idiom as SetSortRecentFirst. Previously this was only ever set once,

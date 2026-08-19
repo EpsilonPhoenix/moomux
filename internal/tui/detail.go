@@ -110,30 +110,39 @@ func (m *Model) renderDetailContent(s session.Session, hasSelection bool, width 
 	if valueWidth < 8 {
 		valueWidth = 8
 	}
+	compact := m.cfg.CompactDetail
 	// Ordered most-to-least useful for "what's this session and does it need
 	// me": identity/state first, then actionable links, then reference
 	// details a user only needs occasionally.
-	row("project", truncate(s.Project, valueWidth), "")
+	if !compact {
+		row("project", truncate(s.Project, valueWidth), "")
+	}
 	row("status", dot+"  "+label, "")
 	row("name", truncate(s.Name, valueWidth), "")
-	row("agent", s.AgentName(), "")
+	if !compact {
+		row("agent", s.AgentName(), "")
+	}
 	if git := m.gitStatus[s.ID]; git.ok {
 		row("git", gitStatusLabel(git), "")
 	}
-	if s.Ticket != "" {
+	if s.Ticket != "" && !compact {
 		row("ticket", truncateLeft(s.Ticket, valueWidth), s.Ticket)
 	}
 	if s.PR != "" {
-		row("pr", truncateLeft(s.PR, valueWidth), s.PR)
+		prValue := truncateLeft(s.PR, valueWidth)
+		if compact {
+			prValue = prNumberLabel(s.PR)
+		}
+		row("pr", prValue, s.PR)
 		if pr := m.prStatus[s.ID]; pr.ok {
 			row("pr status", prStatusLabel(pr.info), "")
 		}
 	}
 	rowLink("tmux", truncate(s.TmuxSession, valueWidth), "tmux attach -t "+s.TmuxSession, true)
 	// worktree/created are reference details rarely needed at a glance —
-	// on mobile they cost rows better spent on the prompt/cow below, which
-	// is more often what you'd scroll for.
-	if !m.compactScreen() {
+	// on mobile (or in compact mode) they cost rows better spent on the
+	// prompt/cow below, which is more often what you'd scroll for.
+	if !m.compactScreen() && !compact {
 		row("worktree", truncateLeft(s.WorktreePath, valueWidth), "")
 		row("created", humanizeAge(time.Since(s.CreatedAt)), "")
 	}
@@ -169,9 +178,33 @@ func (m *Model) renderDetailContent(s session.Session, hasSelection bool, width 
 			b.WriteString(fmt.Sprintf("%s %s\n", label, detailLinkStyle.Render(ln)))
 		}
 	}
-	b.WriteString("\n")
-	b.WriteString(cowStyle.Render(cowsay(pickQuip(s.ID, quipPool(st)), valueWidth+10, st)))
+	// In compact mode, narrow layouts already show this same small cow (and
+	// its quip) in the header — see renderHeader's m.width < narrowWidthBreak
+	// branch — so repeating it here would just be the same critter twice.
+	if !compact || m.width >= narrowWidthBreak {
+		b.WriteString("\n")
+		quip := pickQuip(s.ID, quipPool(st))
+		if compact {
+			b.WriteString(cowStyle.Render(cowsaySmall(quip, valueWidth+10, st)))
+		} else {
+			b.WriteString(cowStyle.Render(cowsay(quip, valueWidth+10, st)))
+		}
+	}
 	return b.String(), hits
+}
+
+// prNumberLabel shortens a PR URL to just its number (e.g.
+// ".../pull/5478" -> "#5478") for the compact detail view, where the ticket
+// link is dropped and the PR is the one link kept.
+func prNumberLabel(url string) string {
+	trimmed := strings.TrimRight(url, "/")
+	if i := strings.LastIndex(trimmed, "/"); i >= 0 {
+		trimmed = trimmed[i+1:]
+	}
+	if trimmed == "" {
+		return url
+	}
+	return "#" + trimmed
 }
 
 // gitStatusLabel renders a gitStatusInfo (git.ok must already be true) as the
@@ -258,6 +291,20 @@ func cowsay(msg string, maxWidth int, st watcher.State) string {
 	b.WriteString(`                ||----w |` + "\n")
 	b.WriteString(`                ||     ||`)
 	return b.String()
+}
+
+// cowsaySmall is cowsay's compact-detail counterpart: the same small cow
+// shown in the header (see headerCowArt) sitting beside its one-line quip,
+// instead of the full speech-bubble-and-body art — a fraction of the rows,
+// while still actually reading as a cow.
+func cowsaySmall(msg string, maxWidth int, st watcher.State) string {
+	cow := cowStyle.Render(headerCowArt(stateEyes(st), false, true))
+	quipWidth := maxWidth - lipgloss.Width(cow) - 2
+	if quipWidth < 3 {
+		return cow
+	}
+	quip := muteStyle.Render(truncateToWidth(msg, quipWidth))
+	return lipgloss.JoinHorizontal(lipgloss.Center, cow, "  ", quip)
 }
 
 func wrapLines(s string, width int) []string {
