@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -194,6 +195,55 @@ func (c *Client) HasUnpushedCommits(worktreePath string) (bool, error) {
 		return false, err
 	}
 	return strings.TrimSpace(out) != "0", nil
+}
+
+// FilesChangedCount reports how many files worktreePath has uncommitted
+// changes in (staged, unstaged, or untracked) — one count per line of `git
+// status --porcelain`. Separate from IsWorktreeClean (rather than having it
+// call this and check >0) so that function's git-call sequence, and the
+// tests pinned to it, don't shift.
+func (c *Client) FilesChangedCount(worktreePath string) (int, error) {
+	out, err := c.Runner.Run(worktreePath, "status", "--porcelain")
+	if err != nil {
+		return 0, err
+	}
+	if strings.TrimSpace(out) == "" {
+		return 0, nil
+	}
+	return len(strings.Split(strings.TrimRight(out, "\n"), "\n")), nil
+}
+
+// UnpushedCommitCount reports how many commits worktreePath's checked-out
+// branch has that its upstream doesn't. A branch that never had an upstream
+// counts every commit on it as unpushed, since nothing has been pushed at
+// all. A branch whose upstream was configured but has since disappeared
+// (e.g. the remote branch was deleted after the PR merged) reports 0 —
+// there's nothing left to compare against. Mirrors HasUnpushedCommits'
+// classification but returns a count instead of a bool; kept as a separate
+// method (rather than deriving HasUnpushedCommits from it) so that
+// function's git-call sequence, and the tests pinned to it, don't shift.
+func (c *Client) UnpushedCommitCount(worktreePath string) (int, error) {
+	if _, err := c.Runner.Run(worktreePath, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"); err != nil {
+		branch, err := c.Runner.Run(worktreePath, "rev-parse", "--abbrev-ref", "HEAD")
+		if err != nil {
+			return 0, nil
+		}
+		if _, err := c.Runner.Run(worktreePath, "config", "--get", "branch."+strings.TrimSpace(branch)+".merge"); err == nil {
+			return 0, nil
+		}
+		out, err := c.Runner.Run(worktreePath, "rev-list", "--count", "HEAD")
+		if err != nil {
+			return 0, nil
+		}
+		n, _ := strconv.Atoi(strings.TrimSpace(out))
+		return n, nil
+	}
+	out, err := c.Runner.Run(worktreePath, "rev-list", "--count", "@{u}..HEAD")
+	if err != nil {
+		return 0, err
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(out))
+	return n, nil
 }
 
 // BranchExists reports whether a local branch with the given name exists.

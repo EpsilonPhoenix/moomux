@@ -28,6 +28,15 @@ func run(m *Model, msg tea.Msg) {
 	drainCmd(m, cmd)
 }
 
+// pressDelete opens the delete-confirmation dialog and drains its batched
+// git-status + change-summary fetches (see the Delete key handler in
+// update.go) — plain run/drainCmd only executes the first of a tea.Batch's
+// commands, leaving confirmGit/confirmSummary unresolved.
+func pressDelete(m *Model) {
+	_, cmd := m.Update(keyRune("d"))
+	drainAll(m, cmd)
+}
+
 func TestNewSessionFormFlow(t *testing.T) {
 	be := &fakeBackend{}
 	m := newTestModel(be)
@@ -479,7 +488,7 @@ func TestConfirmDeleteFlow(t *testing.T) {
 	be := &fakeBackend{sessions: []session.Session{{ID: "demo:a", Project: "demo", Name: "a"}}}
 	m := newTestModel(be)
 
-	run(m, keyRune("d"))
+	pressDelete(m)
 	if m.mode != ModeConfirmDelete {
 		t.Fatalf("mode = %v", m.mode)
 	}
@@ -493,7 +502,7 @@ func TestConfirmDeleteFlow(t *testing.T) {
 		t.Fatalf("mode=%v deletes=%v", m.mode, be.deleteCalls)
 	}
 
-	run(m, keyRune("d"))
+	pressDelete(m)
 	run(m, keyRune("y"))
 	if len(be.deleteCalls) != 1 || be.deleteCalls[0] != "demo:a" {
 		t.Fatalf("deleteCalls = %v", be.deleteCalls)
@@ -520,7 +529,7 @@ func TestDeleteCursorSurvivesTmuxAliveRaceInBetween(t *testing.T) {
 	m := newTestModel(be)
 	m.cursor = 1 // b selected
 
-	run(m, keyRune("d"))
+	pressDelete(m)
 	_, cmd := m.Update(keyRune("y"))
 	if cmd == nil {
 		t.Fatal("expected a delete command")
@@ -541,6 +550,28 @@ func TestDeleteCursorSurvivesTmuxAliveRaceInBetween(t *testing.T) {
 	}
 	if got := m.sessions[m.cursor].ID; got != "c" {
 		t.Fatalf("selected session after delete = %q, want %q (b's neighbor when confirmed)", got, "c")
+	}
+}
+
+// TestConfirmDeleteShowsChangeSummary guards the delete dialog's warning
+// line surfacing actual counts (files changed, commits unpushed) once the
+// on-demand fetch resolves, rather than just the generic
+// "uncommitted changes, unpushed commits" wording.
+func TestConfirmDeleteShowsChangeSummary(t *testing.T) {
+	be := &fakeBackend{
+		sessions:       []session.Session{{ID: "demo:a", Project: "demo", Name: "a"}},
+		worktreeStatus: map[string]gitStatusInfo{"demo:a": {dirty: true, unpushed: true, ok: true}},
+		changeSummary:  map[string]changeSummary{"demo:a": {filesChanged: 3, unpushedCommits: 2, ok: true}},
+	}
+	m := newTestModel(be)
+
+	pressDelete(m)
+	if len(be.changeSummaryCalls) != 1 || be.changeSummaryCalls[0] != "demo:a" {
+		t.Fatalf("expected one ChangeSummary call for demo:a, got %v", be.changeSummaryCalls)
+	}
+	v := m.View()
+	if !strings.Contains(v, "3 files changed") || !strings.Contains(v, "2 commits unpushed") {
+		t.Fatalf("confirm view missing change summary:\n%s", v)
 	}
 }
 
@@ -574,7 +605,7 @@ func TestConfirmDeleteOpensInstantlyThenUpdatesFromLiveCheck(t *testing.T) {
 	}
 
 	// The background check resolves.
-	drainCmd(m, cmd)
+	drainAll(m, cmd)
 	if len(be.worktreeStatusCalls) != 1 || be.worktreeStatusCalls[0] != "demo:a" {
 		t.Fatalf("expected one WorktreeStatus call for demo:a, got %v", be.worktreeStatusCalls)
 	}
@@ -918,7 +949,7 @@ func TestConfirmDeleteErrorFlashes(t *testing.T) {
 		deleteErr: errors.New("worktree busy"),
 	}
 	m := newTestModel(be)
-	run(m, keyRune("d"))
+	pressDelete(m)
 	run(m, keyRune("y"))
 	if m.flashKind != "error" || !strings.Contains(m.flash, "worktree busy") {
 		t.Fatalf("flash = %q (%s)", m.flash, m.flashKind)

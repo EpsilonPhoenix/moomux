@@ -1253,6 +1253,28 @@ func (a *App) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
 	return !clean, hasUnpushed, true
 }
 
+// ChangeSummary reports counts to back the delete-confirmation dialog's
+// warning detail: how many files have uncommitted changes and how many
+// commits are unpushed. Separate from WorktreeStatus (rather than folding
+// the counts in there) since it's only fetched on-demand when the delete
+// dialog opens, not on WorktreeStatus's routine per-session polling tick.
+// ok is false when it can't be determined.
+func (a *App) ChangeSummary(id string) (filesChanged, unpushedCommits int, ok bool) {
+	s, exists := a.Store.Get(id)
+	if !exists {
+		return 0, 0, false
+	}
+	files, err := a.Git.FilesChangedCount(s.WorktreePath)
+	if err != nil {
+		return 0, 0, false
+	}
+	commits, err := a.Git.UnpushedCommitCount(s.WorktreePath)
+	if err != nil {
+		return files, 0, true
+	}
+	return files, commits, true
+}
+
 // PRStatus reports the merge/CI status of id's attached PR. ok is false when
 // the session has no PR attached, or the lookup fails (gh not installed, not
 // authenticated, or the PR can't be resolved).

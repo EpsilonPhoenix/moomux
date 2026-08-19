@@ -80,6 +80,11 @@ type fakeBackend struct {
 	worktreeStatus      map[string]gitStatusInfo
 	worktreeStatusCalls []string
 
+	// changeSummary, keyed by session id, backs ChangeSummary. A missing
+	// entry means "unknown" (ok=false).
+	changeSummary      map[string]changeSummary
+	changeSummaryCalls []string
+
 	// prStatus, keyed by session id, backs PRStatus. A missing entry means
 	// "unknown" (ok=false), mirroring worktreeStatus.
 	prStatus      map[string]prStatusInfo
@@ -165,6 +170,14 @@ func (f *fakeBackend) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
 		return false, false, false
 	}
 	return st.dirty, st.unpushed, st.ok
+}
+func (f *fakeBackend) ChangeSummary(id string) (filesChanged, unpushedCommits int, ok bool) {
+	f.changeSummaryCalls = append(f.changeSummaryCalls, id)
+	st, present := f.changeSummary[id]
+	if !present {
+		return 0, 0, false
+	}
+	return st.filesChanged, st.unpushedCommits, st.ok
 }
 func (f *fakeBackend) PRStatus(id string) (prstatus.Info, bool) {
 	f.prStatusCalls = append(f.prStatusCalls, id)

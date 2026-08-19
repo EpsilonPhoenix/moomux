@@ -190,6 +190,10 @@ type fakeBackend struct {
 	// that need to show the dirty/unpushed delete warning; a missing entry
 	// means "unknown" (ok=false), matching every other scenario's default.
 	worktreeStatus map[string]struct{ dirty, unpushed bool }
+	// changeSummary, keyed by session id, backs ChangeSummary for scenarios
+	// that need to show the delete dialog's file/commit-count detail; a
+	// missing entry means "unknown" (ok=false).
+	changeSummary map[string]struct{ filesChanged, unpushedCommits int }
 	// prStatus, keyed by session id, backs PRStatus for scenarios that need
 	// to show the detail panel's PR status row; a missing entry means
 	// "unknown" (ok=false), matching every other scenario's default.
@@ -213,6 +217,13 @@ func (f *fakeBackend) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
 		return false, false, false
 	}
 	return st.dirty, st.unpushed, true
+}
+func (f *fakeBackend) ChangeSummary(id string) (filesChanged, unpushedCommits int, ok bool) {
+	st, present := f.changeSummary[id]
+	if !present {
+		return 0, 0, false
+	}
+	return st.filesChanged, st.unpushedCommits, true
 }
 func (f *fakeBackend) PRStatus(id string) (prstatus.Info, bool) {
 	info, present := f.prStatus[id]
@@ -390,6 +401,9 @@ func renderScreen(screenName string, width, height int, theme, appearance string
 		// lands the cursor on.
 		be.worktreeStatus = map[string]struct{ dirty, unpushed bool }{
 			sessions[0].ID: {dirty: true, unpushed: true},
+		}
+		be.changeSummary = map[string]struct{ filesChanged, unpushedCommits int }{
+			sessions[0].ID: {filesChanged: 3, unpushedCommits: 2},
 		}
 	}
 	if screenName == "pr-status" && len(sessions) > 1 {
