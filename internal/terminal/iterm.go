@@ -59,7 +59,7 @@ func (c *itermClient) OpenTab(tabID, tmuxSession, title string) (string, string,
 // were attached to.
 func (c *itermClient) selectSession(sessionID string) (bool, string, error) {
 	script := fmt.Sprintf(`
-tell application "iTerm2"
+tell application id "com.googlecode.iterm2"
 	activate
 	repeat with w in windows
 		repeat with t in tabs of w
@@ -91,7 +91,7 @@ func (c *itermClient) createTab(tmuxSession, title string) (string, error) {
 	// "=" exact-match target has to be single-quoted — zsh's EQUALS
 	// expansion would read a bare "=name" as a command-path lookup.
 	script := fmt.Sprintf(`
-tell application "iTerm2"
+tell application id "com.googlecode.iterm2"
 	activate
 	if (count of windows) = 0 then
 		create window with default profile
@@ -120,7 +120,7 @@ end tell`, setName, escapeAppleScript("="+tmuxSession))
 // close shouldn't steal focus the way bringing a tab to front should.
 func (c *itermClient) CloseTab(tabID string) error {
 	script := fmt.Sprintf(`
-tell application "iTerm2"
+tell application id "com.googlecode.iterm2"
 	repeat with w in windows
 		repeat with t in tabs of w
 			repeat with sess in sessions of t
