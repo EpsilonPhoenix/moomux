@@ -34,7 +34,7 @@ func TestITermOpenSessionAttachesAndSetsTitle(t *testing.T) {
 	if !strings.Contains(fr.script, `tmux attach -t '=moomux-foo'`) {
 		t.Fatalf("missing quoted attach: %s", fr.script)
 	}
-	if !strings.Contains(fr.script, "iTerm2") {
+	if !strings.Contains(fr.script, "com.googlecode.iterm2") {
 		t.Fatalf("missing iTerm2 target: %s", fr.script)
 	}
 	if !strings.Contains(fr.script, `set name to "feat/bar"`) {
