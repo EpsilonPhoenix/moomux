@@ -206,7 +206,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case SessionDeletedMsg:
 		m.setFlash("info", "deleted")
-		m.refreshSessions()
+		m.refreshSessionsFocusing(msg.NextID)
 		return m, refreshStatusCmd(m)
 
 	case SessionArchivedMsg:
@@ -219,12 +219,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.setFlash("info", "restored")
 		}
-		m.refreshSessions()
+		m.refreshSessionsFocusing(msg.NextID)
 		return m, nil
 
 	case SessionTaggedMsg:
 		m.setFlash("info", "tagged "+msg.Session.Name)
-		m.refreshSessions()
+		m.refreshSessionsAndSync()
 		return m, nil
 
 	case SessionAgentUpdatedMsg:
@@ -618,10 +618,11 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Archive):
 		if len(m.sessions) > 0 {
 			id := m.sessions[m.cursor].ID
+			nextID := m.neighborSessionID()
 			archive := !m.showArchived
 			return m, func() tea.Msg {
 				_, err := m.backend.SetSessionArchived(id, archive)
-				return SessionArchivedMsg{ID: id, Archived: archive, Err: err}
+				return SessionArchivedMsg{ID: id, Archived: archive, NextID: nextID, Err: err}
 			}
 		}
 	case key.Matches(msg, m.keys.ShowArchived):
@@ -1048,12 +1049,13 @@ func (m *Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		id := m.sessions[m.cursor].ID
+		nextID := m.neighborSessionID()
 		m.mode = m.sessionDialogReturn
 		return m, func() tea.Msg {
 			if err := m.backend.DeleteSession(id); err != nil {
 				return ErrorMsg{Err: err}
 			}
-			return SessionDeletedMsg{ID: id}
+			return SessionDeletedMsg{ID: id, NextID: nextID}
 		}
 	case key.Matches(msg, m.keys.No), key.Matches(msg, m.keys.Cancel):
 		m.mode = m.sessionDialogReturn

@@ -310,6 +310,22 @@ func (m *Model) leaveSingleProjectContext(proj string) {
 	}
 }
 
+// refreshSessionsAndSync calls refreshSessions, then — if we're back in
+// ModeMultiView — folds the result into that project's panel state via
+// leaveSingleProjectContext. Delete/archive/tag act on m.sessions/m.cursor
+// and finish asynchronously (the backend call returns a message later), by
+// which point the dialog has already flipped m.mode back to ModeMultiView;
+// unlike a plain keypress (wrapped end-to-end by delegateToList), nothing
+// else folds that final state back into m.multiCursors, so the multi-view
+// panel would otherwise keep showing whatever was selected before the
+// action completed.
+func (m *Model) refreshSessionsAndSync() {
+	m.refreshSessions()
+	if m.mode == ModeMultiView && m.activeProj < len(m.projects) {
+		m.leaveSingleProjectContext(m.projects[m.activeProj])
+	}
+}
+
 // renderMultiView is ModeMultiView's whole-screen render, replacing the
 // normal single-project body with one panel per visible project — the base
 // View() dispatches straight here instead of computing the usual list+detail

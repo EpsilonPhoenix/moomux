@@ -503,6 +503,47 @@ func TestConfirmDeleteFlow(t *testing.T) {
 	}
 }
 
+// TestDeleteCursorSurvivesTmuxAliveRaceInBetween is the regression test for
+// the reported "delete moves selection past the item right below it" bug:
+// killing the deleted session's tmux pane can flip some unrelated session's
+// tmux-alive state and resort the list before SessionDeletedMsg itself
+// arrives — recomputing "the neighbor" only once that message lands would
+// inherit that resort instead of the order the user actually saw when they
+// pressed y, landing on the wrong row (here, one row further than expected).
+func TestDeleteCursorSurvivesTmuxAliveRaceInBetween(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{
+		{ID: "a", Project: "demo", Name: "a"},
+		{ID: "b", Project: "demo", Name: "b"},
+		{ID: "c", Project: "demo", Name: "c"},
+		{ID: "d", Project: "demo", Name: "d"},
+	}}
+	m := newTestModel(be)
+	m.cursor = 1 // b selected
+
+	run(m, keyRune("d"))
+	_, cmd := m.Update(keyRune("y"))
+	if cmd == nil {
+		t.Fatal("expected a delete command")
+	}
+
+	// An intervening tmux-alive tick lands before the delete's own message:
+	// c's tmux pane happens to end right as b's does, resorting the list
+	// (and, under the old cursor-index fallback, shifting where "next" would
+	// land) before SessionDeletedMsg is even processed.
+	m.tmuxAlive = map[string]bool{"c": true}
+	m.refreshSessions()
+
+	msg := cmd()
+	m.Update(msg)
+
+	if m.cursor < 0 || m.cursor >= len(m.sessions) {
+		t.Fatalf("cursor out of range: %d (sessions=%v)", m.cursor, m.sessions)
+	}
+	if got := m.sessions[m.cursor].ID; got != "c" {
+		t.Fatalf("selected session after delete = %q, want %q (b's neighbor when confirmed)", got, "c")
+	}
+}
+
 // TestConfirmDeleteOpensInstantlyThenUpdatesFromLiveCheck guards the whole
 // point of caching: the dialog must render immediately on whatever's already
 // in m.gitStatus (even nothing), not block on a fresh WorktreeStatus call —

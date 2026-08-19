@@ -925,6 +925,51 @@ func (m *Model) focusSession(id string) {
 	}
 }
 
+// neighborSessionID returns the ID of whichever session should take over the
+// selection once the one at m.cursor drops out of the current view (deleted,
+// or archived/restored past the showArchived filter) — whichever is directly
+// below it, or above if it was last. Call it at the moment the delete/archive
+// actually fires (before the mutation's own async result arrives), and thread
+// the result through the resulting message (SessionDeletedMsg.NextID /
+// SessionArchivedMsg.NextID) rather than recomputing it once that message
+// lands: killing a session's tmux pane can flip its tmux-alive state, which
+// resorts the live list on its own, independently of the deletion itself.
+// refreshSessions' own selectedID-preserving logic can't anchor through that
+// resort because the previously-selected session is the one disappearing —
+// so without pinning the neighbor up front, the cursor can visibly hop twice
+// for one delete: once from the tmux-alive resort, once from the list
+// shrinking.
+func (m *Model) neighborSessionID() string {
+	if m.cursor < 0 || m.cursor >= len(m.sessions) {
+		return ""
+	}
+	if m.cursor+1 < len(m.sessions) {
+		return m.sessions[m.cursor+1].ID
+	}
+	if m.cursor-1 >= 0 {
+		return m.sessions[m.cursor-1].ID
+	}
+	return ""
+}
+
+// refreshSessionsFocusing refreshes the session list and, if nextID is set,
+// lands the cursor there instead of wherever refreshSessions' own
+// (deleted/archived-session-relative) fallback would leave it. nextID should
+// come pre-pinned from neighborSessionID at the moment the delete/archive
+// was fired — see SessionDeletedMsg for why recomputing it here, from
+// whatever m.sessions has become by the time this message arrives, isn't
+// good enough.
+func (m *Model) refreshSessionsFocusing(nextID string) {
+	m.refreshSessionsAndSync()
+	if nextID == "" {
+		return
+	}
+	m.focusSession(nextID)
+	if m.mode == ModeMultiView && m.activeProj < len(m.projects) {
+		m.leaveSingleProjectContext(m.projects[m.activeProj])
+	}
+}
+
 func (m *Model) refreshSessions() {
 	if len(m.projects) == 0 {
 		m.sessions = nil
