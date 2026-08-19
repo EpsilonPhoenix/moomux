@@ -200,7 +200,7 @@ func TestCreateSession_ExistingBranch_DeleteKeepsBranch(t *testing.T) {
 		t.Fatalf("expected NewBranch=false for an existing branch")
 	}
 
-	if err := a.DeleteSession(s.ID); err != nil {
+	if _, err := a.DeleteSession(s.ID); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
 	}
 	if !gitBranchExists(t, repo, "feature-y") {
@@ -266,7 +266,7 @@ func TestCreateSession_PlainProject(t *testing.T) {
 		t.Fatalf("pane cwd = %q, want %q", got, plainDir)
 	}
 
-	if err := a.DeleteSession(s.ID); err != nil {
+	if _, err := a.DeleteSession(s.ID); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
 	}
 	if _, err := os.Stat(plainDir); err != nil {
@@ -532,7 +532,7 @@ func TestDeleteSession_GitProject_RemovesWorktreeAndBranch(t *testing.T) {
 		t.Fatalf("CreateSession: %v", err)
 	}
 
-	if err := a.DeleteSession(s.ID); err != nil {
+	if _, err := a.DeleteSession(s.ID); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
 	}
 	if tmuxHasSession(s.TmuxSession) {
@@ -550,7 +550,7 @@ func TestDeleteSession_GitProject_RemovesWorktreeAndBranch(t *testing.T) {
 	if _, ok := a.Store.Get(s.ID); ok {
 		t.Fatalf("store entry should be gone")
 	}
-	if err := a.DeleteSession(s.ID); err == nil {
+	if _, err := a.DeleteSession(s.ID); err == nil {
 		t.Fatalf("expected error deleting an already-deleted session")
 	}
 }
@@ -569,7 +569,7 @@ func TestRemoveProject_ActiveSessionsBlocked(t *testing.T) {
 	if err := a.RemoveProject("demo"); err == nil {
 		t.Fatalf("expected RemoveProject to fail with an active session")
 	}
-	if err := a.DeleteSession(s.ID); err != nil {
+	if _, err := a.DeleteSession(s.ID); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
 	}
 	if err := a.RemoveProject("demo"); err != nil {
@@ -677,7 +677,7 @@ func TestFullLifecycle_EndToEnd(t *testing.T) {
 	}
 
 	for _, s := range []session.Session{claudeS, codexS, plainS} {
-		if err := a.DeleteSession(s.ID); err != nil {
+		if _, err := a.DeleteSession(s.ID); err != nil {
 			t.Fatalf("DeleteSession(%s): %v", s.ID, err)
 		}
 	}

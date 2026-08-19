@@ -205,7 +205,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, refreshStatusCmd(m)
 
 	case SessionDeletedMsg:
-		m.setFlash("info", "deleted")
+		text := "deleted"
+		if msg.Hint != "" {
+			text += " — " + msg.Hint
+		}
+		m.setFlash("info", text)
 		m.refreshSessionsFocusing(msg.NextID)
 		return m, refreshStatusCmd(m)
 
@@ -1052,10 +1056,11 @@ func (m *Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		nextID := m.neighborSessionID()
 		m.mode = m.sessionDialogReturn
 		return m, func() tea.Msg {
-			if err := m.backend.DeleteSession(id); err != nil {
+			hint, err := m.backend.DeleteSession(id)
+			if err != nil {
 				return ErrorMsg{Err: err}
 			}
-			return SessionDeletedMsg{ID: id, NextID: nextID}
+			return SessionDeletedMsg{ID: id, NextID: nextID, Hint: hint}
 		}
 	case key.Matches(msg, m.keys.No), key.Matches(msg, m.keys.Cancel):
 		m.mode = m.sessionDialogReturn

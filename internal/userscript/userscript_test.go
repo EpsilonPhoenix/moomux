@@ -3,6 +3,7 @@ package userscript
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -41,6 +42,22 @@ func TestRunWorktreeCreateRunsGlobalAndProjectScripts(t *testing.T) {
 	}
 	if got := string(out); got != "global\nproject\n" {
 		t.Fatalf("scripts ran out of order or missing, got %q", got)
+	}
+}
+
+// A script that succeeds but prints to stdout used to be silently
+// discarded — only failing scripts produced a message. Successful output
+// should be surfaced too, so callers (e.g. the create-session hint) can show
+// it to the user.
+func TestRunWorktreeCreateSurfacesSuccessfulOutput(t *testing.T) {
+	home := t.TempDir()
+	writeScript(t, globalDir(home, "worktree-create"), "10-hello.sh",
+		"#!/bin/sh\necho hello from script\n")
+
+	wt := t.TempDir()
+	messages := RunWorktreeCreate(home, Env{Project: "myproj", Worktree: wt})
+	if len(messages) != 1 || !strings.Contains(messages[0], "hello from script") {
+		t.Fatalf("expected script output surfaced, got %v", messages)
 	}
 }
 

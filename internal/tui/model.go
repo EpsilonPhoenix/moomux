@@ -39,7 +39,7 @@ type Backend interface {
 	// empty.
 	StartFirstPrompt(tmuxSession, prompt string, autoSubmit bool) error
 	OpenSession(id string) (hint string, err error)
-	DeleteSession(id string) error
+	DeleteSession(id string) (hint string, err error)
 	// WorktreeStatus reports id's worktree as dirty/unpushed; ok is false if
 	// status can't be determined (unknown session, or not a git repo).
 	WorktreeStatus(id string) (dirty, unpushed, ok bool)

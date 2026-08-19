@@ -338,6 +338,7 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string,
 	var wt string
 	tmuxName := TmuxSessionName(session.MakeID(project, name), name)
 	branch := ""
+	var userscriptHint string
 
 	if proj.UsesWorktree() {
 		wt = filepath.Join(a.WorktreeRoot, project, name)
@@ -411,6 +412,7 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string,
 				Branch:   branch,
 			}) {
 				slog.Warn("userscript", "warning", w)
+				userscriptHint = joinHints(userscriptHint, w)
 			}
 		}
 	}
@@ -452,6 +454,7 @@ func (a *App) CreateSession(project, name, agent, existingBranch, ticket string,
 	} else {
 		hint = joinHints(hooksHint, fmt.Sprintf("tmux session started in background — attach with: tmux attach -t %s", tmuxName))
 	}
+	hint = joinHints(hint, userscriptHint)
 
 	s := session.Session{
 		ID:           session.MakeID(project, name),
@@ -1265,16 +1268,20 @@ func (a *App) PRStatus(id string) (prstatus.Info, bool) {
 	return info, true
 }
 
-func (a *App) DeleteSession(id string) error {
+// DeleteSession removes the session's worktree, branch, and store entry. The
+// returned hint, when non-empty, is a user-facing message worth surfacing
+// (currently: output printed by worktree-delete userscripts).
+func (a *App) DeleteSession(id string) (string, error) {
 	s, ok := a.Store.Get(id)
 	if !ok {
-		return fmt.Errorf("unknown session %q", id)
+		return "", fmt.Errorf("unknown session %q", id)
 	}
 	if has, _ := a.Tmux.HasSession(s.TmuxSession); has {
 		if err := a.Tmux.KillSession(s.TmuxSession); err != nil {
-			return fmt.Errorf("tmux kill-session: %w", err)
+			return "", fmt.Errorf("tmux kill-session: %w", err)
 		}
 	}
+	var hint string
 	if proj, ok := a.Cfg.Projects[s.Project]; ok {
 		if proj.UsesWorktree() {
 			if home, err := os.UserHomeDir(); err != nil {
@@ -1287,10 +1294,11 @@ func (a *App) DeleteSession(id string) error {
 					Branch:   s.Branch,
 				}) {
 					slog.Warn("userscript", "warning", w)
+					hint = joinHints(hint, w)
 				}
 			}
 			if err := a.Git.RemoveWorktree(proj.Repo, s.WorktreePath); err != nil {
-				return fmt.Errorf("remove worktree: %w", err)
+				return hint, fmt.Errorf("remove worktree: %w", err)
 			}
 			if s.NewBranch && s.Branch != "" {
 				_ = a.Git.DeleteBranch(proj.Repo, s.Branch)
@@ -1303,5 +1311,5 @@ func (a *App) DeleteSession(id string) error {
 		// here would wipe their repo.
 		_ = os.RemoveAll(s.WorktreePath)
 	}
-	return a.Store.Delete(id)
+	return hint, a.Store.Delete(id)
 }
