@@ -130,6 +130,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case ChangeSummaryMsg:
+		if m.mode == ModeConfirmDelete && len(m.sessions) > 0 && m.sessions[m.cursor].ID == msg.ID {
+			m.confirmSummary = msg.Summary
+		}
+		return m, nil
+
 	case PRStatusMsg:
 		for id, st := range msg.Status {
 			delete(m.prStatusPending, id)
@@ -609,6 +615,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// that wants the freshest answer right now, not deduped against
 			// whatever the periodic refresh happens to be doing.
 			m.confirmGit = m.gitStatus[id]
+			m.confirmSummary = changeSummary{}
 			m.confirmAck = false
 			m.confirmChecking = true
 			m.mode = ModeConfirmDelete
@@ -617,7 +624,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// offset and can open with the "what you're deleting" text
 			// scrolled off-screen, leaving only "y to confirm" visible.
 			m.resetOverlayViewport()
-			return m, fetchGitStatusCmd(m.backend, []string{id})
+			return m, tea.Batch(fetchGitStatusCmd(m.backend, []string{id}), fetchChangeSummaryCmd(m.backend, id))
 		}
 	case key.Matches(msg, m.keys.Archive):
 		if len(m.sessions) > 0 {

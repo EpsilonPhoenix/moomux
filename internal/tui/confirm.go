@@ -25,7 +25,7 @@ func (m *Model) renderConfirm() string {
 	case warn:
 		// truncate (not a hard clip) so a narrow overlay degrades to "⚠
 		// uncommitted…" instead of cutting off mid-word.
-		b.WriteString(warnStyle.Render("⚠ " + truncate(gitStatusLabel(m.confirmGit), avail-2)))
+		b.WriteString(warnStyle.Render("⚠ " + truncate(changeSummaryLabel(m.confirmGit, m.confirmSummary), avail-2)))
 		b.WriteString("\n\n")
 	case m.confirmChecking:
 		b.WriteString(muteStyle.Render("checking git status…"))

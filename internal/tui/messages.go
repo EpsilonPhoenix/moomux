@@ -25,6 +25,15 @@ type GitStatusMsg struct {
 	Status map[string]gitStatusInfo
 }
 
+// ChangeSummaryMsg carries the file/commit-count detail for one session's
+// delete-confirmation warning, computed by fetchChangeSummaryCmd. ID guards
+// against a stale result landing after the dialog moved on to another
+// session (or closed).
+type ChangeSummaryMsg struct {
+	ID      string
+	Summary changeSummary
+}
+
 // PRStatusMsg carries PR status for sessions with a PR attached, computed by
 // fetchPRStatusCmd. Update() merges these into m.prStatus rather than
 // replacing it wholesale, mirroring GitStatusMsg.

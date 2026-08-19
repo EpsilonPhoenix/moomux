@@ -223,6 +223,36 @@ func gitStatusLabel(git gitStatusInfo) string {
 	return strings.Join(parts, ", ")
 }
 
+// changeSummaryLabel renders the delete dialog's warning detail: gitStatusLabel's
+// wording, with file/commit counts appended when the summary fetch resolved
+// in time (it's fetched alongside git status, but isn't gated on — the
+// dialog still opens and can be confirmed without it).
+func changeSummaryLabel(git gitStatusInfo, sum changeSummary) string {
+	label := gitStatusLabel(git)
+	if !sum.ok {
+		return label
+	}
+	var parts []string
+	if git.dirty {
+		parts = append(parts, pluralCount(sum.filesChanged, "file", "files")+" changed")
+	}
+	if git.unpushed {
+		parts = append(parts, pluralCount(sum.unpushedCommits, "commit", "commits")+" unpushed")
+	}
+	if len(parts) == 0 {
+		return label
+	}
+	return strings.Join(parts, ", ")
+}
+
+// pluralCount renders n with singular or plural noun ("1 file", "3 files").
+func pluralCount(n int, singular, plural string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, singular)
+	}
+	return fmt.Sprintf("%d %s", n, plural)
+}
+
 // prStatusLabel renders a prstatus.Info (pr.ok must already be true) as the
 // short text shown in the detail panel's "pr status" row. Merged/closed wins
 // outright since mergeable/CI stop meaning anything once the PR is done.

@@ -43,6 +43,10 @@ type Backend interface {
 	// WorktreeStatus reports id's worktree as dirty/unpushed; ok is false if
 	// status can't be determined (unknown session, or not a git repo).
 	WorktreeStatus(id string) (dirty, unpushed, ok bool)
+	// ChangeSummary reports id's worktree change counts (files with
+	// uncommitted changes, commits unpushed) for the delete dialog's detail
+	// line; ok is false if it can't be determined.
+	ChangeSummary(id string) (filesChanged, unpushedCommits int, ok bool)
 	// PRStatus reports the merge/CI status of id's attached PR; ok is false
 	// if the session has no PR attached or the lookup fails.
 	PRStatus(id string) (info prstatus.Info, ok bool)
@@ -283,6 +287,12 @@ type Model struct {
 	confirmGit      gitStatusInfo
 	confirmChecking bool
 	confirmAck      bool
+	// confirmSummary is the file/commit-count detail for the warning line in
+	// the delete dialog, fetched alongside confirmGit by the same key press
+	// (see fetchChangeSummaryCmd). It has no "checking" gate of its own —
+	// confirmGit alone decides whether the dialog warns and whether a second
+	// y is required; this only enriches that warning's text once it arrives.
+	confirmSummary changeSummary
 	// themeCursor is an index into themeNames while ModeThemePicker is open.
 	// previewAppearance holds the appearance being live-previewed there
 	// ("", "light", or "dark") until Enter persists it or Esc reverts to
@@ -675,6 +685,26 @@ func fetchGitStatusCmd(backend Backend, ids []string) tea.Cmd {
 			status[id] = gitStatusInfo{dirty: dirty, unpushed: unpushed, ok: ok, checkedAt: now}
 		}
 		return GitStatusMsg{Status: status}
+	}
+}
+
+// changeSummary is the file/commit-count detail for one session's delete
+// dialog warning line. ok is false when it couldn't be determined, in which
+// case the counts are meaningless and the dialog falls back to its plain
+// dirty/unpushed wording.
+type changeSummary struct {
+	filesChanged, unpushedCommits int
+	ok                            bool
+}
+
+// fetchChangeSummaryCmd computes id's change summary off the event-loop
+// goroutine, for the delete dialog's on-demand detail line. Unlike
+// fetchGitStatusCmd's routine per-session polling, this only ever runs once
+// per delete-key-press for the one session being deleted.
+func fetchChangeSummaryCmd(backend Backend, id string) tea.Cmd {
+	return func() tea.Msg {
+		files, commits, ok := backend.ChangeSummary(id)
+		return ChangeSummaryMsg{ID: id, Summary: changeSummary{filesChanged: files, unpushedCommits: commits, ok: ok}}
 	}
 }
 

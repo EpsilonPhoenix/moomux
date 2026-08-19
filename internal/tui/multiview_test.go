@@ -436,7 +436,8 @@ func TestMultiViewSessionKeysActOnFocusedPanel(t *testing.T) {
 	m.multiFocus = 1           // beta
 	m.multiCursors["beta"] = 1 // b2
 
-	run(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	drainAll(m, cmd)
 	if m.mode != ModeConfirmDelete {
 		t.Fatalf("mode after 'd' = %v, want ModeConfirmDelete", m.mode)
 	}

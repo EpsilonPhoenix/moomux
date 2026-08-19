@@ -344,6 +344,51 @@ func TestHasUnpushedCommits(t *testing.T) {
 	}
 }
 
+func TestFilesChangedCount(t *testing.T) {
+	fr := &fakeRunner{}
+	c := &Client{Runner: fr}
+	n, err := c.FilesChangedCount("/wt/foo")
+	if err != nil || n != 0 {
+		t.Fatalf("n=%d err=%v, want 0 (clean)", n, err)
+	}
+
+	fr.out = " M some/file.go\n?? other/file.go\n"
+	n, err = c.FilesChangedCount("/wt/foo")
+	if err != nil || n != 2 {
+		t.Fatalf("n=%d err=%v, want 2", n, err)
+	}
+}
+
+func TestUnpushedCommitCount(t *testing.T) {
+	fr := &fakeRunner{out: "3\n"}
+	c := &Client{Runner: fr}
+	n, err := c.UnpushedCommitCount("/wt/foo")
+	if err != nil || n != 3 {
+		t.Fatalf("n=%d err=%v, want 3 (ahead of upstream)", n, err)
+	}
+
+	// call 0: @{u} fails (no upstream). call 1: rev-parse HEAD succeeds.
+	// call 2: config lookup also fails (never configured), so call 3 counts
+	// every commit on the branch instead.
+	fr = &fakeRunner{out: "5\n", errAt: map[int]error{
+		0: errors.New("no upstream configured"),
+		2: errors.New("key not found"),
+	}}
+	c = &Client{Runner: fr}
+	n, err = c.UnpushedCommitCount("/wt/foo")
+	if err != nil || n != 5 {
+		t.Fatalf("n=%d err=%v, want 5 (total commits, never pushed)", n, err)
+	}
+
+	// upstream configured then pruned — nothing left to compare against.
+	fr = &fakeRunner{errAt: map[int]error{0: errors.New("upstream gone")}}
+	c = &Client{Runner: fr}
+	n, err = c.UnpushedCommitCount("/wt/foo")
+	if err != nil || n != 0 {
+		t.Fatalf("n=%d err=%v, want 0 (upstream gone)", n, err)
+	}
+}
+
 func TestDeleteBranch(t *testing.T) {
 	fr := &fakeRunner{}
 	c := &Client{Runner: fr}
