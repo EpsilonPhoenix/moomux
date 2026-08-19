@@ -91,6 +91,20 @@ var settingsRows = []settingsRow{
 		},
 		renderValue: func(m *Model) string { return renderToggle(m.cfg.AutoSubmitDefault, false) },
 	},
+	{
+		label:   "compact detail view",
+		kind:    settingsRowToggle,
+		get:     func(c *config.Config) bool { return c.CompactDetail },
+		set:     func(c *config.Config, v bool) { c.CompactDetail = v },
+		persist: func(b Backend, v bool) error { return b.SetCompactDetail(v) },
+		flash: func(next bool) string {
+			if next {
+				return "compact detail view: on"
+			}
+			return "compact detail view: off"
+		},
+		renderValue: func(m *Model) string { return renderToggle(m.cfg.CompactDetail, false) },
+	},
 }
 
 // renderSettings renders the cursor-navigable settings list opened by 's'.

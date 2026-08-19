@@ -56,6 +56,17 @@ var screens = map[string][]string{
 	// removed from the main list), so these open it first.
 	"new-project":    {"/", "n"},
 	"tag":            {"t"},
+	// Same session as "list" but with a PR added alongside its existing
+	// ticket — the case that motivated CompactDetail: a session tagged with
+	// both blows up the detail pane. "compact-detail" is the same data with
+	// the setting turned on, for a direct before/after comparison.
+	"detail-ticket-and-pr": {},
+	"compact-detail":       {},
+	// Same before/after comparison, but in ModeMultiView's 3-project
+	// side-by-side layout — "tab tab" moves focus to the 3rd column, the one
+	// with the ticket+PR session, matching the single-column scenarios above.
+	"multiview-detail-ticket-and-pr": {"tab", "tab"},
+	"multiview-compact-detail":       {"tab", "tab"},
 	"project-picker": {"/"},
 	// Empty query browses every session across every project (see
 	// matchSessions), demonstrating the default "nothing typed yet" state.
@@ -275,6 +286,13 @@ func (f *fakeBackend) SetAutoSubmitDefault(autoSubmit bool) error {
 	return nil
 }
 
+func (f *fakeBackend) SetCompactDetail(compact bool) error {
+	if f.cfg != nil {
+		f.cfg.CompactDetail = compact
+	}
+	return nil
+}
+
 func (f *fakeBackend) SetSortRecentFirst(recentFirst bool) error {
 	if f.cfg != nil {
 		f.cfg.SortRecentFirst = recentFirst
@@ -369,6 +387,30 @@ func renderScreen(screenName string, width, height int, theme, appearance string
 	case "no-projects-startup", "no-projects":
 		cfg = &config.Config{Projects: map[string]config.Project{}}
 		sessions = nil
+	case "detail-ticket-and-pr":
+		sessions[0].PR = "https://github.com/example/repo/pull/5478"
+	case "compact-detail":
+		sessions[0].PR = "https://github.com/example/repo/pull/5478"
+		cfg.CompactDetail = true
+	case "multiview-detail-ticket-and-pr", "multiview-compact-detail":
+		now := time.Now().UTC()
+		cfg = &config.Config{Projects: map[string]config.Project{
+			"eg_system": {Kind: "git", Repo: "/tmp/eg_system", BaseBranch: "main"},
+			"dev_setup": {Kind: "git", Repo: "/tmp/dev_setup", BaseBranch: "main"},
+			"moomux":    {Kind: "git", Repo: "/tmp/moomux", BaseBranch: "main"},
+		}, Order: []string{"eg_system", "dev_setup", "moomux"}}
+		sessions = []session.Session{
+			{ID: "eg_system:one", Project: "eg_system", Name: "express-reference-number", WorktreePath: "/tmp/eg_system/one", TmuxSession: "moomux-eg-one", CreatedAt: now, Agent: "claude"},
+			{ID: "dev_setup:one", Project: "dev_setup", Name: "show-ports", WorktreePath: "/tmp/dev_setup/one", TmuxSession: "moomux-dev-one", CreatedAt: now, Agent: "claude"},
+			{
+				ID: "moomux:one", Project: "moomux", Name: "compact-detail-section",
+				WorktreePath: "/tmp/moomux/one", TmuxSession: "moomux-moomux-one", CreatedAt: now, Agent: "claude",
+				Ticket: "https://tracker.example/TICK-42", PR: "https://github.com/example/repo/pull/5478",
+			},
+		}
+		if screenName == "multiview-compact-detail" {
+			cfg.CompactDetail = true
+		}
 	case "project-picker-emptied":
 		cfg = &config.Config{Projects: map[string]config.Project{
 			"solo": {Kind: "git", Repo: "/tmp/solo", BaseBranch: "main"},
@@ -398,6 +440,16 @@ func renderScreen(screenName string, width, height int, theme, appearance string
 		// every PR-attached session up front.
 		be.prStatus = map[string]prstatus.Info{
 			sessions[1].ID: {State: "OPEN", Mergeable: "CONFLICTING", CI: "FAILING"},
+		}
+	}
+	if screenName == "detail-ticket-and-pr" || screenName == "compact-detail" {
+		be.prStatus = map[string]prstatus.Info{
+			sessions[0].ID: {State: "OPEN", Mergeable: "MERGEABLE", CI: "PASSING"},
+		}
+	}
+	if screenName == "multiview-detail-ticket-and-pr" || screenName == "multiview-compact-detail" {
+		be.prStatus = map[string]prstatus.Info{
+			"moomux:one": {State: "OPEN", Mergeable: "MERGEABLE", CI: "PASSING"},
 		}
 	}
 	// Closed immediately: nothing in this synthetic harness ever sends on it,

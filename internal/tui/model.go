@@ -81,6 +81,9 @@ type Backend interface {
 	// SetAutoTmux persists whether moomux always relaunches itself inside a
 	// dedicated tmux session on startup.
 	SetAutoTmux(autoTmux bool) error
+	// SetCompactDetail persists whether the detail panel trims itself to the
+	// fields most useful at a glance.
+	SetCompactDetail(compact bool) error
 }
 
 type Mode int
