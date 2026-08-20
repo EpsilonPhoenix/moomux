@@ -1301,11 +1301,13 @@ func (m *Model) updateEditProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cycleEditProjectFocus(false)
 		return m, nil
 	case key.Matches(msg, m.keys.Left):
-		m.adjustProjFormField(-1)
-		return m, nil
+		if m.adjustProjFormField(-1) {
+			return m, nil
+		}
 	case key.Matches(msg, m.keys.Right):
-		m.adjustProjFormField(1)
-		return m, nil
+		if m.adjustProjFormField(1) {
+			return m, nil
+		}
 	case key.Matches(msg, m.keys.Enter):
 		project.Repo = m.projForm.inputs[1].Value()
 		project.Emoji = projectEmojiFieldValue(m.projForm.emojiChoices, m.projForm.emojiIdx)
