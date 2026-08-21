@@ -56,6 +56,29 @@ func (m *Model) detailContentHeight(s session.Session, hasSelection bool, width 
 	return lipgloss.Height(lipgloss.NewStyle().Width(width).Render(content))
 }
 
+// maxDetailContentHeight reports the tallest the detail panel can ever be at
+// width: every optional field present, the prompt wrapped to its 3-line cap,
+// and full cowsay art. renderListView and renderMultiPanel size their
+// list/detail split off this instead of the selected session's own height,
+// so switching the selected session never changes how many rows the list
+// gets — the split only moves when width (or compact mode) does.
+func (m *Model) maxDetailContentHeight(width int) int {
+	worst := session.Session{
+		Project:      "x",
+		Name:         "x",
+		Ticket:       "https://x",
+		PR:           "https://x",
+		WorktreePath: "x",
+		CreatedAt:    time.Now(),
+		Prompt:       strings.Repeat("word ", 60),
+	}
+	// +2 for the "git" and "pr status" rows: both are keyed off
+	// m.gitStatus/m.prStatus by session id, which this unattached probe
+	// session can never populate, but both are always exactly one
+	// unwrapped line when present.
+	return m.detailContentHeight(worst, true, width) + 2
+}
+
 // renderDetailContent builds renderDetailFor's content and link hits without
 // applying its final Height/MaxHeight clipping — shared by renderDetailFor
 // (which then clips to the space actually available and drops hits that

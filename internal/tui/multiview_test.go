@@ -126,6 +126,51 @@ func TestMultiViewPanelShowsCowWhenListIsLong(t *testing.T) {
 	}
 }
 
+// TestMultiViewListDetailSplitStableAcrossSelection is the regression test
+// for the bug report that scrolling through a project's session list in
+// multi-view felt like it jumped backward: renderMultiPanel used to size its
+// list/detail split off the *selected* session's own detail height, so
+// moving the cursor onto a session with a longer or shorter detail block
+// resized the list's viewport out from under its own scroll position — the
+// highlighted row could move opposite the arrow key that was pressed. Sizing
+// the split off the detail panel's structural worst case (every optional
+// field, every wrapped prompt line) instead keeps the list/detail boundary
+// fixed regardless of which session is selected.
+func TestMultiViewListDetailSplitStableAcrossSelection(t *testing.T) {
+	var sessions []session.Session
+	for i := 0; i < 20; i++ {
+		sessions = append(sessions, session.Session{
+			ID: fmt.Sprintf("s%d", i), Project: "alpha", Name: fmt.Sprintf("sess-%d", i),
+		})
+	}
+	// Only the last session has a tall detail block (ticket, PR, wrapped
+	// prompt) — the exact shape that used to shrink the list's viewport the
+	// moment it became selected.
+	sessions[len(sessions)-1].Ticket = "https://ticket.example/x"
+	sessions[len(sessions)-1].PR = "https://pr.example/x"
+	sessions[len(sessions)-1].Prompt = "a long enough prompt that it wraps across a few lines like a real session's would"
+
+	be := &fakeBackend{sessions: sessions}
+	m := newTestModel(be)
+
+	splitLine := func(cursor int) int {
+		frame, _, _ := m.renderMultiPanel("alpha", sessions, cursor, 40, 33, true)
+		for i, line := range strings.Split(frame, "\n") {
+			if strings.Contains(line, "──────") {
+				return i
+			}
+		}
+		t.Fatalf("cursor=%d: no separator line found in frame:\n%s", cursor, frame)
+		return -1
+	}
+
+	short := splitLine(0)
+	long := splitLine(len(sessions) - 1)
+	if short != long {
+		t.Fatalf("list/detail split moved when selection changed: cursor=0 split at line %d, cursor=%d split at line %d", short, len(sessions)-1, long)
+	}
+}
+
 // TestMultiViewTicketIconClickCopiesOverSSH asserts that a ticket icon click
 // inside the multi-panel grid still follows the mobile/SSH rule (see
 // TestLinkClickOverSSHCopiesInsteadOfOpening for the single-panel case):

@@ -36,8 +36,12 @@ var screens = map[string][]string{
 	"list": {},
 	// Same as "list" but with enough sessions to force scrolling in the
 	// narrow stacked layout — see TestNarrowStackedDetailGrowsBeforeListClips.
-	"long-list":   {},
-	"new-session": {"n"},
+	"long-list": {},
+	// Same data as "long-list", cursor walked down past the first screenful
+	// so both scrollHint chevrons are showing at once (⌃ above, ⌄ below) —
+	// "long-list" alone only ever shows the ⌄ one, since it starts at the top.
+	"long-list-scrolled": {"down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down"},
+	"new-session":        {"n"},
 	// Branch field focused, so its hint (the field that most often needs
 	// correcting) is the one on screen — 2 tabs from the project selector.
 	"new-session-branch": {"n", "tab", "tab"},
@@ -54,8 +58,8 @@ var screens = map[string][]string{
 	"new-session-wide-line": {"n", "tab", "tab", "tab", "this is a single long line typed into the first prompt field that should only wrap once it actually reaches the right edge of the box on a wide terminal"},
 	// Adding/editing a project only happens inside the picker now (P/E were
 	// removed from the main list), so these open it first.
-	"new-project":    {"/", "n"},
-	"tag":            {"t"},
+	"new-project": {"/", "n"},
+	"tag":         {"t"},
 	// Same session as "list" but with a PR added alongside its existing
 	// ticket — the case that motivated CompactDetail: a session tagged with
 	// both blows up the detail pane. "compact-detail" is the same data with
@@ -67,7 +71,7 @@ var screens = map[string][]string{
 	// with the ticket+PR session, matching the single-column scenarios above.
 	"multiview-detail-ticket-and-pr": {"tab", "tab"},
 	"multiview-compact-detail":       {"tab", "tab"},
-	"project-picker": {"/"},
+	"project-picker":                 {"/"},
 	// Empty query browses every session across every project (see
 	// matchSessions), demonstrating the default "nothing typed yet" state.
 	"search": {"f"},
@@ -380,7 +384,7 @@ func renderScreen(screenName string, width, height int, theme, appearance string
 	}}
 	sessions := sampleSessions()
 	switch screenName {
-	case "long-list":
+	case "long-list", "long-list-scrolled":
 		now := time.Now().UTC()
 		sessions = nil
 		for i := 0; i < 25; i++ {

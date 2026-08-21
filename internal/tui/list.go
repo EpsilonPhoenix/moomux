@@ -62,19 +62,13 @@ func (m *Model) renderList(width, height int) (string, []linkHit, []rowHit) {
 	if visible < 1 {
 		visible = 1
 	}
-	start := 0
-	if len(m.sessions) > visible {
-		start = m.cursor - visible/2
-		if start < 0 {
-			start = 0
-		}
-		if max := len(m.sessions) - visible; start > max {
-			start = max
-		}
-	}
-	end := start + visible
-	if end > len(m.sessions) {
-		end = len(m.sessions)
+	start, end := scrollWindow(m.cursor, len(m.sessions), visible)
+	hasAbove, hasBelow := start > 0, end < len(m.sessions)
+	rowOffset := 0
+	if hasAbove {
+		b.WriteString(scrollHintLine("⌃", width))
+		b.WriteString("\n")
+		rowOffset = 1
 	}
 	var hits []linkHit
 	var rows []rowHit
@@ -82,8 +76,9 @@ func (m *Model) renderList(width, height int) (string, []linkHit, []rowHit) {
 		s := m.sessions[i]
 		selected := i == m.cursor
 		// titleRows lines for the "SESSIONS" title and blank line above (0 on
-		// short terminals, where it's hidden).
-		line := titleRows + (i - start)
+		// short terminals, where it's hidden), plus rowOffset for the "⌃ more
+		// above" hint line (0 unless it's actually shown).
+		line := titleRows + rowOffset + (i - start)
 		rows = append(rows, rowHit{sessionID: s.ID, line: line})
 		row, iconHits := renderRow(s, m.effectiveState(s), width-2, selected, "", m.gitStatus[s.ID])
 		for _, h := range iconHits {
@@ -102,7 +97,67 @@ func (m *Model) renderList(width, height int) (string, []linkHit, []rowHit) {
 		b.WriteString(row)
 		b.WriteString("\n")
 	}
+	if hasBelow {
+		b.WriteString(scrollHintLine("⌄", width))
+		b.WriteString("\n")
+	}
 	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), hits, rows
+}
+
+// scrollWindow computes the [start, end) window into a total-item list of
+// visible rows around cursor. When the list doesn't fully fit, it reserves a
+// row at whichever edge(s) are actually cut off — one above for "more above"
+// (⌃) if start ends up > 0, one below for "more below" (⌄) if end ends up <
+// total — so the reservation lines up with where the caller actually draws
+// the hint. Reserving is still driven only by (cursor, total, visible), so
+// it never depends on incidental resize elsewhere on screen the way sizing
+// the split off the selected session's own content used to (see
+// maxDetailContentHeight).
+func scrollWindow(cursor, total, visible int) (start, end int) {
+	if total <= visible {
+		return 0, total
+	}
+	start, end = clampWindow(cursor, total, visible)
+	reserve := 0
+	if start > 0 {
+		reserve++
+	}
+	if end < total {
+		reserve++
+	}
+	v := visible - reserve
+	if v < 1 {
+		v = 1
+	}
+	return clampWindow(cursor, total, v)
+}
+
+// clampWindow centers a visible-row window on cursor within [0, total),
+// clamped so it never runs past either end of the list.
+func clampWindow(cursor, total, visible int) (start, end int) {
+	start = cursor - visible/2
+	if start < 0 {
+		start = 0
+	}
+	if max := total - visible; start > max {
+		start = max
+	}
+	if start < 0 {
+		start = 0
+	}
+	end = start + visible
+	if end > total {
+		end = total
+	}
+	return start, end
+}
+
+// scrollHintLine centers a single scrollWindow truncation glyph (⌃ or ⌄,
+// DOWN/UP ARROWHEAD rather than the taller ▲/▼ triangles) within width, muted
+// — a quieter, single-glyph cue that a truncated list shouldn't look
+// identical to a complete one.
+func scrollHintLine(glyph string, width int) string {
+	return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(muteStyle.Render(glyph))
 }
 
 func renderRow(s session.Session, st watcher.State, width int, selected bool, projectLabel string, git gitStatusInfo) (string, []linkHit) {
