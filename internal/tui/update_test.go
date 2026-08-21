@@ -512,6 +512,50 @@ func TestConfirmDeleteFlow(t *testing.T) {
 	}
 }
 
+// TestBusyBlocksDeleteConfirm guards against pressing delete while a new
+// session create is still in flight (m.busy): opening ModeConfirmDelete
+// mid-create would let the delete fire concurrently with the create.
+func TestBusyBlocksDeleteConfirm(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{{ID: "demo:a", Project: "demo", Name: "a"}}}
+	m := newTestModel(be)
+	m.busy = true
+
+	pressDelete(m)
+	if m.mode != ModeList {
+		t.Fatalf("delete opened confirm dialog while busy: mode = %v", m.mode)
+	}
+	if m.flashKind != "error" || !strings.Contains(m.flash, "still creating") {
+		t.Fatalf("flash = %q (%s)", m.flash, m.flashKind)
+	}
+}
+
+// TestBusyBlocksKillAndArchive guards against killing or archiving a session
+// while a new session create is still in flight (m.busy) — same race as
+// TestBusyBlocksDeleteConfirm, for the two other mutating keys in the same
+// switch.
+func TestBusyBlocksKillAndArchive(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{{ID: "demo:a", Project: "demo", Name: "a"}}}
+	m := newTestModel(be)
+	m.busy = true
+
+	_, cmd := m.Update(keyRune("x"))
+	if cmd != nil {
+		t.Fatalf("kill fired while busy")
+	}
+	if m.flashKind != "error" || !strings.Contains(m.flash, "still creating") {
+		t.Fatalf("kill flash = %q (%s)", m.flash, m.flashKind)
+	}
+
+	m.flash, m.flashKind = "", ""
+	_, cmd = m.Update(keyRune("a"))
+	if cmd != nil {
+		t.Fatalf("archive fired while busy")
+	}
+	if m.flashKind != "error" || !strings.Contains(m.flash, "still creating") {
+		t.Fatalf("archive flash = %q (%s)", m.flash, m.flashKind)
+	}
+}
+
 // TestDeleteCursorSurvivesTmuxAliveRaceInBetween is the regression test for
 // the reported "delete moves selection past the item right below it" bug:
 // killing the deleted session's tmux pane can flip some unrelated session's
