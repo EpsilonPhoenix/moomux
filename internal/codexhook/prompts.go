@@ -127,3 +127,17 @@ check the spawned session's progress.
 func EnsureSpawnPrompt(home string) (changed bool, err error) {
 	return ensurePrompt(home, "spawn", spawnPrompt)
 }
+
+// reseedPrompt is installed as the body of the /reseed custom prompt — see
+// EnsureReseedPrompt.
+const reseedPrompt = `---
+description: Re-run this session's worktree-create userscripts with --force, re-syncing template files
+---
+
+Run ` + "`moomux reseed`" + ` in a shell now — don't ask for confirmation first — to re-run this moomux session's worktree-create userscripts with MOOMUX_FORCE=1, so they redo setup they'd otherwise skip as already done. Then report what it printed.
+`
+
+// EnsureReseedPrompt installs the /reseed custom prompt — see ensurePrompt.
+func EnsureReseedPrompt(home string) (changed bool, err error) {
+	return ensurePrompt(home, "reseed", reseedPrompt)
+}

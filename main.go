@@ -50,6 +50,10 @@ Usage:
                      whose worktree you're currently in, keeping its
                      worktree/branch (same as pressing 'x' in the TUI).
                      Backs the /kill slash command inside Claude Code.
+  moomux reseed     Re-run the worktree-create userscripts for the session
+                     whose worktree you're currently in, with MOOMUX_FORCE=1
+                     so they redo setup they'd otherwise skip as already
+                     done. Backs the /reseed slash command inside Claude Code.
   moomux --version  Print the version.
   moomux --help     Show this message.`)
 }
@@ -90,6 +94,13 @@ func main() {
 	}
 	if len(os.Args) >= 2 && os.Args[1] == "park" {
 		if err := runPark(); err != nil {
+			fmt.Fprintln(os.Stderr, "moomux:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) >= 2 && os.Args[1] == "reseed" {
+		if err := runReseed(); err != nil {
 			fmt.Fprintln(os.Stderr, "moomux:", err)
 			os.Exit(1)
 		}
@@ -401,6 +412,29 @@ func runPark() error {
 		return fmt.Errorf("park: %w", err)
 	}
 	fmt.Println("parked " + s.Name)
+	return nil
+}
+
+// runReseed implements `moomux reseed`: re-run the worktree-create
+// userscripts for whichever moomux session we're currently running in, with
+// MOOMUX_FORCE=1 so they redo setup they'd otherwise skip as already done
+// (e.g. wt-moomux-hook.sh passing --force through to wt-seed-env.sh to
+// re-copy template files after they changed). Warnings a script prints
+// (including a normal "skipping ..." kind of notice) are surfaced the same
+// way session creation surfaces them: printed, not treated as failure.
+func runReseed() error {
+	a, err := newApp()
+	if err != nil {
+		return err
+	}
+	s, err := currentSession(a)
+	if err != nil {
+		return fmt.Errorf("reseed: %w", err)
+	}
+	for _, w := range a.ReseedWorktree(s) {
+		fmt.Println(w)
+	}
+	fmt.Println("reseeded " + s.Name)
 	return nil
 }
 

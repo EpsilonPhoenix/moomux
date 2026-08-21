@@ -121,3 +121,20 @@ check the spawned session's progress.
 func EnsureSpawnCommand(home string) (changed bool, err error) {
 	return ensureCommand(home, "spawn", spawnCommand)
 }
+
+// reseedCommand is installed as the body of the /reseed custom command —
+// see EnsureReseedCommand. Runs `moomux reseed` directly rather than leaving
+// the agent to improvise a re-seed, since MOOMUX_FORCE=1 overwrites
+// template-managed files in this worktree.
+const reseedCommand = `---
+description: Re-run this session's worktree-create userscripts with --force, re-syncing template files
+allowed-tools: Bash(moomux reseed:*)
+---
+
+!` + "`moomux reseed`" + `
+`
+
+// EnsureReseedCommand installs the /reseed custom command — see ensureCommand.
+func EnsureReseedCommand(home string) (changed bool, err error) {
+	return ensureCommand(home, "reseed", reseedCommand)
+}

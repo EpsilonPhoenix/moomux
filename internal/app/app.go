@@ -126,6 +126,10 @@ var agentInstallers = []struct {
 		"claude": claudehook.EnsureSpawnCommand,
 		"codex":  codexhook.EnsureSpawnPrompt,
 	}},
+	{"reseed command", false, map[string]func(string) (bool, error){
+		"claude": claudehook.EnsureReseedCommand,
+		"codex":  codexhook.EnsureReseedPrompt,
+	}},
 }
 
 // installAgentSupport runs every agentInstallers entry that applies to agent,
@@ -160,6 +164,25 @@ func installAgentSupport(agent string) string {
 		}
 	}
 	return hint
+}
+
+// ReseedWorktree re-runs the worktree-create userscripts for an existing
+// session's worktree with MOOMUX_FORCE=1, so a template update (e.g. to
+// wt-seed-env.sh's templates) can be re-applied without deleting and
+// recreating the session — the CLI backend for `moomux reseed` / the
+// /reseed slash command.
+func (a *App) ReseedWorktree(s session.Session) []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return []string{err.Error()}
+	}
+	return userscript.RunWorktreeCreate(home, userscript.Env{
+		Project:  s.Project,
+		Worktree: s.WorktreePath,
+		Repo:     a.Cfg.Projects[s.Project].Repo,
+		Branch:   s.Branch,
+		Force:    true,
+	})
 }
 
 func validateAgent(agent string) error {

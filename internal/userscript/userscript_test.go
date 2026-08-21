@@ -61,6 +61,33 @@ func TestRunWorktreeCreateSurfacesSuccessfulOutput(t *testing.T) {
 	}
 }
 
+// A script has no way to tell a `moomux reseed` re-run (which wants it to
+// redo setup it'd otherwise skip as already done) from a first-time run,
+// unless Env.Force reaches it as MOOMUX_FORCE.
+func TestRunWorktreeCreatePassesForceEnvVar(t *testing.T) {
+	home := t.TempDir()
+	logFile := filepath.Join(t.TempDir(), "log")
+
+	writeScript(t, globalDir(home, "worktree-create"), "10-check-force.sh",
+		"#!/bin/sh\necho \"force=${MOOMUX_FORCE:-}\" >> "+logFile+"\n")
+
+	wt := t.TempDir()
+	if warnings := RunWorktreeCreate(home, Env{Project: "myproj", Worktree: wt}); len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
+	}
+	if warnings := RunWorktreeCreate(home, Env{Project: "myproj", Worktree: wt, Force: true}); len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
+	}
+
+	out, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("script did not run: %v", err)
+	}
+	if got := string(out); got != "force=\nforce=1\n" {
+		t.Fatalf("expected MOOMUX_FORCE unset then 1, got %q", got)
+	}
+}
+
 func TestRunWorktreeDeleteOnlyRunsDeleteScripts(t *testing.T) {
 	home := t.TempDir()
 	logFile := filepath.Join(t.TempDir(), "log")
