@@ -33,11 +33,36 @@ func (m *Model) renderDetail(width, height int) (string, []linkHit) {
 // spacing is still reserved (see renderDetail) — ModeMultiView's panels
 // never need it, having no side-by-side sibling column to line up with.
 func (m *Model) renderDetailFor(s session.Session, hasSelection bool, width, height int, titleGap bool) (string, []linkHit) {
-	content, allHits := m.renderDetailContent(s, hasSelection, width, titleGap)
+	content, allHits, preCowLines := m.renderDetailContent(s, hasSelection, width, titleGap)
+	// Anchor the closing cowsay block to the bottom of height instead of
+	// leaving it wherever the (variable-length) fields above it happen to
+	// end: renderMultiPanel/renderListView now size height off the detail
+	// panel's structural worst case (maxDetailContentHeight), so a session
+	// with fewer fields than that worst case would otherwise leave the cow
+	// sitting higher up — visibly hopping between rows as you move the
+	// cursor between sessions with different field counts, even though the
+	// box itself no longer resizes. preCowLines is -1 when there's no cow
+	// block to anchor (nothing selected, or compact narrow mode already
+	// shows one in the header) — leave those top-anchored as before.
+	if preCowLines >= 0 {
+		contentHeight := lipgloss.Height(lipgloss.NewStyle().Width(width).Render(content))
+		if pad := height - contentHeight; pad > 0 {
+			lines := strings.Split(content, "\n")
+			padded := make([]string, 0, len(lines)+pad)
+			padded = append(padded, lines[:preCowLines]...)
+			for i := 0; i < pad; i++ {
+				padded = append(padded, "")
+			}
+			padded = append(padded, lines[preCowLines:]...)
+			content = strings.Join(padded, "\n")
+		}
+	}
 	var hits []linkHit
 	for _, h := range allHits {
 		// MaxHeight below clips the rendered detail. Do not leave invisible
-		// link targets behind in footer or border coordinates.
+		// link targets behind in footer or border coordinates. Padding
+		// above never shifts these: every hit is emitted from a field or
+		// prompt row, always before preCowLines.
 		if h.line < height {
 			hits = append(hits, h)
 		}
@@ -52,23 +77,50 @@ func (m *Model) renderDetailFor(s session.Session, hasSelection bool, width, hei
 // instead of a flat fraction of the panel that starves the cow whenever the
 // session list next to it is long.
 func (m *Model) detailContentHeight(s session.Session, hasSelection bool, width int) int {
-	content, _ := m.renderDetailContent(s, hasSelection, width, false)
+	content, _, _ := m.renderDetailContent(s, hasSelection, width, false)
 	return lipgloss.Height(lipgloss.NewStyle().Width(width).Render(content))
+}
+
+// maxDetailContentHeight reports the tallest the detail panel can ever be at
+// width: every optional field present, the prompt wrapped to its 3-line cap,
+// and full cowsay art. renderListView and renderMultiPanel size their
+// list/detail split off this instead of the selected session's own height,
+// so switching the selected session never changes how many rows the list
+// gets — the split only moves when width (or compact mode) does.
+func (m *Model) maxDetailContentHeight(width int) int {
+	worst := session.Session{
+		Project:      "x",
+		Name:         "x",
+		Ticket:       "https://x",
+		PR:           "https://x",
+		WorktreePath: "x",
+		CreatedAt:    time.Now(),
+		Prompt:       strings.Repeat("word ", 60),
+	}
+	// +2 for the "git" and "pr status" rows: both are keyed off
+	// m.gitStatus/m.prStatus by session id, which this unattached probe
+	// session can never populate, but both are always exactly one
+	// unwrapped line when present.
+	return m.detailContentHeight(worst, true, width) + 2
 }
 
 // renderDetailContent builds renderDetailFor's content and link hits without
 // applying its final Height/MaxHeight clipping — shared by renderDetailFor
-// (which then clips to the space actually available and drops hits that
-// land past it) and detailContentHeight (which measures the unclipped result
-// to decide how much space to give it in the first place).
-func (m *Model) renderDetailContent(s session.Session, hasSelection bool, width int, titleGap bool) (string, []linkHit) {
+// (which then clips to the space actually available, drops hits that land
+// past it, and bottom-anchors the closing cowsay block using the returned
+// preCowLines) and detailContentHeight (which measures the unclipped result
+// to decide how much space to give it in the first place). preCowLines is
+// the line count of everything before the blank+quip+cow block, or -1 when
+// there's no such block to anchor (nothing selected, or compact narrow mode
+// already shows a cow in the header).
+func (m *Model) renderDetailContent(s session.Session, hasSelection bool, width int, titleGap bool) (string, []linkHit, int) {
 	var b strings.Builder
 	if titleGap {
 		b.WriteString("\n\n")
 	}
 	if !hasSelection {
 		b.WriteString(muteStyle.Render("nothing selected"))
-		return b.String(), nil
+		return b.String(), nil, -1
 	}
 	st := m.effectiveState(s)
 	dot := dotParked
@@ -181,7 +233,9 @@ func (m *Model) renderDetailContent(s session.Session, hasSelection bool, width 
 	// In compact mode, narrow layouts already show this same small cow (and
 	// its quip) in the header — see renderHeader's m.width < narrowWidthBreak
 	// branch — so repeating it here would just be the same critter twice.
+	preCowLines := -1
 	if !compact || m.width >= narrowWidthBreak {
+		preCowLines = lipgloss.Height(lipgloss.NewStyle().Width(width).Render(b.String()))
 		b.WriteString("\n")
 		quip := pickQuip(s.ID, quipPool(st))
 		if compact {
@@ -190,7 +244,7 @@ func (m *Model) renderDetailContent(s session.Session, hasSelection bool, width 
 			b.WriteString(cowStyle.Render(cowsay(quip, valueWidth+10, st)))
 		}
 	}
-	return b.String(), hits
+	return b.String(), hits, preCowLines
 }
 
 // prNumberLabel shortens a PR URL to just its number (e.g.

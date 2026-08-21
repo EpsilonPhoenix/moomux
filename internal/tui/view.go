@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/watcher"
 )
 
@@ -451,21 +450,19 @@ func (m *Model) renderListView() string {
 			listContent, hits, rows = m.renderList(panelW-2, bodyHeight)
 			body = panelBorder.Width(panelW).Height(bodyHeight).Render(listContent)
 		} else {
-			// detailH is sized around what the selected session's detail
-			// content actually needs (fields, wrapped prompt, closing
-			// cowsay art) — same approach as renderMultiPanel's own split —
-			// rather than handing the list every row it could use first. A
-			// long, actively-scrolled session list is the point of this
-			// app, but it used to starve detail down to a few clipped
-			// lines (hiding its closing cow) whenever there were more
-			// sessions than fit; the list scrolling further to make room
-			// instead fixes that regardless of session count.
-			var sel session.Session
-			hasSel := m.cursor < len(m.sessions)
-			if hasSel {
-				sel = m.sessions[m.cursor]
-			}
-			detailH := m.detailContentHeight(sel, hasSel, panelW-2)
+			// detailH is sized around the tallest the detail panel could
+			// ever need to be (fields, wrapped prompt, closing cowsay art) —
+			// same approach as renderMultiPanel's own split — rather than
+			// the selected session's own height. Sizing off the actual
+			// selection used to starve detail down to a few clipped lines
+			// (hiding its closing cow) whenever there were more sessions
+			// than fit, and later, once that was fixed by measuring the
+			// selection's real content, moving the cursor to a
+			// shorter/taller session changed listH out from under the list's
+			// own scroll position, making the cursor appear to jump. Sizing
+			// off the worst case instead keeps the split fixed for a given
+			// width, so only width (or compact mode) ever moves it.
+			detailH := m.maxDetailContentHeight(panelW - 2)
 			if maxDetailH := avail - minStackedListRows; detailH > maxDetailH {
 				detailH = maxDetailH
 			}

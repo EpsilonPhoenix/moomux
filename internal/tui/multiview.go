@@ -487,7 +487,7 @@ func (m *Model) renderMultiPanel(proj string, sessions []session.Session, cursor
 	// content never got to render. It's still capped so a chatty session
 	// (long ticket/PR/prompt fields) can't push the list below a usable
 	// minimum in a short terminal.
-	detailH := m.detailContentHeight(sel, hasSel, width)
+	detailH := m.maxDetailContentHeight(width)
 	if maxDetailH := avail - minStackedListRows; detailH > maxDetailH {
 		detailH = maxDetailH
 	}
@@ -539,26 +539,20 @@ func (m *Model) renderSessionPanel(proj string, sessions []session.Session, curs
 	if visible < 1 {
 		visible = 1
 	}
-	start := 0
-	if len(sessions) > visible {
-		start = cursor - visible/2
-		if start < 0 {
-			start = 0
-		}
-		if max := len(sessions) - visible; start > max {
-			start = max
-		}
-	}
-	end := start + visible
-	if end > len(sessions) {
-		end = len(sessions)
+	start, end := scrollWindow(cursor, len(sessions), visible)
+	hasAbove, hasBelow := start > 0, end < len(sessions)
+	rowOffset := 0
+	if hasAbove {
+		b.WriteString(scrollHintLine("⌃", width))
+		b.WriteString("\n")
+		rowOffset = 1
 	}
 	var hits []linkHit
 	var rows []rowHit
 	for i := start; i < end; i++ {
 		s := sessions[i]
 		selected := focused && i == cursor
-		line := titleRows + (i - start)
+		line := titleRows + rowOffset + (i - start)
 		rows = append(rows, rowHit{sessionID: s.ID, line: line})
 		row, iconHits := renderRow(s, m.effectiveState(s), width-2, selected, "", m.gitStatus[s.ID])
 		for _, h := range iconHits {
@@ -575,6 +569,10 @@ func (m *Model) renderSessionPanel(proj string, sessions []session.Session, curs
 			row = listRow.Render(row)
 		}
 		b.WriteString(row)
+		b.WriteString("\n")
+	}
+	if hasBelow {
+		b.WriteString(scrollHintLine("⌄", width))
 		b.WriteString("\n")
 	}
 	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Render(b.String()), hits, rows
