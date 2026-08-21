@@ -578,6 +578,9 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.setFlash("info", "ticket/PR links copy instead of open: "+state)
 		return m, nil
 	case key.Matches(msg, m.keys.Kill):
+		if m.busy {
+			return m.flashError(fmt.Errorf("still creating the previous session — wait for it to finish"))
+		}
 		if len(m.sessions) > 0 {
 			id := m.sessions[m.cursor].ID
 			return m, func() tea.Msg {
@@ -603,6 +606,9 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.openNewSessionForm()
 	case key.Matches(msg, m.keys.Delete):
+		if m.busy {
+			return m.flashError(fmt.Errorf("still creating the previous session — wait for it to finish"))
+		}
 		if len(m.sessions) > 0 {
 			id := m.sessions[m.cursor].ID
 			// Opens instantly on whatever's cached from the routine
@@ -627,6 +633,9 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(fetchGitStatusCmd(m.backend, []string{id}), fetchChangeSummaryCmd(m.backend, id))
 		}
 	case key.Matches(msg, m.keys.Archive):
+		if m.busy {
+			return m.flashError(fmt.Errorf("still creating the previous session — wait for it to finish"))
+		}
 		if len(m.sessions) > 0 {
 			id := m.sessions[m.cursor].ID
 			nextID := m.neighborSessionID()
