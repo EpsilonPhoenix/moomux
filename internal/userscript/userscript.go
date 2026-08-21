@@ -37,6 +37,11 @@ type Env struct {
 	Worktree string
 	Repo     string
 	Branch   string
+	// Force asks a worktree-create script to redo setup on a worktree it may
+	// have already seeded (e.g. re-copy template files after they changed),
+	// rather than skipping work it thinks is already done. Surfaced to
+	// scripts as MOOMUX_FORCE=1; a script that doesn't care can ignore it.
+	Force bool
 }
 
 // RunWorktreeCreate runs every executable worktree-create script (global
@@ -80,6 +85,9 @@ func runDir(dir string, env Env) []string {
 		"MOOMUX_WORKTREE=" + env.Worktree,
 		"MOOMUX_REPO=" + env.Repo,
 		"MOOMUX_BRANCH=" + env.Branch,
+	}
+	if env.Force {
+		extraEnv = append(extraEnv, "MOOMUX_FORCE=1")
 	}
 
 	var warnings []string
