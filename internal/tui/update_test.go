@@ -1208,6 +1208,33 @@ func TestEditProjectFlow(t *testing.T) {
 	}
 }
 
+// TestEditProjectArrowsMoveTextCursor guards against the edit-project form's
+// left/right arrows being swallowed by the emoji/agent selector logic when
+// focus is actually on a text field — they must move the cursor within the
+// field, like they do on the new-project form.
+func TestEditProjectArrowsMoveTextCursor(t *testing.T) {
+	cfg := &config.Config{Projects: map[string]config.Project{
+		"demo": {Kind: "git", Repo: "/tmp/demo", BaseBranch: "main"},
+	}}
+	be := &fakeBackend{}
+	m := New(cfg, be, make(chan watcher.Snapshot), func() {})
+	m.width, m.height = 100, 32
+
+	m.Update(slashKey())
+	m.Update(keyRune("e"))
+	if m.mode != ModeEditProject {
+		t.Fatalf("mode = %v", m.mode)
+	}
+	m.projForm.focus = 1 // repo text field
+	m.projForm.inputs[1].SetValue("/tmp/demo")
+	m.projForm.inputs[1].CursorEnd()
+
+	press(m, tea.KeyLeft)
+	if got := m.projForm.inputs[1].Position(); got != len("/tmp/demo")-1 {
+		t.Fatalf("cursor position after left = %d, want %d", got, len("/tmp/demo")-1)
+	}
+}
+
 func TestEditProjectCancelAndError(t *testing.T) {
 	be := &fakeBackend{updateProjectErr: errors.New("not a git repo")}
 	m := newTestModel(be)
