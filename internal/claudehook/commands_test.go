@@ -125,3 +125,35 @@ func TestEnsureTagCommandIsIdempotent(t *testing.T) {
 		t.Fatal("second install should be a no-op")
 	}
 }
+
+func TestEnsureSpawnCommandCreatesFile(t *testing.T) {
+	home := t.TempDir()
+	changed, err := EnsureSpawnCommand(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("expected changed=true on first install")
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".claude", "commands", "spawn.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != spawnCommand {
+		t.Fatalf("unexpected content: %s", data)
+	}
+}
+
+func TestEnsureSpawnCommandIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+	if _, err := EnsureSpawnCommand(home); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := EnsureSpawnCommand(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Fatal("second install should be a no-op")
+	}
+}

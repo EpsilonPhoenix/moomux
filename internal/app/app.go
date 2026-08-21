@@ -90,9 +90,10 @@ func (a *App) newTmuxSession(tmuxName, cwd, cmd, windowName string) error {
 }
 
 // agentInstallers are the per-agent writers that wire moomux's integrations
-// into the user's global agent config: the "needs input" hooks, and the /kill
-// and /tag custom commands (so any session can park or tag itself without
-// leaving the agent). Each maps an agent name to its installer; an agent with
+// into the user's global agent config: the "needs input" hooks, and the
+// /kill, /tag, and /spawn custom commands (so any session can park, tag, or
+// spawn a delegated session without leaving the agent). Each maps an agent
+// name to its installer; an agent with
 // no entry (opencode, everywhere) doesn't support that integration yet — add a
 // sibling package and a map entry to bring one in. changed reports whether the
 // call actually wrote something new (see codexHooksHint).
@@ -120,6 +121,10 @@ var agentInstallers = []struct {
 	{"tag command", false, map[string]func(string) (bool, error){
 		"claude": claudehook.EnsureTagCommand,
 		"codex":  codexhook.EnsureTagPrompt,
+	}},
+	{"spawn command", false, map[string]func(string) (bool, error){
+		"claude": claudehook.EnsureSpawnCommand,
+		"codex":  codexhook.EnsureSpawnPrompt,
 	}},
 }
 

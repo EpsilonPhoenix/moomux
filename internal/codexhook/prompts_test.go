@@ -125,3 +125,35 @@ func TestEnsureTagPromptIsIdempotent(t *testing.T) {
 		t.Fatal("second install should be a no-op")
 	}
 }
+
+func TestEnsureSpawnPromptCreatesFile(t *testing.T) {
+	home := t.TempDir()
+	changed, err := EnsureSpawnPrompt(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("expected changed=true on first install")
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".codex", "prompts", "spawn.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != spawnPrompt {
+		t.Fatalf("unexpected content: %s", data)
+	}
+}
+
+func TestEnsureSpawnPromptIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+	if _, err := EnsureSpawnPrompt(home); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := EnsureSpawnPrompt(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Fatal("second install should be a no-op")
+	}
+}
