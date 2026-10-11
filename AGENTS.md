@@ -146,12 +146,29 @@ go test -tags e2e ./e2e/... -race -shuffle=on -count=1
 Anything touching an exported signature on `App` needs the second one before
 you believe the first.
 
-Two version pins to be aware of: `staticcheck` and `govulncheck` are run via
-`go run tool@version`, and their newer releases require a newer Go toolchain
-than `go.mod` asks for, so the `lint` job installs its own exact Go version
-rather than `go.mod`'s. Bump the tool pins there, not in `go.mod`. It is an
-exact version and not `stable` on purpose: go1.27.2 landed under `stable` and
-broke staticcheck v0.8.1 on every branch at once. Bump it deliberately, and
-promptly for a Go security release, since govulncheck checks that toolchain's
-stdlib. The staticcheck step can lag behind via its own `GOTOOLCHAIN` while it
-waits for a release that reads the newer toolchain.
+Go versions live in `go.mod` only, in two lines that mean different things:
+
+- `toolchain go1.x.y` is what CI tests, lints and **releases** with —
+  `actions/setup-go` reads it in every job. It is an exact version, not
+  `stable`, on purpose: go1.27.2 landed under `stable` and broke staticcheck
+  v0.8.1 on every branch at once. Bump it deliberately, and promptly for a Go
+  security release, since govulncheck checks that toolchain's stdlib. Until
+  this was one pin, `lint` had its own copy, and release builds sat on an
+  unsupported go1.24.4 with 36 reachable stdlib CVEs while govulncheck,
+  checking the other pin, stayed green.
+- `go 1.x.0` is the minimum for `go install` users. The `min-go` job builds
+  and tests on exactly that version (with `GOTOOLCHAIN: local`, setup-go reads
+  this line instead). Keep it a `.0` release — a patch minimum refuses
+  1.x.0–1.x.(y-1) users for nothing — and raise it only when a dependency or
+  the code needs it. Raising it also changes the binary's default `GODEBUG`
+  settings, which is a runtime behaviour change worth a line in the commit.
+
+`staticcheck` and `govulncheck` are pinned in `test.yml` via
+`go run tool@version`. The staticcheck step can lag behind the toolchain via
+its own `GOTOOLCHAIN` while it waits for a release that reads it.
+
+No dependency, tool pin or action may be adopted within 72 hours of its
+release: dependabot has `cooldown: default-days: 3`, and
+`scripts/check_dep_age.sh` fails `lint` on any module or `go run` tool pin
+newer than that, including hand-run `go get`s. SHA-pinned actions are covered
+by the dependabot cooldown only, so check a hand bump's release date. Check `go list -m -json <mod>@<ver>`'s `Time` before bumping.

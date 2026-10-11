@@ -52,22 +52,47 @@ jobs:
       - name: End-to-end tests
         run: go test -tags e2e ./e2e/... -race -shuffle=on -v -count=1
 
+  # The `test` job runs go.mod's `toolchain` (the newest Go); this one runs
+  # its `go` line, the oldest Go a `go install` user may have. With
+  # GOTOOLCHAIN=local, setup-go reads the `go` line instead of `toolchain`,
+  # and go won't switch up to a newer toolchain on its own.
+  min-go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
+
+      - name: Build
+        run: go version && go build ./...
+
+      - name: Vet
+        run: go vet ./... && go vet -tags e2e ./e2e/...
+
+      - name: Unit tests
+        run: go test ./... -shuffle=on -count=1
+
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Deliberately not go.mod's version: staticcheck and govulncheck below
-      # need a newer toolchain than the app itself targets, and they compile
-      # 1.24 code fine. Bump the tool pins here, not go.mod. An exact version,
-      # not `stable`: a new Go release can break the pinned tools without any
-      # change in this repo, as go1.27.2 did to staticcheck. Bump it on
-      # purpose, promptly for security releases, since govulncheck reports
-      # the stdlib of this toolchain.
+      # go.mod's `toolchain` line, the same Go that test and release.yml
+      # build with, so govulncheck reports the stdlib that actually ships.
+      # One pin: a separate one here once drifted from what release.yml used.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: 1.27.2
+          go-version-file: go.mod
           cache: true
 
       - name: gofmt
@@ -93,9 +118,16 @@ jobs:
       # actually reaches, so an unreachable one in a required module doesn't
       # block every merge until an upstream release lands.
       - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
       # The version-bump logic that tags and ships every merge to main had a
       # test that nothing ever ran.
       - name: Release version rules
         run: ./scripts/next_version_test.sh
+
+      # Supply-chain cooldown: no module or tool pin newer than 72h. The
+      # same rule dependabot follows, enforced for hand-made bumps too.
+      - name: Dependency age
+        run: |
+          ./scripts/check_dep_age_test.sh
+          ./scripts/check_dep_age.sh

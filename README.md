@@ -21,7 +21,7 @@ A TUI for managing [Claude Code](https://claude.com/claude-code) agent sessions 
 brew tap erickgnclvs/moomux
 brew install moomux
 
-# Go
+# Go (1.26 or newer)
 go install github.com/erickgnclvs/moomux@latest
 
 # From source
