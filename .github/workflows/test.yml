@@ -60,10 +60,14 @@ jobs:
 
       # Deliberately not go.mod's version: staticcheck and govulncheck below
       # need a newer toolchain than the app itself targets, and they compile
-      # 1.24 code fine. Bump the tool pins here, not go.mod.
+      # 1.24 code fine. Bump the tool pins here, not go.mod. An exact version,
+      # not `stable`: a new Go release can break the pinned tools without any
+      # change in this repo, as go1.27.2 did to staticcheck. Bump it on
+      # purpose, promptly for security releases, since govulncheck reports
+      # the stdlib of this toolchain.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: stable
+          go-version: 1.27.2
           cache: true
 
       - name: gofmt
@@ -75,7 +79,14 @@ jobs:
             exit 1
           fi
 
+      # staticcheck v0.8.1 can't read go1.27.2's export data ("export data
+      # version 5 is greater than maximum supported version 4"), so this one
+      # step runs on go1.27.1. Only this step: 1.27.2 is a security release,
+      # and govulncheck below must see the patched toolchain. Drop the pin
+      # once a staticcheck release supports 1.27.2.
       - name: staticcheck
+        env:
+          GOTOOLCHAIN: go1.27.1
         run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
 
       # Default (symbol-level) mode: flags only vulnerabilities the code

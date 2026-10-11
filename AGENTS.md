@@ -148,5 +148,10 @@ you believe the first.
 
 Two version pins to be aware of: `staticcheck` and `govulncheck` are run via
 `go run tool@version`, and their newer releases require a newer Go toolchain
-than `go.mod` asks for, so the `lint` job installs `go-version: stable` rather
-than `go.mod`'s version. Bump the tool pins there, not in `go.mod`.
+than `go.mod` asks for, so the `lint` job installs its own exact Go version
+rather than `go.mod`'s. Bump the tool pins there, not in `go.mod`. It is an
+exact version and not `stable` on purpose: go1.27.2 landed under `stable` and
+broke staticcheck v0.8.1 on every branch at once. Bump it deliberately, and
+promptly for a Go security release, since govulncheck checks that toolchain's
+stdlib. The staticcheck step can lag behind via its own `GOTOOLCHAIN` while it
+waits for a release that reads the newer toolchain.
