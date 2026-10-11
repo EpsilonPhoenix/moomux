@@ -650,3 +650,18 @@ func TestCaptureOfNothingIsWritable(t *testing.T) {
 	got := c.Capture(nil)
 	got["moomux:a"] = "drawn" // panics on a nil map
 }
+
+// SelectWindow reuses Args.Delta, as MoveProject does — the Swift side
+// already sends it under that key.
+func TestSelectWindowRoundTrip(t *testing.T) {
+	b := &fakeBackend{sessions: []session.Session{{ID: "moomux:a"}}}
+	c, _ := start(t, b, &config.Config{}, nil)
+	if err := c.SelectWindow("moomux:a", -1); err != nil {
+		t.Fatal(err)
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.selected != "moomux:a -1" {
+		t.Fatalf("backend got %q", b.selected)
+	}
+}

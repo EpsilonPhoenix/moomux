@@ -39,6 +39,7 @@ type fakeBackend struct {
 	created   session.CreateRequest
 	createErr error
 	renamed   session.Session
+	selected  string // SelectWindow: "<id> <delta>"
 
 	folderOrder       []string
 	projectCollapsed  []projectCollapsedCall
@@ -93,7 +94,13 @@ func (f *fakeBackend) Capture(ids []string) map[string]string {
 	}
 	return out
 }
-func (f *fakeBackend) Review(id string) (string, error)         { return "reviewing " + id, nil }
+func (f *fakeBackend) Review(id string) (string, error) { return "reviewing " + id, nil }
+func (f *fakeBackend) SelectWindow(id string, delta int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.selected = fmt.Sprintf("%s %d", id, delta)
+	return nil
+}
 func (f *fakeBackend) WorktreeStatus(string) (bool, bool, bool) { return true, false, true }
 func (f *fakeBackend) ChangeSummary(string) (int, int, bool)    { return 7, 3, true }
 func (f *fakeBackend) Diff(string) (gitwt.Patch, bool, error) {

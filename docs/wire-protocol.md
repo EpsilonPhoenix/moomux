@@ -347,7 +347,7 @@ as plain folder" dialog.
 `SuggestedProject`, `WorktreeStatus`, `ChangeSummary`, `Capture`, `Diff`.
 
 **Session lifecycle** — `CreateSession`, `EnsureTmux`, `DeleteSession`,
-`KillTmux` (park), `Review`, `ResizeAttach` (see `Attach` below).
+`KillTmux` (park), `Review`, `SelectWindow`, `ResizeAttach` (see `Attach` below).
 
 **Files** — `SaveFile` takes `name` and `data` (base64) and answers `path`:
 where the bytes now live on the core's machine, under a name that needs no
@@ -457,6 +457,25 @@ when there was nothing to reuse: killing the last window of a session kills
 the session. Because it selects that window, everything else the core does
 to a session — capture, the status-title rename, sending keys — addresses
 the session's first window explicitly rather than its current one.
+
+### `SelectWindow`: switch windows without typing the prefix
+
+```jsonc
+{"method": "SelectWindow", "args": {"id": "moomux:a", "delta": 1}}
+{"result": {}}
+```
+
+`delta` is `1` for the next tmux window and `-1` for the previous one. It
+reuses `args.delta`, as `MoveProject` does. The core runs `tmux next-window`
+or `previous-window` against `=<name>:`, the exact-match target. Wrapping is
+tmux's own. Any other `delta` is an error.
+
+An unknown id is an error. A session whose tmux is not running is an error
+too, and it is **not** revived, for the same reason as `Review`: reviving
+relaunches the agent.
+
+The app used to switch windows on a swipe by typing `C-b n`/`C-b p` into the
+pane. With a remapped prefix those keys landed in the agent's prompt.
 
 ### `Diff`: the review as a patch
 
@@ -971,6 +990,7 @@ nil. What changed:
 | a client had no way to know a project's fallback emoji | `Result.project_emoji` — additive, so an older client is unaffected |
 | `tmux capture-pane` run by the app, per session, every 5s | `Capture` — `args.ids` in, `result.screens` keyed by **session id** out, one tmux invocation for the set |
 | `tmux new-window`/`respawn-window` run by the app | `Review` — `args.id` in, a `hint` out |
+| `C-b n`/`C-b p` typed into the pane on a swipe | `SelectWindow` — `args.id` and `args.delta` (±1) in, empty result out; additive |
 | a phone had no way to see a session's diff | `Diff` — `args.id` in, `result.patch` / `base` / `truncated` / `ok` out; additive |
 | `tmux attach` via libghostty's `.exec` backend | `Attach` — the connection becomes the pty; there is no local process |
 | the unix socket was the only listener | plus an optional tailnet listener, `tailnet_listen` in `config.toml` |

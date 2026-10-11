@@ -678,6 +678,17 @@ func (c *Client) ReviewWindow(session, cwd, script string) error {
 	return nil
 }
 
+// SelectWindow moves session's current window to the next one (delta > 0)
+// or the previous one (delta < 0), wrapping the way tmux does.
+func (c *Client) SelectWindow(session string, delta int) error {
+	cmd := "next-window"
+	if delta < 0 {
+		cmd = "previous-window"
+	}
+	_, err := c.Runner.Run(cmd, "-t", Exact(session)+":")
+	return err
+}
+
 // reviewWindowOption marks a window as one ReviewWindow created, the same
 // way agentWindowOption marks the agent's. Not cosmetic: respawn-window -k
 // kills whatever the target is running, and addressing it by name alone

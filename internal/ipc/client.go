@@ -317,6 +317,10 @@ func (c *Client) Review(id string) (string, error) {
 	return r.Hint, err
 }
 
+func (c *Client) SelectWindow(id string, delta int) error {
+	return c.err0("SelectWindow", Args{ID: id, Delta: delta})
+}
+
 func (c *Client) Diff(id string) (gitwt.Patch, bool, error) {
 	r, err := c.call("Diff", Args{ID: id})
 	return gitwt.Patch{Text: r.Patch, Base: r.Base, Truncated: r.Truncated}, r.OK, err

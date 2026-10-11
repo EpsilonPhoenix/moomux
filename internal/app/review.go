@@ -85,6 +85,30 @@ func (a *App) Review(id string) (string, error) {
 	return "Opened a review window in " + s.TmuxSession + ".", nil
 }
 
+// SelectWindow switches the session's tmux session to its next (delta +1)
+// or previous (delta -1) window. A front end used to do this by typing the
+// prefix and n/p into the pane, which lands in the agent's prompt for anyone
+// with a remapped prefix. Like Review, a parked session is an error, not
+// revived.
+func (a *App) SelectWindow(id string, delta int) error {
+	if delta != 1 && delta != -1 {
+		return fmt.Errorf("delta must be 1 or -1, got %d", delta)
+	}
+	s, found := a.Store.Get(id)
+	if !found {
+		return fmt.Errorf("unknown session %q", id)
+	}
+	if s.TmuxSession == "" {
+		return fmt.Errorf("session %q has no tmux session", id)
+	}
+	if live, err := a.Tmux.HasSession(s.TmuxSession); err != nil {
+		return err
+	} else if !live {
+		return fmt.Errorf("%s is parked; open it before switching windows", s.Name)
+	}
+	return a.Tmux.SelectWindow(s.TmuxSession, delta)
+}
+
 // reviewBase is the branch a session's work is diffed against. The
 // session's own base is what its branch was actually cut from; the
 // project's is the fallback for a resumed branch that never recorded one.
