@@ -62,6 +62,11 @@ type Server struct {
 	// attaches maps each live Attach's token to its pty master, for
 	// ResizeAttach. Entries go when their connection does.
 	attaches sync.Map // string -> *os.File
+
+	// maxRequest overrides the package's maxRequest when non-zero. Tests
+	// shrink it: a full-size request takes minutes to encode and decode
+	// under -race.
+	maxRequest int64
 }
 
 // subscribe registers a channel for snapshots, starting the source on the
@@ -187,14 +192,18 @@ func (s *Server) handle(c net.Conn) {
 	// only after an arbitrarily large upload had been buffered. The limit
 	// covers the request alone: a Watch or Attach stream carries on reading
 	// r itself, past it.
-	lim := &io.LimitedReader{R: r, N: maxRequest}
+	limit := s.maxRequest
+	if limit == 0 {
+		limit = maxRequest
+	}
+	lim := &io.LimitedReader{R: r, N: limit}
 	dec := json.NewDecoder(lim)
 	var req request
 	if err := dec.Decode(&req); err != nil {
 		if lim.N <= 0 {
 			// Answered, so the client reads a reason rather than a
 			// connection that closed on it.
-			msg := fmt.Sprintf("request is over the %d MB limit", maxRequest>>20)
+			msg := fmt.Sprintf("request is over the %d MB limit", limit>>20)
 			_ = json.NewEncoder(c).Encode(response{Err: msg})
 		}
 		return

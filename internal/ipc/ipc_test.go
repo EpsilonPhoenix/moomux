@@ -211,6 +211,13 @@ func (w *fakeWatcher) Run(ctx context.Context, out chan<- sessionview.Snapshot) 
 // start brings up a server on a temp socket and returns a connected client.
 func start(t *testing.T, b *fakeBackend, cfg *config.Config, src sessionview.Source) (*Client, *trackingListener) {
 	t.Helper()
+	b.cfg = cfg
+	return serve(t, &Server{Backend: b, Config: snapshotter(b, cfg), AgentOptions: func() []config.AgentOption { return b.agentOptions }, Source: src, PaneCwd: b.paneCwd})
+}
+
+// serve runs srv on a fresh socket for the length of the test.
+func serve(t *testing.T, srv *Server) (*Client, *trackingListener) {
+	t.Helper()
 	// Short path on purpose: unix socket paths are capped near 104 bytes on
 	// macOS, and t.TempDir() under /var/folders is long enough to matter.
 	dir := filepath.Join("/tmp", fmt.Sprintf("moomux-ipc-%d-%d", os.Getpid(), time.Now().UnixNano()))
@@ -221,8 +228,6 @@ func start(t *testing.T, b *fakeBackend, cfg *config.Config, src sessionview.Sou
 	}
 	ln := &trackingListener{Listener: raw}
 	t.Cleanup(func() { ln.kill(); os.RemoveAll(dir) })
-	b.cfg = cfg
-	srv := &Server{Backend: b, Config: snapshotter(b, cfg), AgentOptions: func() []config.AgentOption { return b.agentOptions }, Source: src, PaneCwd: b.paneCwd}
 	go srv.Serve(ln)
 	return &Client{Socket: sock}, ln
 }
@@ -358,13 +363,17 @@ func TestRoundTrip(t *testing.T) {
 		if b := filepath.Base(long); len(b) > 12+maxSaveName || !strings.HasSuffix(b, "a.png") {
 			t.Fatalf("long name saved as %q", b)
 		}
-		if _, err := c.SaveFile("big.bin", make([]byte, maxSaveFile+1)); err == nil ||
+		// Both size caps are checked without a full-size request on the wire:
+		// encoding and decoding ~44 MB of JSON under -race took three minutes.
+		// Errors crossing the wire are covered by the empty-file case above.
+		if _, err := saveFile(t.TempDir(), "big.bin", make([]byte, maxSaveFile+1)); err == nil ||
 			!strings.Contains(err.Error(), "limit") {
 			t.Fatalf("SaveFile over the cap: %v", err)
 		}
 		// Past the request limit the server stops reading, so the client may
 		// see the refusal or a broken pipe; either way it must not succeed.
-		if _, err := c.SaveFile(strings.Repeat("a", maxRequest), data); err == nil {
+		small, _ := serve(t, &Server{Backend: b, maxRequest: 1 << 10})
+		if _, err := small.SaveFile(strings.Repeat("a", 1<<10), data); err == nil {
 			t.Fatal("a request over maxRequest was accepted")
 		}
 	})

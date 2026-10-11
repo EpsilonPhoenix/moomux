@@ -510,6 +510,28 @@ func TestCreateSessionRetriesLaunchCommandIfShellSwallowsEnter(t *testing.T) {
 	}
 }
 
+// A launch command that ran and left its echo on screen (here a missing
+// binary; an agent that doesn't clear the screen looks the same) is
+// submitted: retrying Enter types into the shell, and waiting out the retries
+// cost every e2e session in CI five seconds.
+func TestCreateSessionDoesNotRetryAnEchoedLaunchCommand(t *testing.T) {
+	a, git, tm := newTestApp(t, gitProject("/repo"))
+	tn := TmuxSessionName("demo:feat", "feat")
+	tm.out["list-panes -t ="+tn+":^ -F #{pane_id}"] = "%0\n"
+	noBranch(git, "feat")
+	tm.seq = map[string][]string{
+		"capture-pane -p -t =" + tn + ":^": {"$ claude\nsh: claude: command not found\n$ \n\n"},
+	}
+
+	if _, _, err := a.createSession("demo", "feat", "", "", "", false, boolPtr(false), "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	if tm.called("send-keys -t =" + tn + ":^ Enter") {
+		t.Fatalf("launch command already ran but Enter was retried; calls = %v", tm.calls)
+	}
+}
+
 // TestCreateSessionStampsLastOpened guards against a session created with
 // openTerminal=true — which drops the user straight into it, same as
 // OpenSession's attach — being treated as "never opened" by the
