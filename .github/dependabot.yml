@@ -1,5 +1,7 @@
 version: 2
 updates:
+  # Supply-chain cooldown: dependabot ignores a release until it is 3 days
+  # old. scripts/check_dep_age.sh enforces the same 72h in CI for hand bumps.
   - package-ecosystem: gomod
     directory: /
     schedule:
@@ -7,6 +9,8 @@ updates:
     groups:
       go:
         patterns: ["*"]
+    cooldown:
+      default-days: 3
 
   # Workflow actions are SHA-pinned (a floating @v4 is whatever that tag
   # points at today), so they only move when dependabot moves them.
@@ -17,3 +21,5 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    cooldown:
+      default-days: 3
