@@ -690,6 +690,8 @@ func (s *Server) dispatch(method string, a Args) (Result, error) {
 	case "Review":
 		hint, err := b.Review(a.ID)
 		return Result{Hint: hint}, err
+	case "SelectWindow":
+		return Result{}, b.SelectWindow(a.ID, a.Delta)
 	case "Diff":
 		p, ok, err := b.Diff(a.ID)
 		return Result{Patch: p.Text, Base: p.Base, Truncated: p.Truncated, OK: ok}, err

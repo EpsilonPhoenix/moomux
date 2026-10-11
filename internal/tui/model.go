@@ -77,6 +77,10 @@ type Backend interface {
 	// window and not a rendered patch so the diff reaches a real tty and
 	// the user's own pager.
 	Review(id string) (hint string, err error)
+	// SelectWindow moves a live session's tmux session to its next (+1) or
+	// previous (-1) window. Not a TUI caller either: it is for a front end
+	// that would otherwise type the tmux prefix into the pane.
+	SelectWindow(id string, delta int) error
 	// Diff is Review's diff as a raw patch rather than a tmux window, for a
 	// front end with no tty to open one on (the phone): committed and
 	// uncommitted work against the same base, untracked files included,

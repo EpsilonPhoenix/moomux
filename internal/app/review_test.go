@@ -283,3 +283,40 @@ func TestDiffOnANonRepoIsNotOK(t *testing.T) {
 		t.Fatal("unknown session should error")
 	}
 }
+
+// The point of SelectWindow is to not type keys into the pane, so it must
+// be a next/previous-window aimed at the exact tmux session.
+func TestSelectWindowTargetsTheExactSession(t *testing.T) {
+	fr := &fakeTmuxRunner{}
+	a := newReviewApp(t, fr, session.Session{ID: "proj:a", Project: "proj", TmuxSession: "moomux-a"})
+	for delta, want := range map[int]string{1: "next-window -t =moomux-a:", -1: "previous-window -t =moomux-a:"} {
+		fr.calls = nil
+		if err := a.SelectWindow("proj:a", delta); err != nil {
+			t.Fatalf("delta %d: %v", delta, err)
+		}
+		if got := strings.Join(fr.calls[len(fr.calls)-1], " "); got != want {
+			t.Fatalf("delta %d: ran %q, want %q", delta, got, want)
+		}
+	}
+}
+
+// Like Review: a parked session is named, not revived, and an unknown id or
+// a delta other than ±1 never reaches tmux.
+func TestSelectWindowRefusesParkedUnknownAndBadDelta(t *testing.T) {
+	fr := &fakeTmuxRunner{failOn: map[string]bool{"has-session -t =moomux-a": true}}
+	a := newReviewApp(t, fr, session.Session{ID: "proj:a", Project: "proj", Name: "a", TmuxSession: "moomux-a"})
+	if err := a.SelectWindow("proj:a", 1); err == nil || !strings.Contains(err.Error(), "parked") {
+		t.Fatalf("err = %v, want it to name the session as parked", err)
+	}
+	if err := a.SelectWindow("proj:nope", 1); err == nil {
+		t.Fatal("unknown session should error")
+	}
+	if err := a.SelectWindow("proj:a", 0); err == nil {
+		t.Fatal("delta 0 should error")
+	}
+	for _, c := range fr.calls {
+		if c[0] != "has-session" {
+			t.Fatalf("only the liveness check may run: %v", fr.calls)
+		}
+	}
+}
