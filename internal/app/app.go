@@ -370,7 +370,12 @@ func (a *App) confirmLaunchCommandSubmitted(tmuxName, cmd string) {
 		for i := 0; i < enterConfirmPolls; i++ {
 			time.Sleep(paneStablePoll)
 			cur, err := a.Tmux.CapturePane(tmuxName)
-			if err == nil && !strings.Contains(cur, cmd) {
+			// Unsubmitted means cmd is still the input line, i.e. the end of
+			// the pane. Not anywhere on it: an agent that prints without
+			// clearing the screen, or a "command not found", leaves the
+			// echoed command visible above, and that cost every launch the
+			// full retry budget plus two stray Enters into the shell.
+			if err == nil && !strings.HasSuffix(strings.TrimRight(cur, " \n"), cmd) {
 				submitted = true
 				break
 			}
