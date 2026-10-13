@@ -630,6 +630,37 @@ func TestListenTailnetRefusesATagOwnedNode(t *testing.T) {
 	}
 }
 
+// At login launchd starts the core before Tailscale is up, and `tailscale ip`
+// fails. Giving up there left the phone refused until a manual restart.
+func TestListenTailnetRetryOutlastsTailscaleStartingLate(t *testing.T) {
+	restoreIP, restoreLogin := tailscaleSelfIPFn, tailscaleLoginFn
+	restoreMin, restoreMax := tailnetRetryMin, tailnetRetryMax
+	fails := 3
+	tailscaleSelfIPFn = func() (string, error) {
+		if fails > 0 {
+			fails--
+			return "", errors.New("signal: killed")
+		}
+		return "127.0.0.1", nil
+	}
+	tailscaleLoginFn = func(string) (string, error) { return "me@example.com", nil }
+	tailnetRetryMin, tailnetRetryMax = time.Millisecond, 2*time.Millisecond
+	defer func() {
+		tailscaleSelfIPFn, tailscaleLoginFn = restoreIP, restoreLogin
+		tailnetRetryMin, tailnetRetryMax = restoreMin, restoreMax
+	}()
+
+	var logged int
+	ln := ListenTailnetRetry(0, func(error) { logged++ })
+	if fails != 0 {
+		t.Fatalf("returned before tailscale came up (%d failures left)", fails)
+	}
+	defer ln.Close()
+	if logged != 1 {
+		t.Fatalf("logged %d failures, want only the first", logged)
+	}
+}
+
 // entry's sweep must not evict the slot it is about to hand out. A fresh
 // slot has a zero timestamp because its whois hasn't landed yet, not because
 // it is stale; evicting it orphans the entry the caller then writes into, and
