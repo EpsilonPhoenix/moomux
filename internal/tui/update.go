@@ -171,6 +171,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case SessionCreatedMsg:
 		m.applyCfg(msg.Cfg)
 		m.busy = false
+		m.clearNewSessionDraft()
 		text := "created " + msg.Session.Name
 		if msg.Hint != "" {
 			text += " — " + msg.Hint
@@ -488,6 +489,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// keys, so without this ctrl+c is swallowed inside every form
 			// and dialog. ("q" stays mode-specific: it's typeable text in
 			// the form inputs.)
+			if m.mode == ModeNewForm {
+				m.saveNewSessionDraft()
+			}
 			m.cancelPoll()
 			return m, tea.Quit
 		}
@@ -578,7 +582,7 @@ func (m *Model) openNewSessionForm() {
 	m.baseBranchInput.SetValue("")
 	m.ticketInput.SetValue("")
 	m.prInput.SetValue("")
-	m.promptInput.SetValue("")
+	m.promptInput.SetValue(m.loadNewSessionDraft())
 	m.newFormModelInput.SetValue("")
 	m.newFormBlurAll()
 	m.newFormFocusInput()
@@ -1250,6 +1254,7 @@ func (m *Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Cancel):
+		m.saveNewSessionDraft()
 		m.mode = m.sessionDialogReturn
 		return m, nil
 	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.ShiftTab):
@@ -1390,6 +1395,9 @@ func (m *Model) updateNewForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			dangerous = &v
 		}
 		openTerminal := !m.newFormOpenInBackground
+		// Saved before the create runs, so the prompt outlives the TUI
+		// itself dying mid-create; SessionCreatedMsg clears it.
+		m.saveNewSessionDraft()
 		m.mode = m.sessionDialogReturn
 		label := name
 		if label == "" {

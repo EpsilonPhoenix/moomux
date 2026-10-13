@@ -26,6 +26,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	os.Setenv("XDG_CONFIG_HOME", dir)
+	newSessionDraftPath = func() string { return "" }
 	applyTheme("default")
 	code := m.Run()
 	os.RemoveAll(dir) // os.Exit skips defers

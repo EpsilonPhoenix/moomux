@@ -420,6 +420,8 @@ type Model struct {
 	// never the core's served config. See config.Client.
 	client     config.Client
 	clientPath string
+	// draftPath is the new-session form's saved prompt; see draft.go.
+	draftPath string
 	// settingsInput is the inline editor for the settings screen's one
 	// free-text row (diff tool); settingsEditing is whether it has focus.
 	settingsInput   textinput.Model
@@ -853,6 +855,7 @@ func New(cfg *config.Config, backend Backend, agentOptions []config.AgentOption,
 		cfg:               &own,
 		client:            client,
 		clientPath:        clientPath,
+		draftPath:         newSessionDraftPath(),
 		backend:           backend,
 		agentOptions:      agentOptions,
 		keys:              DefaultKeyMap(),

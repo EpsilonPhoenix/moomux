@@ -826,15 +826,36 @@ func (a *App) uniqueNameFromBranch(project, branch string) string {
 }
 
 // uniqueName returns base, or base-2, base-3, ... — the first that no
-// session in project already uses.
+// session in project already uses and whose worktree folder doesn't already
+// exist. A folder no session record knows about (a crashed create, a
+// hand-deleted session) makes git refuse the add, so a name the core picked
+// would fail the create, and the user's prompt with it, over a collision
+// they never chose.
 func (a *App) uniqueName(project, base string) string {
-	name := base
-	for i := 2; ; i++ {
-		if _, ok := a.Store.Get(session.MakeID(project, name)); !ok {
-			return name
+	proj, known := a.project(project)
+	taken := func(name string) bool {
+		if _, ok := a.Store.Get(session.MakeID(project, name)); ok {
+			return true
 		}
+		if !known || !proj.UsesWorktree() {
+			return false
+		}
+		_, err := os.Stat(filepath.Join(a.WorktreeRoot, project, name))
+		return err == nil
+	}
+	name := base
+	for i := 2; taken(name); i++ {
 		name = fmt.Sprintf("%s-%d", base, i)
 	}
+	return name
+}
+
+// newBranchName is the branch a fresh session called name is created on.
+func newBranchName(proj config.Project, name string) string {
+	if prefix := strings.TrimSuffix(proj.BranchPrefix, "/"); prefix != "" {
+		return prefix + "/" + name
+	}
+	return name
 }
 
 // tmuxSessionUsingWorktree returns the tmux session name of any tracked
@@ -1085,13 +1106,15 @@ func (a *App) createSession(project, name, agent, existingBranch, ticket string,
 				return session.Session{}, "", fmt.Errorf("no branch %q in %s (checked local and origin) — fix the name, or clear the branch field to start a new branch off %s", branch, proj.Repo, baseBranchRef)
 			}
 		} else {
-			branch = name
-			if prefix := strings.TrimSuffix(proj.BranchPrefix, "/"); prefix != "" {
-				branch = prefix + "/" + name
-			}
+			branch = newBranchName(proj, name)
 		}
 		if newBranch && hasRemote {
 			_ = a.Git.Fetch(proj.Repo, baseBranchRef) // best-effort
+		}
+		if _, err := os.Stat(wt); err == nil {
+			// git's own "fatal: '<path>' already exists" doesn't say that
+			// the session name is what picks the path.
+			return session.Session{}, "", fmt.Errorf("a folder for %q already exists at %s (left over from an earlier session?) — pick another session name, or remove the folder", name, wt)
 		}
 		var err error
 		if !newBranch {
@@ -1154,6 +1177,16 @@ func (a *App) createSession(project, name, agent, existingBranch, ticket string,
 	a.cfgMu.RUnlock()
 	if err := a.newTmuxSession(tmuxName, wt, cmd, windowName); err != nil {
 		slog.Error("tmux new-session failed", "name", tmuxName, "cwd", wt, "err", err)
+		if proj.UsesWorktree() {
+			// Undo the worktree (and the branch, if this create made it), so
+			// a retry with the same name and prompt can succeed rather than
+			// hit "already exists" on what this failed attempt left behind.
+			if rmErr := a.Git.RemoveWorktree(proj.Repo, wt); rmErr != nil {
+				slog.Warn("roll back worktree", "path", wt, "err", rmErr)
+			} else if newBranch {
+				_ = a.Git.DeleteBranch(proj.Repo, branch)
+			}
+		}
 		return session.Session{}, "", fmt.Errorf("tmux new-session: %w", err)
 	}
 	slog.Info("tmux session created", "name", tmuxName)

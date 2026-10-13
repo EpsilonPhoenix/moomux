@@ -1047,6 +1047,64 @@ func TestCreateSessionUnknownBranchFailsWithoutCreating(t *testing.T) {
 	}
 }
 
+// A worktree folder no session record knows about — left by a crashed
+// create, say — makes git refuse the add. A name the core picks steps around
+// it; a name the user typed fails before anything is created, saying which
+// field to change, rather than with git's bare "already exists".
+func TestCreateSessionLeftoverWorktreeFolder(t *testing.T) {
+	a, git, tm := newTestApp(t, gitProject("/repo"))
+	if err := os.MkdirAll(filepath.Join(a.WorktreeRoot, "demo", "fix-login-bug"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tn := TmuxSessionName("demo:fix-login-bug-2", "fix-login-bug-2")
+	tm.out["list-panes -t ="+tn+":^ -F #{pane_id}"] = "%0\n"
+	tm.out["capture-pane -p -t ="+tn+":^"] = "agent-idle"
+	noBranch(git, "fix-login-bug-2")
+
+	s, _, err := a.CreateSession(session.CreateRequest{Project: "demo", Agent: "claude", Prompt: "Fix the login bug"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Name != "fix-login-bug-2" {
+		t.Fatalf("name = %q, want fix-login-bug-2", s.Name)
+	}
+
+	git.calls = nil
+	_, _, err = a.CreateSession(session.CreateRequest{Project: "demo", Name: "fix-login-bug", Agent: "claude"})
+	if err == nil || !strings.Contains(err.Error(), "pick another session name") {
+		t.Fatalf("err = %v", err)
+	}
+	for _, c := range git.calls {
+		if slices.Contains(c, "worktree") && slices.Contains(c, "add") {
+			t.Fatalf("worktree add attempted anyway: %v", git.calls)
+		}
+	}
+}
+
+// A create that fails at tmux, after the worktree exists, removes the
+// worktree and the branch it made, so retrying with the same name and
+// prompt works instead of failing on the attempt's own leftovers.
+func TestCreateSessionTmuxFailureRollsBackWorktree(t *testing.T) {
+	a, git, tm := newTestApp(t, gitProject("/repo"))
+	noBranch(git, "feat")
+	wt := filepath.Join(a.WorktreeRoot, "demo", "feat")
+	tn := TmuxSessionName("demo:feat", "feat")
+	tm.failWithOutput["new-session -d -s "+tn+" -c "+wt+" -n "+a.Cfg.ProjectEmoji("demo")+" feat"] = "server exited unexpectedly"
+
+	if _, _, err := a.createSession("demo", "feat", "", "", "", true, boolPtr(false), "", "", ""); err == nil {
+		t.Fatal("want the tmux failure")
+	}
+	var removed, deleted bool
+	for _, c := range git.calls {
+		joined := strings.Join(c, " ")
+		removed = removed || strings.HasPrefix(joined, "@/repo worktree remove "+wt)
+		deleted = deleted || joined == "@/repo branch -D feat"
+	}
+	if !removed || !deleted {
+		t.Fatalf("removed=%v deleted=%v; calls = %v", removed, deleted, git.calls)
+	}
+}
+
 func TestCreateSessionExistingBranchRemovesStaleCleanWorktree(t *testing.T) {
 	a, git, tm := newTestApp(t, gitProject("/repo"))
 	tm.out["list-panes -t ="+TmuxSessionName("demo:login-page", "login-page")+":^ -F #{pane_id}"] = "%0\n"
