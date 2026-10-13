@@ -67,6 +67,31 @@ func ListenTailnet(port int) (net.Listener, error) {
 	return newTailnetListener(ln, owner), nil
 }
 
+// tailnetRetryMin and tailnetRetryMax bound ListenTailnetRetry's backoff.
+// Variables so a test needn't wait out real seconds.
+var tailnetRetryMin, tailnetRetryMax = 2 * time.Second, time.Minute
+
+// ListenTailnetRetry is ListenTailnet, retried with capped backoff until it
+// succeeds. A launchd-started core comes up at login before Tailscale does,
+// and giving up on the first `tailscale ip` left the phone locked out until
+// someone restarted the service. It blocks, so call it from a goroutine;
+// onFirstErr hears the first failure only, so a node that is never on a
+// tailnet logs once rather than every minute.
+func ListenTailnetRetry(port int, onFirstErr func(error)) net.Listener {
+	wait := tailnetRetryMin
+	for first := true; ; first = false {
+		ln, err := ListenTailnet(port)
+		if err == nil {
+			return ln
+		}
+		if first {
+			onFirstErr(err)
+		}
+		time.Sleep(wait)
+		wait = min(wait*2, tailnetRetryMax)
+	}
+}
+
 // tailnetListener refuses every peer that isn't the tailnet user this node
 // belongs to. `tailscale whois` is the authority — the core already shells
 // out to git, tmux and gh constantly, so one more is in keeping — and the

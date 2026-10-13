@@ -846,28 +846,24 @@ func runServe(args []string) error {
 	// The tailnet listener is a second front door onto the same handler, for
 	// clients that cannot reach a unix socket (a phone). Its absence is
 	// never fatal — no tailscale, a stopped daemon, a logged-out node — the
-	// unix socket is what local clients use either way.
+	// unix socket is what local clients use either way. It is retried in the
+	// background, though: at login launchd starts this before Tailscale is up.
 	if a.Cfg.TailnetListen {
-		tln, err := ipc.ListenTailnet(ipc.TailnetPort)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "moomux: no tailnet listener:", err)
-		} else {
-			defer tln.Close()
+		go func() {
+			tln := ipc.ListenTailnetRetry(ipc.TailnetPort, func(err error) {
+				fmt.Fprintln(os.Stderr, "moomux: no tailnet listener yet, retrying:", err)
+			})
 			fmt.Fprintln(os.Stderr, "moomux: also serving on", tln.Addr())
-			go func() {
-				// Serve returning means nothing is accepting on this
-				// listener any more: close it, or the port stays bound and
-				// any connection already past the tailnet auth check sits
-				// on its fd until the process exits.
-				defer tln.Close()
-				// Not an error when it's the deferred Close above that
-				// ended it, which is every clean shutdown.
-				// Serve only ever returns a non-nil error.
-				if err := srv.Serve(tln); !errors.Is(err, net.ErrClosed) {
-					slog.Error("tailnet listener stopped", "err", err)
-				}
-			}()
-		}
+			// Serve returning means nothing is accepting on this listener
+			// any more: close it, or the port stays bound and any
+			// connection already past the tailnet auth check sits on its
+			// fd until the process exits.
+			defer tln.Close()
+			// Serve only ever returns a non-nil error.
+			if err := srv.Serve(tln); !errors.Is(err, net.ErrClosed) {
+				slog.Error("tailnet listener stopped", "err", err)
+			}
+		}()
 	}
 	return srv.Serve(ln)
 }
