@@ -898,8 +898,12 @@ func buildSource(a *app.App, home string) *sessionview.Watcher {
 
 func buildWatcher(home string) watcher.Watcher {
 	return &watcher.MultiWatcher{Watchers: []watcher.Watcher{
-		// Claude Code: JSON session files in ~/.claude/sessions/
-		&watcher.DirWatcher{Dir: filepath.Join(home, ".claude", "sessions")},
+		// Claude Code: JSON session files in ~/.claude/sessions/, plus the
+		// transcripts that show a finished turn ended on a question.
+		&watcher.DirWatcher{
+			Dir:         filepath.Join(home, ".claude", "sessions"),
+			Transcripts: filepath.Join(home, ".claude", "projects"),
+		},
 		// Codex: activity tracked in SQLite DB (~/.codex/state_N.sqlite),
 		// plus needs-input markers from internal/codexhook's installed hooks.
 		&watcher.SQLiteWatcher{
@@ -924,12 +928,11 @@ func buildWatcher(home string) watcher.Watcher {
 		// not_fully_idle and status read the same mid-turn as at rest.
 		//
 		// Stop would close the gap the wrong way, for the reason
-		// claudehook.EnsureHooksInstalled and codexhook.EnsureHooks both
-		// spell out: it fires at the end of every turn, and NeedsInput
-		// outranks Done in the watcher's max-merge, so every finished agy
-		// session would sit at needs-input until its next message. Tried and
-		// reverted twice already; left as a known gap rather than a third
-		// time.
+		// codexhook.EnsureHooks spells out: it fires at the end of every
+		// turn, and NeedsInput outranks Done in the watcher's max-merge, so
+		// every finished agy session would sit at needs-input until its next
+		// message. Tried and reverted twice already; left as a known gap
+		// rather than a third time.
 		&watcher.SQLiteWatcher{
 			DB: filepath.Join(home, ".gemini", "antigravity-cli", "conversation_summaries.db"),
 			// URIPaths: workspace_uris holds file:// URIs, percent-escaped;

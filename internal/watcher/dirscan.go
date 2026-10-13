@@ -6,7 +6,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+
+	"github.com/erickgnclvs/moomux/internal/prompt"
 )
 
 // dirScanner is scanDir plus a per-file parse cache keyed by mtime+size, so
@@ -42,6 +45,10 @@ type cachedParse struct {
 	size    int64
 	rs      rawSession
 	err     error
+	// For an idle session scanned with transcripts: the transcript's stat
+	// when asks was computed, and whether its last message asked a question.
+	tModNano, tSize int64
+	asks            bool
 }
 
 // scan reads dir for *.json session/marker files, classifies each, and
@@ -52,7 +59,10 @@ type cachedParse struct {
 // of per-file failures) leaves states populated with everything that did
 // parse, so one half-written file doesn't blind the caller to every other
 // session in the directory.
-func (d *dirScanner) scan(dir string) (states map[string]State, readErr, parseErr error) {
+//
+// transcripts, when set, is Claude Code's ~/.claude/projects: an idle
+// session whose transcript ends by asking a question reads NeedsInput.
+func (d *dirScanner) scan(dir, transcripts string) (states map[string]State, readErr, parseErr error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err, nil
@@ -68,19 +78,31 @@ func (d *dirScanner) scan(dir string) (states map[string]State, readErr, parseEr
 	var parseErrs []error
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || filepath.Ext(name) != ".json" {
+		// <session-id>.notify.json are the needs-input markers older moomux
+		// versions wrote here from Claude Code hooks. claudehook.RemoveHooks
+		// deletes them; until it has run they'd pin a worktree at NeedsInput
+		// long after the session that wrote them ended.
+		if e.IsDir() || filepath.Ext(name) != ".json" || strings.HasSuffix(name, ".notify.json") {
 			continue
 		}
 		got := d.parse(dir, name, e)
-		next[name] = got
 		if got.err != nil {
+			next[name] = got
 			parseErrs = append(parseErrs, fmt.Errorf("parse %s: %w", name, got.err))
 			continue
 		}
 		if got.rs.CWD == "" {
+			next[name] = got
 			continue
 		}
 		st := classify(got.rs)
+		if st == Done && transcripts != "" && got.rs.SessionID != "" {
+			got = question(got, transcripts)
+			if got.asks {
+				st = NeedsInput
+			}
+		}
+		next[name] = got
 		if prev, ok := states[got.rs.CWD]; !ok || st > prev {
 			states[got.rs.CWD] = st
 		}
@@ -109,4 +131,24 @@ func (d *dirScanner) parse(dir, name string, e fs.DirEntry) cachedParse {
 	}
 	rs, perr := parseFile(filepath.Join(dir, name))
 	return cachedParse{modNano: mod, size: size, rs: rs, err: perr}
+}
+
+// question refreshes got.asks when the session's transcript has changed
+// since it was last read. Claude Code writes "idle" to the session file
+// ~100ms before the turn's last message reaches the transcript, so the scan
+// that sees "idle" usually reads the turn before. Keying on the transcript's
+// stat is what lets a later scan (DirWatcher's settle rescan, or any other)
+// pick the new message up, even though the session file hasn't changed.
+func question(got cachedParse, transcripts string) cachedParse {
+	path := filepath.Join(transcripts, prompt.EncodeCwd(got.rs.CWD), got.rs.SessionID+".jsonl")
+	info, err := os.Stat(path)
+	if err != nil {
+		got.tModNano, got.tSize, got.asks = 0, 0, false
+		return got
+	}
+	mod, size := info.ModTime().UnixNano(), info.Size()
+	if mod != got.tModNano || size != got.tSize {
+		got.tModNano, got.tSize, got.asks = mod, size, asksQuestion(path)
+	}
+	return got
 }

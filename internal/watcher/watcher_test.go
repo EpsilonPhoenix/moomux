@@ -38,6 +38,11 @@ func TestClassifyStatusFields(t *testing.T) {
 	if classify(rawSession{State: "busy"}) != Working {
 		t.Fatal("state busy")
 	}
+	// Claude Code's own "blocked on a dialog" status (permission prompt,
+	// AskUserQuestion, …) — not an idle synonym.
+	if got := classify(rawSession{Status: "waiting"}); got != NeedsInput {
+		t.Fatalf("status waiting: got %v, want NeedsInput", got)
+	}
 }
 
 func TestWatcherTickEmitsSnapshot(t *testing.T) {
@@ -127,17 +132,16 @@ func TestClassifyNeedsInput(t *testing.T) {
 	}
 }
 
-func TestWatcherTickNeedsInputWinsOverStaleBusy(t *testing.T) {
-	// The claudehook marker file and Claude's own <pid>.json can disagree
-	// within the same tick (e.g. a Notification hook fired but the native
-	// status file hasn't caught up yet) — NeedsInput must win so a stale
-	// "busy" write never hides it.
+// Older moomux versions wrote needs-input markers into Claude's session dir
+// from hooks, and nothing removed one when its session ended. A leftover
+// must not pin the worktree at NeedsInput while a new session there works.
+func TestWatcherIgnoresLeftoverClaudeMarkers(t *testing.T) {
 	dir := t.TempDir()
 	writeJSON(t, filepath.Join(dir, "pid.json"), map[string]any{
 		"cwd":    "/tmp/wt-a",
 		"status": "busy",
 	})
-	writeJSON(t, filepath.Join(dir, "sess.notify.json"), map[string]any{
+	writeJSON(t, filepath.Join(dir, "old-sess.notify.json"), map[string]any{
 		"cwd":    "/tmp/wt-a",
 		"status": "needs-input",
 	})
@@ -150,8 +154,8 @@ func TestWatcherTickNeedsInputWinsOverStaleBusy(t *testing.T) {
 
 	select {
 	case snap := <-ch:
-		if got := snap.States["/tmp/wt-a"]; got != NeedsInput {
-			t.Fatalf("got %v, want NeedsInput", got)
+		if got := snap.States["/tmp/wt-a"]; got != Working {
+			t.Fatalf("got %v, want Working", got)
 		}
 	case <-ctx.Done():
 		t.Fatal("no snapshot received")

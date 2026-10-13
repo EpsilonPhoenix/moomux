@@ -29,8 +29,8 @@ import (
 // internal/watcher's max-merge (NeedsInput outranks Done) would make Done
 // unreachable for Codex sessions — every finished turn would show
 // needs-input until the next message. Tried and reverted the identical
-// mistake on claudehook's side first (see its doc comment) before removing
-// this. Left as a known gap rather than reintroducing that.
+// mistake for Claude first (ee3095b) before removing this. Left as a known
+// gap rather than reintroducing that.
 //
 // This is global rather than per-worktree deliberately: Codex requires
 // explicitly trusting a hook file via `/hooks` before it runs (its trust

@@ -18,9 +18,8 @@ import (
 // nested under a top-level "projects" object (root.projects[dir]), not at
 // root[dir] directly — the latter looks plausible but Claude Code never
 // reads it, so the dialog would still show despite this having "run
-// successfully". Unlike EnsureHooksInstalled's settings.json, this only
-// ever touches the entry for dir — every other project's trust state is
-// left untouched.
+// successfully". This only ever touches the entry for dir — every other
+// project's trust state is left untouched.
 func TrustDirectory(home, dir string) error {
 	path := filepath.Join(home, ".claude.json")
 

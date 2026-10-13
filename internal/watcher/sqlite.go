@@ -170,7 +170,7 @@ func (w *SQLiteWatcher) tick(ctx context.Context, out chan<- Snapshot, activeAge
 		}
 	}
 	if w.MarkerDir != "" {
-		markerStates, readErr, parseErr := w.markerScanner.scan(w.MarkerDir)
+		markerStates, readErr, parseErr := w.markerScanner.scan(w.MarkerDir, "")
 		if readErr != nil && !os.IsNotExist(readErr) {
 			// A missing MarkerDir just means no hook has ever fired yet —
 			// not an error.

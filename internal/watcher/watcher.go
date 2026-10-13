@@ -16,9 +16,10 @@ const (
 	Parked
 	Done
 	Working
-	// NeedsInput means the agent is blocked on the user: a permission
-	// prompt, an idle-prompt timeout, or similar. Ranked above Working so a
-	// stale "busy" write from the agent's own status file never hides it.
+	// NeedsInput means the agent is waiting on the user: a permission prompt
+	// or other dialog, or a finished turn that ended by asking a question.
+	// Ranked above Working so a stale "busy" write from the agent's own
+	// status file never hides a needs-input marker (see codexhook).
 	NeedsInput
 )
 
@@ -86,13 +87,17 @@ type Watcher interface {
 type DirWatcher struct {
 	Dir      string
 	Interval time.Duration
+	// Transcripts is Claude Code's ~/.claude/projects. When set, an idle
+	// session whose last message asks a question reads NeedsInput rather
+	// than Done (see dirScanner.scan).
+	Transcripts string
 
 	scanner dirScanner
 }
 
 func (w *DirWatcher) tick(ctx context.Context, out chan<- Snapshot) {
 	snap := Snapshot{PollTime: time.Now()}
-	states, readErr, parseErr := w.scanner.scan(w.Dir)
+	states, readErr, parseErr := w.scanner.scan(w.Dir, w.Transcripts)
 	if readErr != nil {
 		snap.States = map[string]State{}
 		snap.Err = fmt.Errorf("read %s: %w", w.Dir, readErr)
