@@ -995,6 +995,24 @@ func TestCreateSessionBaseBranchOverride(t *testing.T) {
 	}
 }
 
+// A missing base branch is fixed wherever the name came from: the form's
+// base-branch field when the user typed one there, the project's settings
+// otherwise. Sending a form user to the settings had them fix the wrong thing.
+func TestCreateSessionMissingBaseBranchNamesTheField(t *testing.T) {
+	for _, tc := range []struct{ base, ref, want string }{
+		{"", "main", "project's settings"},
+		{"develpo", "develpo", "fix the base branch field"},
+	} {
+		a, git, _ := newTestApp(t, gitProject("/repo"))
+		noBranch(git, "feat")
+		git.failOn["rev-parse --verify --quiet origin/"+tc.ref+"^{commit}"] = true
+		_, _, err := a.createSession("demo", "feat", "", "", "", true, boolPtr(false), tc.base, "", "")
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("base %q: err = %v, want it to mention %q", tc.base, err, tc.want)
+		}
+	}
+}
+
 func TestCreateSessionExistingBranch(t *testing.T) {
 	a, git, tm := newTestApp(t, gitProject("/repo"))
 	tm.out["list-panes -t ="+TmuxSessionName("demo:login-page", "login-page")+":^ -F #{pane_id}"] = "%0\n"
