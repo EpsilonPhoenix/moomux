@@ -438,6 +438,44 @@ func TestNewSessionCreateErrorKeepsForm(t *testing.T) {
 	}
 }
 
+// The prompt survives every way off the form other than success: Esc, a
+// failed create, the TUI quitting mid-create. Only a create that succeeds
+// lets it go.
+func TestNewSessionPromptDraftSurvivesUntilCreated(t *testing.T) {
+	be := &fakeBackend{}
+	m := newTestModel(be)
+	m.draftPath = filepath.Join(t.TempDir(), "draft.txt")
+
+	m.Update(keyRune("n"))
+	m.promptInput.SetValue("a very long first prompt")
+	press(m, tea.KeyEsc)
+	m.Update(keyRune("n"))
+	if got := m.promptInput.Value(); got != "a very long first prompt" {
+		t.Fatalf("after Esc and reopen, prompt = %q", got)
+	}
+
+	// A second model reading the same file stands in for a restarted TUI.
+	be.createErr = errors.New("boom")
+	tabTo(t, m, newFormNameFocus)
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	again := newTestModel(&fakeBackend{})
+	again.draftPath = m.draftPath
+	again.Update(keyRune("n"))
+	if got := again.promptInput.Value(); got != "a very long first prompt" {
+		t.Fatalf("after a failed create, a fresh TUI's prompt = %q", got)
+	}
+
+	be.createErr = nil
+	run(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(be.createCalls) != 2 {
+		t.Fatalf("createCalls = %+v", be.createCalls)
+	}
+	m.Update(keyRune("n"))
+	if got := m.promptInput.Value(); got != "" {
+		t.Fatalf("after a successful create, prompt = %q, want empty", got)
+	}
+}
+
 // A blank name and branch with a prompt submits: the core names the session
 // after the prompt.
 func TestNewSessionBlankNameWithPromptSubmits(t *testing.T) {
