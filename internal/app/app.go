@@ -1142,6 +1142,13 @@ func (a *App) createSession(project, name, agent, existingBranch, ticket string,
 		}
 		if err != nil {
 			slog.Error("git worktree add failed", "repo", proj.Repo, "path", wt, "branch", branch, "err", err)
+			if errors.Is(err, gitwt.ErrBaseBranchNotFound) {
+				fix := "set a base branch that still exists in the project's settings"
+				if baseBranch != "" {
+					fix = fmt.Sprintf("fix the base branch field, or clear it to use the project's %q", proj.BaseBranch)
+				}
+				return session.Session{}, "", fmt.Errorf("%w — %s", err, fix)
+			}
 			return session.Session{}, "", fmt.Errorf("git worktree add: %w", err)
 		}
 		slog.Info("worktree added", "path", wt, "branch", branch)

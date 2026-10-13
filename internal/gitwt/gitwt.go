@@ -104,6 +104,11 @@ func (c *Client) Fetch(repoDir, baseBranch string) error {
 	return err
 }
 
+// ErrBaseBranchNotFound is AddWorktree's error for a base ref that resolves
+// to nothing. The caller says what to fix: only it knows whether the name
+// came from the project's settings or from the new-session form.
+var ErrBaseBranchNotFound = errors.New("not found")
+
 func (c *Client) AddWorktree(repoDir, worktreePath, branch, baseBranch string) error {
 	start := baseBranch
 	if c.HasRemote(repoDir, "origin") {
@@ -114,7 +119,7 @@ func (c *Client) AddWorktree(repoDir, worktreePath, branch, baseBranch string) e
 	// came from — git alone reports "fatal: invalid reference: origin/x",
 	// which reads as if the new branch name were the broken one.
 	if _, err := c.Runner.Run(repoDir, "rev-parse", "--verify", "--quiet", start+"^{commit}"); err != nil {
-		return fmt.Errorf("base branch %q not found (looked for %s) — set a base branch that still exists in the project's settings", baseBranch, start)
+		return fmt.Errorf("base branch %q %w (looked for %s)", baseBranch, ErrBaseBranchNotFound, start)
 	}
 	if c.BranchExists(repoDir, branch) {
 		// Usually a leftover from an orphaned worktree (branch survives,
