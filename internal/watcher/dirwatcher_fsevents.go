@@ -18,6 +18,13 @@ const (
 	// session files back to back) into one rescan, so Run still emits one
 	// snapshot per change rather than one per file.
 	debounceWindow = 100 * time.Millisecond
+	// settleDelay is how long after an event-driven rescan Run looks once
+	// more, when it reads transcripts. Claude Code marks a session idle
+	// before that turn's last message reaches its transcript (77-98ms later,
+	// measured), so the rescan the "idle" write triggers usually reads the
+	// turn before; this one catches a question in the new message without
+	// waiting out fallbackInterval.
+	settleDelay = 500 * time.Millisecond
 )
 
 // Run watches Dir for filesystem events (kqueue) instead of polling it on a
@@ -74,7 +81,12 @@ func (w *DirWatcher) Run(ctx context.Context, out chan<- Snapshot) {
 				return
 			}
 			if debounce == nil {
-				debounce = time.AfterFunc(debounceWindow, func() { w.tick(ctx, out) })
+				debounce = time.AfterFunc(debounceWindow, func() {
+					w.tick(ctx, out)
+					if w.Transcripts != "" {
+						time.AfterFunc(settleDelay, func() { w.tick(ctx, out) })
+					}
+				})
 			} else {
 				debounce.Reset(debounceWindow)
 			}

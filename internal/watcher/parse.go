@@ -10,10 +10,11 @@ import (
 // rawSession captures the subset of fields moomux cares about from a
 // ~/.claude/sessions/*.json file. Schema is best-effort: missing fields are tolerated.
 type rawSession struct {
-	CWD    string `json:"cwd"`
-	Status string `json:"status"`
-	Busy   *bool  `json:"busy,omitempty"`
-	State  string `json:"state,omitempty"`
+	CWD       string `json:"cwd"`
+	SessionID string `json:"sessionId,omitempty"`
+	Status    string `json:"status"`
+	Busy      *bool  `json:"busy,omitempty"`
+	State     string `json:"state,omitempty"`
 }
 
 func parseFile(path string) (rawSession, error) {
@@ -45,11 +46,14 @@ func classify(rs rawSession) State {
 		return Done
 	}
 	switch {
-	case rs.Status == "needs-input":
+	// "waiting" is Claude Code blocked on a dialog: a permission prompt,
+	// AskUserQuestion, plan approval, an MCP elicitation (its session file's
+	// waitingFor says which). "needs-input" is codexhook's marker.
+	case rs.Status == "waiting", rs.Status == "needs-input":
 		return NeedsInput
 	case rs.Status == "busy", rs.Status == "working", rs.State == "busy":
 		return Working
-	case rs.Status == "idle", rs.Status == "waiting", rs.State == "idle":
+	case rs.Status == "idle", rs.State == "idle":
 		return Done
 	}
 	// A status we don't recognize is not evidence the session is idle —

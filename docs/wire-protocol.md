@@ -303,9 +303,10 @@ own timer, which catches three things no event can announce:
    GitHub. Outside moomux entirely.
 
 Where an event *does* exist, it's already used: the agent watchers are
-fsevents-driven on darwin with a debounce, and needs-input markers are
-written by installed agent hooks (`internal/claudehook`,
-`internal/codexhook`). The timer is a floor, not the primary signal.
+fsevents-driven on darwin with a debounce, Claude Code reports an open
+dialog in its own session file, and Codex's needs-input markers are written
+by installed hooks (`internal/codexhook`). The timer is a floor, not the
+primary signal.
 
 ## The pull channel
 

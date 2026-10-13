@@ -400,8 +400,9 @@ func (a *App) confirmLaunchCommandSubmitted(tmuxName, cmd string) {
 //
 // All of them are global rather than per-worktree/per-project: each agent's
 // own trust model would otherwise force re-approving hooks — or
-// re-discovering commands — on every new worktree (see
-// claudehook.EnsureHooksInstalled and codexhook.EnsureHooks for why).
+// re-discovering commands — on every new worktree (see codexhook.EnsureHooks
+// for why). Claude's needs-input entry removes rather than installs: Claude
+// Code reports that state itself now (see claudehook.RemoveHooks).
 var agentInstallers = []struct {
 	what string
 	// hintOnChange marks the entry whose changed=true produces the user-facing
@@ -411,7 +412,7 @@ var agentInstallers = []struct {
 	byAgent      map[string]func(home string) (changed bool, err error)
 }{
 	{"needs-input hook", true, map[string]func(string) (bool, error){
-		"claude": claudehook.EnsureHooksInstalled,
+		"claude": claudehook.RemoveHooks,
 		"codex":  codexhook.EnsureHooks,
 	}},
 	{"kill command", false, map[string]func(string) (bool, error){

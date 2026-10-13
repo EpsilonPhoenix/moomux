@@ -26,8 +26,8 @@ allowed-tools: Bash(moomux park:*)
 //
 // Custom commands live in the user's global commands dir so they're
 // available from every worktree with no per-project trust approval — unlike
-// claudehook's hooks, a custom command only ever runs when the user
-// explicitly types it, so Claude Code requires none.
+// a hook, a custom command only ever runs when the user explicitly types
+// it, so Claude Code requires none.
 func ensureCommand(home, name, body string) (changed bool, err error) {
 	path := filepath.Join(home, ".claude", "commands", name+".md")
 

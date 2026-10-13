@@ -148,8 +148,8 @@ func boolPtr(b bool) *bool { return &b }
 func newTestApp(t *testing.T, projects map[string]config.Project) (*App, *fakeGitRunner, *fakeTmuxRunner) {
 	t.Helper()
 	dir := t.TempDir()
-	// Both claudehook and codexhook's needs-input installers write into the
-	// real os.UserHomeDir() by design (global install — see their doc
+	// claudehook's hook cleanup and codexhook's installer both work on the
+	// real os.UserHomeDir() by design (global config — see their doc
 	// comments). Sandbox HOME so no test run touches the developer's actual
 	// ~/.claude/settings.json or ~/.codex/hooks.json.
 	t.Setenv("HOME", t.TempDir())
@@ -571,12 +571,33 @@ func TestCreateSessionBackgroundLeavesLastOpenedZero(t *testing.T) {
 	}
 }
 
-func TestCreateSessionInstallsClaudeHooks(t *testing.T) {
-	// Claude hooks install globally (see claudehook.EnsureHooksInstalled's
-	// doc comment), not per-worktree — newTestApp already sandboxes HOME so
-	// this doesn't touch the real developer's ~/.claude/settings.json.
+// oldClaudeHooks is a ~/.claude/settings.json as an older moomux left it:
+// its needs-input hooks next to one of the user's own.
+const oldClaudeHooks = `{"hooks": {
+	"Notification": [{"matcher": "permission_prompt|idle_prompt|agent_needs_input", "hooks": [{"type": "command", "command": "moomux hook claude set"}]}],
+	"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "moomux hook claude clear"}]}],
+	"Stop": [{"hooks": [{"type": "command", "command": "echo done"}]}]
+}}`
+
+func writeOldClaudeHooks(t *testing.T, home string) string {
+	t.Helper()
+	path := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(oldClaudeHooks), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestCreateSessionRemovesOldClaudeHooks(t *testing.T) {
+	// Claude's settings are global (see claudehook.RemoveHooks), not
+	// per-worktree — newTestApp already sandboxes HOME so this doesn't touch
+	// the real developer's ~/.claude/settings.json.
 	a, git, tm := newTestApp(t, gitProject("/repo"))
 	home, _ := os.UserHomeDir()
+	path := writeOldClaudeHooks(t, home)
 	tn := TmuxSessionName("demo:feat", "feat")
 	tm.out["list-panes -t ="+tn+":^ -F #{pane_id}"] = "%0\n"
 	noBranch(git, "feat")
@@ -584,12 +605,15 @@ func TestCreateSessionInstallsClaudeHooks(t *testing.T) {
 	if _, _, err := a.createSession("demo", "feat", "claude", "", "", true, boolPtr(false), "", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
+	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("expected ~/.claude/settings.json to be written: %v", err)
+		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "moomux hook claude set") || !strings.Contains(string(data), "moomux hook claude clear") {
-		t.Fatalf("settings.json missing moomux hooks: %s", data)
+	if strings.Contains(string(data), "moomux hook claude") {
+		t.Errorf("settings.json still has moomux hooks: %s", data)
+	}
+	if !strings.Contains(string(data), "echo done") {
+		t.Errorf("settings.json lost the user's own hook: %s", data)
 	}
 }
 
@@ -1305,10 +1329,10 @@ func TestOpenSessionDeadAllocatesOpenCodePort(t *testing.T) {
 
 func TestOpenSessionCwdMismatchRecreates(t *testing.T) {
 	a, _, tm := newTestApp(t, gitProject("/repo"))
-	// This session's agent defaults to claude, so OpenSession's needs-input
-	// hook repair (see repairNeedsInputHooks) will run and write to the
-	// sandboxed HOME's ~/.claude/settings.json (see newTestApp) — harmless
-	// here since this test only cares about tmux recreation.
+	// This session's agent defaults to claude, so OpenSession's agent
+	// support repair (see repairAgentSupport) will run against the sandboxed
+	// HOME (see newTestApp) — harmless here since this test only cares about
+	// tmux recreation.
 	wt := filepath.Join(t.TempDir(), "feat")
 	_ = a.Store.Put(session.Session{ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat", WorktreePath: wt})
 	tn := TmuxSessionName("demo:feat", "feat")
@@ -1387,12 +1411,19 @@ func TestOpenSessionDeadRecreatesWithDangerousFlag(t *testing.T) {
 	}
 }
 
-func TestOpenSessionRepairsMissingClaudeHooks(t *testing.T) {
-	// Claude hooks install globally (see claudehook.EnsureHooksInstalled's
-	// doc comment), not per-worktree — newTestApp already sandboxes HOME so
-	// this doesn't touch the real developer's ~/.claude/settings.json.
+// TestOpenSessionRemovesOldClaudeHooks covers the upgrade path: a session
+// created by an older moomux, whose hooks and markers are still on disk.
+func TestOpenSessionRemovesOldClaudeHooks(t *testing.T) {
 	a, _, tm := newTestApp(t, gitProject("/repo"))
 	home, _ := os.UserHomeDir()
+	path := writeOldClaudeHooks(t, home)
+	marker := filepath.Join(home, ".claude", "sessions", "sess1.notify.json")
+	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte(`{"cwd":"/wt/a","status":"needs-input"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	wt := filepath.Join(t.TempDir(), "feat")
 	_ = a.Store.Put(session.Session{
 		ID: "demo:feat", Project: "demo", Name: "feat", TmuxSession: "moomux-feat",
@@ -1400,16 +1431,18 @@ func TestOpenSessionRepairsMissingClaudeHooks(t *testing.T) {
 	})
 	tm.out["list-panes -t =moomux-feat:^ -F #{pane_current_path}"] = wt + "\n"
 
-	// Session predates the needs-input feature: no ~/.claude/settings.json yet.
 	if _, err := a.OpenSession("demo:feat"); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
+	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("expected OpenSession to backfill ~/.claude/settings.json: %v", err)
+		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "moomux hook claude set") {
-		t.Fatalf("settings.json missing moomux hooks: %s", data)
+	if strings.Contains(string(data), "moomux hook claude") {
+		t.Errorf("settings.json still has moomux hooks: %s", data)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Errorf("old marker not removed: stat err = %v", err)
 	}
 }
 
