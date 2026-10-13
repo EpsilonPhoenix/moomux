@@ -51,11 +51,13 @@ func TestFirstSkipsNoise(t *testing.T) {
 		`{"type":"user","timestamp":"2026-01-01T00:00:01Z","message":{"role":"user","content":[{"type":"tool_result"}]}}`,
 		userLine("2026-01-01T00:00:02Z", "╭ banner box"),
 		userLine("2026-01-01T00:00:03Z", "<command-name>/help</command-name>"),
+		`{"type":"user","isMeta":true,"timestamp":"2026-01-01T00:00:03Z","message":{"role":"user","content":"<local-command-caveat>The command below was run directly</local-command-caveat>"}}`,
+		userLine("2026-01-01T00:00:03Z", "<local-command-stdout>Set model to Opus</local-command-stdout>"),
 		userLine("2026-01-01T00:00:04Z", "   "),
 		userLine("2026-01-01T00:00:05Z", "fix the login bug"),
 		userLine("2026-01-01T00:00:06Z", "second prompt"),
 	)
-	if got := First(home, wt); got != "fix the login bug" {
+	if got := First(home, wt, time.Time{}); got != "fix the login bug" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -71,7 +73,7 @@ func TestFirstPicksEarliestTimestampAcrossFiles(t *testing.T) {
 	if err := os.Chtimes(orig, old, old); err != nil {
 		t.Fatal(err)
 	}
-	if got := First(home, wt); got != "original prompt" {
+	if got := First(home, wt, time.Time{}); got != "original prompt" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -89,13 +91,13 @@ func TestFirstEmptyTimestampNeverOverridesARealOne(t *testing.T) {
 	}
 	writeJSONL(t, home, wt, "notime.jsonl", userLine("", "notime prompt"))
 
-	if got := First(home, wt); got != "timed prompt" {
+	if got := First(home, wt, time.Time{}); got != "timed prompt" {
 		t.Fatalf("got %q, want the real-timestamped prompt to survive", got)
 	}
 }
 
 func TestFirstMissingDir(t *testing.T) {
-	if got := First(t.TempDir(), "/nope"); got != "" {
+	if got := First(t.TempDir(), "/nope", time.Time{}); got != "" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -129,9 +131,20 @@ func TestJSONLFilesByMtime(t *testing.T) {
 }
 
 func TestFirstInFileMissing(t *testing.T) {
-	ts, text := firstInFile(filepath.Join(t.TempDir(), "nope.jsonl"))
+	ts, text := firstInFile(filepath.Join(t.TempDir(), "nope.jsonl"), time.Time{})
 	if ts != "" || text != "" {
 		t.Fatalf("got %q %q", ts, text)
+	}
+}
+
+func TestFirstIgnoresPromptsBeforeSince(t *testing.T) {
+	home := t.TempDir()
+	wt := "/home/moo"
+	writeJSONL(t, home, wt, "other.jsonl", userLine("2026-09-15T21:36:08.492Z", "another session's prompt"))
+	writeJSONL(t, home, wt, "mine.jsonl", userLine("2026-10-08T22:27:52.345Z", "this session's prompt"))
+	since := time.Date(2026, 10, 8, 22, 27, 0, 0, time.UTC)
+	if got := First(home, wt, since); got != "this session's prompt" {
+		t.Fatalf("got %q", got)
 	}
 }
 
@@ -140,22 +153,22 @@ func TestForAgentDispatch(t *testing.T) {
 	wt := "/wt/demo/feat"
 	writeJSONL(t, home, wt, "a.jsonl", userLine("2026-01-01T00:00:00Z", "claude prompt"))
 
-	if got := ForAgent(home, "claude", wt); got != "claude prompt" {
+	if got := ForAgent(home, "claude", wt, time.Time{}); got != "claude prompt" {
 		t.Fatalf("claude: got %q", got)
 	}
-	if got := ForAgent(home, "", wt); got != "claude prompt" {
+	if got := ForAgent(home, "", wt, time.Time{}); got != "claude prompt" {
 		t.Fatalf("default: got %q", got)
 	}
 	// No opencode/codex databases exist under this home; both must return
 	// "" without error (they shell out to sqlite3, which fails on a
 	// missing file — and may not be installed at all).
-	if got := ForAgent(home, "opencode", wt); got != "" {
+	if got := ForAgent(home, "opencode", wt, time.Time{}); got != "" {
 		t.Fatalf("opencode: got %q", got)
 	}
-	if got := ForAgent(home, "codex", wt); got != "" {
+	if got := ForAgent(home, "codex", wt, time.Time{}); got != "" {
 		t.Fatalf("codex: got %q", got)
 	}
-	if got := ForAgent(home, "antigravity", wt); got != "" {
+	if got := ForAgent(home, "antigravity", wt, time.Time{}); got != "" {
 		t.Fatalf("antigravity: got %q", got)
 	}
 	// Deliberately no "agy" case: callers pass Session.AgentName(), which
