@@ -2,16 +2,21 @@
 package gitwt
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	pathpkg "path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/erickgnclvs/moomux/internal/filecap"
 )
 
 // runTimeout bounds every git subprocess execRunner spawns. Client methods
@@ -370,6 +375,10 @@ type Patch struct {
 	// (from their merge base), or HEAD when neither exists or shares
 	// history with it — in which case Text is uncommitted work only.
 	Base string
+	// Commit is the commit Text was taken against: that merge base, or
+	// HEAD's commit. ReadAt with it reads the patch's "before" side, and
+	// keeps reading the same one if the base branch moves on.
+	Commit string
 	// Truncated says Text was cut at a file boundary to stay under the
 	// limit.
 	Truncated bool
@@ -377,10 +386,9 @@ type Patch struct {
 
 // Diff is everything in dir not yet on base, as one raw patch: `git diff
 // --merge-base` (commits since the merge base and uncommitted work alike)
-// with every untracked, non-ignored file in it as a new file. The ref is
-// resolved the way the review window does it — origin/<base>, then <base>,
-// then HEAD — except that one sharing no history with HEAD is skipped too,
-// rather than failing the whole diff.
+// with every untracked, non-ignored file in it as a new file. The base is
+// resolved by BaseCommit, and the diff is taken against the commit it
+// answers.
 //
 // Untracked files are marked intent-to-add (`add -N`) in a throwaway copy
 // of the index, so one diff process covers them and a file moved without
@@ -398,17 +406,11 @@ type Patch struct {
 // Not through Runner: that returns stderr folded into stdout, and a warning
 // git prints mid-diff would land inside the patch.
 func Diff(dir, base string, limit int) (Patch, error) {
-	if err := IsRepo(dir); err != nil {
+	ref, commit, err := BaseCommit(dir, base)
+	if err != nil {
 		return Patch{}, err
 	}
-	p := Patch{Base: "HEAD"}
-	against := []string{"HEAD"}
-	for _, ref := range []string{"origin/" + base, base} {
-		if _, _, err := gitStdout(dir, nil, 0, "merge-base", ref, "HEAD"); err == nil {
-			p.Base, against = ref, []string{"--merge-base", ref}
-			break
-		}
-	}
+	p := Patch{Base: ref, Commit: commit}
 	index, err := scratchIndex(dir)
 	if err != nil {
 		return Patch{}, err
@@ -434,8 +436,11 @@ func Diff(dir, base string, limit int) (Patch, error) {
 			return Patch{}, err
 		}
 	}
-	args := append([]string{"-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "-M",
-		"--src-prefix=a/", "--dst-prefix=b/"}, against...)
+	// The commit itself, not --merge-base <ref>: the ref can move between
+	// resolving it and diffing, and Commit must be what Text came from.
+	// It is git's own hex output, so it can't parse as a flag.
+	args := []string{"-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "-M",
+		"--src-prefix=a/", "--dst-prefix=b/", commit}
 	// limit+1 so a patch of exactly limit bytes isn't mistaken for a cut one.
 	out, over, err := gitStdout(dir, env, limit+1, args...)
 	if err != nil {
@@ -446,6 +451,131 @@ func Diff(dir, base string, limit int) (Patch, error) {
 		p.Text = cutAtFile(out, limit)
 	}
 	return p, nil
+}
+
+// BaseCommit resolves base for Diff, ReadAt's callers and the review
+// window — origin/<base>, then <base>, then HEAD — and answers the ref it settled on
+// and the commit a diff against it starts from: the ref's merge base with
+// HEAD, or HEAD's own commit. A ref sharing no history with HEAD has no
+// merge base and is skipped, rather than failing the diff. A dir that isn't
+// a git repo wraps ErrNotGitRepo.
+func BaseCommit(dir, base string) (ref, commit string, err error) {
+	if err := IsRepo(dir); err != nil {
+		return "", "", err
+	}
+	for _, ref := range []string{"origin/" + base, base} {
+		if out, _, err := gitStdout(dir, nil, 0, "merge-base", ref, "HEAD"); err == nil {
+			return ref, strings.TrimSpace(out), nil
+		}
+	}
+	out, _, err := gitStdout(dir, nil, 0, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return "", "", fmt.Errorf("no commit to diff against: %s", reason(err))
+	}
+	return "HEAD", strings.TrimSpace(out), nil
+}
+
+// commitID is a full commit id, SHA-1 or SHA-256. ReadAt takes nothing
+// looser: a ref name or an expression could start with "-" and read as an
+// option, and the only commit a client has to pass is one Diff gave it.
+var commitID = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
+
+// ReadAt is path's content in commit: with a Patch's Commit, the "before"
+// side of that patch. path is repo-relative, as the patch's a/ side names
+// it. found is false, with no error, when commit has nothing at path — a
+// file the patch adds. A symlink reads as its target, as the patch shows
+// it; a directory, a submodule or a path inside one is an error. A blob
+// over limit bytes is an error, judged by its size before it is read, and
+// worded by filecap.TooBig. Only objects are read: the worktree and its
+// index are never touched. Errors are fit to show a user: no git argv, no
+// paths beyond the one asked for. A dir that isn't a git repo wraps
+// ErrNotGitRepo.
+func ReadAt(dir, commit, path string, limit int64) (data []byte, found bool, err error) {
+	if err := IsRepo(dir); err != nil {
+		return nil, false, err
+	}
+	if !commitID.MatchString(commit) {
+		return nil, false, fmt.Errorf("%q is not a commit id", commit)
+	}
+	if path == "" || path == "." || strings.HasPrefix(path, "/") || pathpkg.Clean(path) != path ||
+		path == ".." || strings.HasPrefix(path, "../") {
+		return nil, false, fmt.Errorf("%q is not a path inside the repository", path)
+	}
+	entries, err := lsTree(dir, commit, path)
+	if err != nil {
+		// Asked only on failure: the likely cause, said plainly.
+		if _, _, e := gitStdout(dir, nil, 0, "cat-file", "-e", commit+"^{commit}"); e != nil {
+			return nil, false, fmt.Errorf("commit %.7s is not in this repository", commit)
+		}
+		return nil, false, fmt.Errorf("couldn't read %s at %.7s: %s", path, commit, reason(err))
+	}
+	e, ok := entries[path]
+	if !ok {
+		// Nothing at path, or path is inside a submodule, which lists
+		// nothing for anything under it. Only a parent's own entry tells
+		// the two apart, so a miss asks about the parents too.
+		var parents []string
+		for p := pathpkg.Dir(path); p != "."; p = pathpkg.Dir(p) {
+			parents = append(parents, p)
+		}
+		if len(parents) == 0 {
+			return nil, false, nil
+		}
+		entries, err := lsTree(dir, commit, parents...)
+		if err != nil {
+			return nil, false, fmt.Errorf("couldn't read %s at %.7s: %s", path, commit, reason(err))
+		}
+		for name, e := range entries {
+			if e.typ == "commit" && strings.HasPrefix(path, name+"/") {
+				return nil, false, fmt.Errorf("%s is inside the submodule %s", path, name)
+			}
+		}
+		return nil, false, nil
+	}
+	switch e.typ {
+	case "blob":
+	case "tree":
+		return nil, false, fmt.Errorf("%s is a directory", path)
+	default:
+		return nil, false, fmt.Errorf("%s is a submodule", path)
+	}
+	size, err := strconv.ParseInt(e.size, 10, 64)
+	if err != nil {
+		return nil, false, fmt.Errorf("couldn't read %s at %.7s: size %q", path, commit, e.size)
+	}
+	if size > limit {
+		return nil, false, filecap.TooBig(size, limit)
+	}
+	// size+1: read into one allocation of the right size; a blob is
+	// immutable, so it is never over.
+	blob, _, err := gitOut(dir, nil, int(size)+1, "cat-file", "blob", e.object)
+	if err != nil {
+		return nil, false, fmt.Errorf("couldn't read %s at %.7s: %s", path, commit, reason(err))
+	}
+	return blob, true, nil
+}
+
+// treeEntry is one line of `git ls-tree -l`.
+type treeEntry struct{ typ, object, size string }
+
+// lsTree is commit's entries for paths, keyed by name: each path's own
+// entry, and whatever else ls-tree lists alongside them. --literal-pathspecs
+// so a name like ":(glob)*" is only itself.
+func lsTree(dir, commit string, paths ...string) (map[string]treeEntry, error) {
+	args := append([]string{"--literal-pathspecs", "ls-tree", "-z", "-l", "--full-tree", commit, "--"}, paths...)
+	out, _, err := gitStdout(dir, nil, 0, args...)
+	if err != nil {
+		return nil, err
+	}
+	entries := map[string]treeEntry{}
+	// "<mode> <type> <object> <size>\t<name>\x00" per entry.
+	for _, line := range strings.Split(strings.TrimSuffix(out, "\x00"), "\x00") {
+		meta, name, _ := strings.Cut(line, "\t")
+		if f := strings.Fields(meta); len(f) == 4 {
+			entries[name] = treeEntry{typ: f[1], object: f[2], size: f[3]}
+		}
+	}
+	return entries, nil
 }
 
 // scratchIndex copies dir's index to a new file beside it and returns the
@@ -511,7 +641,16 @@ func cutAtFile(patch string, limit int) string {
 // returns its stdout alone. With max > 0 it
 // reads at most max bytes and reports over — and stops git, rather than
 // buffering a generated file's worth of patch — once there would be more.
+// A failed run is a *gitError.
 func gitStdout(dir string, env []string, max int, args ...string) (out string, over bool, err error) {
+	data, over, err := gitOut(dir, env, max, args...)
+	return string(data), over, err
+}
+
+// gitOut is gitStdout as bytes. With max > 0 its buffer is sized for max
+// bytes up front, so a caller that knows the output's size (ReadAt, from
+// ls-tree) passes size+1 and the output is read into one allocation.
+func gitOut(dir string, env []string, max int, args ...string) (out []byte, over bool, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", args...)
@@ -524,23 +663,60 @@ func gitStdout(dir string, env []string, max int, args ...string) (out string, o
 	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return "", false, err
+		return nil, false, err
 	}
 	if err := cmd.Start(); err != nil {
-		return "", false, err
+		return nil, false, err
 	}
 	var r io.Reader = stdout
+	var buf bytes.Buffer
 	if max > 0 {
 		r = io.LimitReader(stdout, int64(max))
+		// MinRead more, or ReadFrom grows the buffer for its last read.
+		buf.Grow(max + bytes.MinRead)
 	}
-	data, readErr := io.ReadAll(r)
+	_, readErr := buf.ReadFrom(r)
+	data := buf.Bytes()
 	if over = max > 0 && len(data) >= max; over {
 		cancel() // killed on purpose; its exit status means nothing now
 		_ = cmd.Wait()
-		return string(data), true, nil
+		return data, true, nil
 	}
 	if err := cmd.Wait(); err != nil {
-		return string(data), false, fmt.Errorf("git %v in %s: %w (%s)", args, dir, err, strings.TrimSpace(stderr.String()))
+		msg := strings.TrimSpace(stderr.String())
+		reason := strings.TrimPrefix(msg[strings.LastIndex(msg, "\n")+1:], "fatal: ")
+		switch {
+		case ctx.Err() != nil:
+			reason = "git timed out"
+		case reason == "":
+			reason = "git " + err.Error()
+		}
+		return data, false, &gitError{
+			msg:    fmt.Sprintf("git %v in %s: %v (%s)", args, dir, err, msg),
+			reason: reason,
+			err:    err,
+		}
 	}
-	return string(data), false, readErr
+	return data, false, readErr
+}
+
+// gitError is a failed git run. Error is the whole story — argv, dir,
+// stderr — for a log. reason is git's own last line of complaint, or that
+// it timed out, without the paths and flags: fit to show someone who never
+// typed the command.
+type gitError struct {
+	msg, reason string
+	err         error
+}
+
+func (e *gitError) Error() string { return e.msg }
+func (e *gitError) Unwrap() error { return e.err }
+
+// reason is err's gitError reason, or err itself when it isn't one.
+func reason(err error) string {
+	var ge *gitError
+	if errors.As(err, &ge) {
+		return ge.reason
+	}
+	return err.Error()
 }

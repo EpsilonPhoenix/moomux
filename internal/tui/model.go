@@ -88,6 +88,11 @@ type Backend interface {
 	// for a worktree that isn't a git repo. It never needs tmux, so a
 	// parked session diffs like a live one.
 	Diff(id string) (patch gitwt.Patch, ok bool, err error)
+	// ReadBaseFile is a repo-relative path's content at Diff's base — the
+	// commit a Diff answered, or resolved afresh when commit is empty —
+	// for a front end showing a changed file before and after. ok is false
+	// for a file the base doesn't have. Not a TUI caller either.
+	ReadBaseFile(id, path, commit string) (data []byte, baseCommit string, ok bool, err error)
 	KillTmux(id string) error
 	SetSessionTags(id, ticket, pr string) (session.Session, error)
 	SetSessionPrompt(id, prompt string) (session.Session, error)

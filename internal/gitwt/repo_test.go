@@ -470,6 +470,126 @@ func TestDiffCutsAtAFileBoundary(t *testing.T) {
 	}
 }
 
+// Diff's Commit is the before side of its patch: ReadAt with it reads a
+// rename's old path and an edit's old content, and has nothing for a file
+// the patch adds.
+func TestReadAtReadsTheBeforeSideOfDiff(t *testing.T) {
+	dir := diffRepo(t)
+	p, err := Diff(dir, "main", 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mb, _ := ExecRunner().Run(dir, "merge-base", "main", "HEAD")
+	if p.Commit != strings.TrimSpace(mb) {
+		t.Fatalf("Commit = %q, want the merge base %q", p.Commit, mb)
+	}
+	for path, want := range map[string]string{"edited.txt": "one\n", "moved.txt": "moved "} {
+		data, found, err := ReadAt(dir, p.Commit, path, 1<<20)
+		if err != nil || !found || !strings.HasPrefix(string(data), want) {
+			t.Fatalf("ReadAt(%s) = %q found %v, err %v", path, data, found, err)
+		}
+	}
+	if data, found, err := ReadAt(dir, p.Commit, "old.txt", 1<<20); err != nil || !found || len(data) != 20*53 {
+		t.Fatalf("ReadAt(old.txt) = %d bytes found %v, err %v", len(data), found, err)
+	}
+	for _, path := range []string{"new.txt", "café.txt", "moved-unstaged.txt", "nope/deeper.txt"} {
+		if data, found, err := ReadAt(dir, p.Commit, path, 1<<20); err != nil || found || data != nil {
+			t.Fatalf("ReadAt(%s) = %q found %v, err %v; want not found, no error", path, data, found, err)
+		}
+	}
+	// Against HEAD, the before side is HEAD itself: the committed rename
+	// is already in it.
+	head, err := Diff(dir, "no-such-branch", 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := ReadAt(dir, head.Commit, "new.txt", 1<<20); err != nil || !found {
+		t.Fatalf("ReadAt(HEAD, new.txt) found %v, err %v", found, err)
+	}
+}
+
+func TestReadAtRefusals(t *testing.T) {
+	dir := diffRepo(t)
+	p, err := Diff(dir, "main", 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	git := func(args ...string) {
+		t.Helper()
+		args = append([]string{"-c", "user.name=moomux", "-c", "user.email=moomux@localhost"}, args...)
+		if out, err := ExecRunner().Run(dir, args...); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "docs", "a.md"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "big.bin"), make([]byte, 1<<20+1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "docs", "big.bin")
+	// A submodule: a gitlink entry, pointing at any commit.
+	git("update-index", "--add", "--cacheinfo", "160000,"+p.Commit+",sub")
+	git("commit", "-m", "docs")
+	head, _ := ExecRunner().Run(dir, "rev-parse", "HEAD")
+	head = strings.TrimSpace(head)
+	if data, found, err := ReadAt(dir, head, "docs/a.md", 1<<20); err != nil || !found || string(data) != "a\n" {
+		t.Fatalf("ReadAt(docs/a.md) = %q found %v, err %v", data, found, err)
+	}
+	// Exactly at the limit is in; the size check is not off by one.
+	if data, found, err := ReadAt(dir, head, "big.bin", 1<<20+1); err != nil || !found || len(data) != 1<<20+1 {
+		t.Fatalf("ReadAt(big.bin) = %d bytes found %v, err %v", len(data), found, err)
+	}
+	// A new file in a directory the base has is still just new.
+	if _, found, err := ReadAt(dir, head, "docs/new.md", 1<<20); found || err != nil {
+		t.Fatalf("ReadAt(docs/new.md) found %v, err %v; want not found", found, err)
+	}
+	for _, tc := range []struct{ commit, path, want string }{
+		{head, "docs", "is a directory"},
+		{head, "sub", "sub is a submodule"},
+		// Lists nothing for itself; only the gitlink above it says why.
+		{head, "sub/deep/x.go", "sub/deep/x.go is inside the submodule sub"},
+		{head, "big.bin", "1.1 MB is over the 1 MB limit"},
+		{"HEAD", "edited.txt", "not a commit id"},
+		{"--output=/tmp/x", "edited.txt", "not a commit id"},
+		{strings.Repeat("0", 40), "edited.txt", "commit 0000000 is not in this repository"},
+		{p.Commit, "", "not a path inside"},
+		{p.Commit, ".", "not a path inside"},
+		{p.Commit, "/etc/passwd", "not a path inside"},
+		{p.Commit, "../edited.txt", "not a path inside"},
+		{p.Commit, "./edited.txt", "not a path inside"},
+		{p.Commit, "docs/", "not a path inside"},
+	} {
+		if _, found, err := ReadAt(dir, tc.commit, tc.path, 1<<20); found || err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("ReadAt(%q, %q): found %v, err %v; want an error containing %q", tc.commit, tc.path, found, err, tc.want)
+		}
+	}
+}
+
+// A worktree that has gone is that, not a commit the repo lacks.
+func TestReadAtOnAMissingWorktreeIsErrNotGitRepo(t *testing.T) {
+	_, _, err := ReadAt(filepath.Join(t.TempDir(), "gone"), strings.Repeat("a", 40), "x.md", 1<<20)
+	if !errors.Is(err, ErrNotGitRepo) {
+		t.Fatalf("err = %v, want ErrNotGitRepo", err)
+	}
+}
+
+// A failed git run keeps the whole story in Error, for a log, and only
+// git's own reason in reason, for a user: no argv, no paths.
+func TestGitErrorReasonIsGitsOwnLine(t *testing.T) {
+	dir := diffRepo(t)
+	_, _, err := gitStdout(dir, nil, 0, "cat-file", "blob", strings.Repeat("0", 40))
+	if err == nil || !strings.Contains(err.Error(), dir) {
+		t.Fatalf("err = %v, want the full story", err)
+	}
+	if r := reason(err); r == "" || strings.Contains(r, dir) || strings.Contains(r, "[cat-file") || strings.HasPrefix(r, "fatal:") {
+		t.Fatalf("reason = %q, want git's line alone", r)
+	}
+}
+
 func TestDiffOnANonRepoIsErrNotGitRepo(t *testing.T) {
 	if _, err := Diff(t.TempDir(), "main", 1<<20); !errors.Is(err, ErrNotGitRepo) {
 		t.Fatalf("err = %v, want ErrNotGitRepo", err)

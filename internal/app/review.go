@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/erickgnclvs/moomux/internal/config"
+	"github.com/erickgnclvs/moomux/internal/filecap"
 	"github.com/erickgnclvs/moomux/internal/gitwt"
 	"github.com/erickgnclvs/moomux/internal/session"
 )
@@ -64,7 +65,6 @@ func (a *App) Review(id string) (string, error) {
 	if proj.IsPlain() {
 		return "", fmt.Errorf("%s is not a git project", s.Project)
 	}
-	base := reviewBase(s, proj)
 	// A review window needs a live tmux session to be added to, and both
 	// respawn-window and new-window fail on a parked one with nothing but an
 	// exit status. Deliberately *not* EnsureTmux, unlike Attach: reviving a
@@ -79,7 +79,13 @@ func (a *App) Review(id string) (string, error) {
 	} else if !live {
 		return "", fmt.Errorf("%s is parked; open it before reviewing", s.Name)
 	}
-	if err := a.Tmux.ReviewWindow(s.TmuxSession, s.WorktreePath, ReviewScript(base)); err != nil {
+	// Resolved here, by the same BaseCommit as Diff, so the window and a
+	// phone's patch never disagree about what the base is.
+	_, commit, err := gitwt.BaseCommit(s.WorktreePath, reviewBase(s, proj))
+	if err != nil {
+		return "", fmt.Errorf("review: %w", err)
+	}
+	if err := a.Tmux.ReviewWindow(s.TmuxSession, s.WorktreePath, ReviewScript(commit)); err != nil {
 		return "", fmt.Errorf("review window: %w", err)
 	}
 	return "Opened a review window in " + s.TmuxSession + ".", nil
@@ -157,30 +163,67 @@ func (a *App) Diff(id string) (gitwt.Patch, bool, error) {
 	return p, true, nil
 }
 
-// ReviewScript is the shell line a review window runs.
+// ReadBaseFile is path as it was at the base Diff diffs against — the
+// "before" side of a changed file, for a front end that renders both. path
+// is repo-relative, the patch's a/ side (a rename's old path). commit pins
+// the read to the Commit a Diff answered, so the base branch moving between
+// the two calls can't pair this with a different patch; empty resolves the
+// base afresh, exactly as Diff does. It answers the commit it read.
 //
-// `git diff --merge-base` is everything not yet on the base branch — commits
-// since the merge base *and* uncommitted work — in one command. `origin/`
-// first because a local base branch goes stale in a worktree checkout, then
-// the local one, then a plain `HEAD` diff for a project with neither. The
-// `git status` line is not decoration: untracked files are invisible to
+// ok is false, with no error, when the base has no such file — new or
+// untracked since. Like Diff it reads the repo and nothing else, so a
+// parked session works and nothing is revived; unlike Diff, a plain project
+// is an error, since there is no base to ask about.
+func (a *App) ReadBaseFile(id, path, commit string) ([]byte, string, bool, error) {
+	s, found := a.Store.Get(id)
+	if !found {
+		return nil, "", false, fmt.Errorf("unknown session %q", id)
+	}
+	proj, found := a.project(s.Project)
+	if !found {
+		return nil, "", false, fmt.Errorf("unknown project %q", s.Project)
+	}
+	if proj.IsPlain() {
+		return nil, "", false, fmt.Errorf("%s is not a git project", s.Project)
+	}
+	if commit == "" {
+		var err error
+		_, commit, err = gitwt.BaseCommit(s.WorktreePath, reviewBase(s, proj))
+		if errors.Is(err, gitwt.ErrNotGitRepo) {
+			return nil, "", false, fmt.Errorf("%s has no git worktree at %s", s.Name, s.WorktreePath)
+		}
+		if err != nil {
+			return nil, "", false, err
+		}
+	}
+	data, ok, err := gitwt.ReadAt(s.WorktreePath, commit, path, filecap.Max)
+	if errors.Is(err, gitwt.ErrNotGitRepo) {
+		// Diff answers ok=false here, but for this method ok=false means
+		// "new file", which would be a lie.
+		return nil, "", false, fmt.Errorf("%s has no git worktree at %s", s.Name, s.WorktreePath)
+	}
+	return data, commit, ok, err
+}
+
+// ReviewScript is the shell line a review window runs: the session's work
+// diffed against commit, which Review resolves with gitwt.BaseCommit.
+//
+// `git diff <merge base>` is everything not yet on the base branch —
+// commits since the merge base *and* uncommitted work — in one command.
+// The base is resolved before the window opens, never in the shell: a
+// paged diff exits 141 when the user quits the pager early, and a shell
+// fallback chain keyed on exit status once re-ran the diff and ended on
+// `git diff HEAD`, quietly showing uncommitted work only as the review.
+// The `git status` line is not decoration: untracked files are invisible to
 // every diff, an agent's new files are usually untracked, and `--branch`
 // guarantees at least one line of output so a clean worktree reads as
 // "nothing to review" rather than as a window that failed to run anything.
 //
-// Which ref exists is asked with rev-parse, not inferred from a diff's exit
-// status, because a paged diff exits 141 when the user quits the pager
-// early: a `||` chain re-ran the same diff against the local base and then
-// fell through to `git diff HEAD`, quietly showing uncommitted work only and
-// calling it the review — on exactly the large diffs the feature is for.
-//
 // No --color and no `| less`: output goes straight to a tty, so git colours
 // and pages it with the user's own pager. It ends in a shell so the window
 // survives the pager.
-func ReviewScript(base string) string {
-	return "b=$(git rev-parse --verify --quiet " + shellQuote("origin/"+base) +
-		" || git rev-parse --verify --quiet " + shellQuote(base) + ");" +
-		` if [ -n "$b" ]; then git diff --merge-base "$b"; else git diff HEAD; fi;` +
+func ReviewScript(commit string) string {
+	return "git diff " + shellQuote(commit) + ";" +
 		" git status --short --branch;" +
 		` exec "${SHELL:-/bin/sh}"`
 }

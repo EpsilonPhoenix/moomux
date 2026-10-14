@@ -9,19 +9,18 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"net"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"unicode"
 
 	"github.com/erickgnclvs/moomux/internal/config"
+	"github.com/erickgnclvs/moomux/internal/filecap"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/sessionview"
 	"github.com/erickgnclvs/moomux/internal/tui"
@@ -236,10 +235,9 @@ func (s *Server) handle(c net.Conn) {
 	}
 }
 
-// maxSaveFile caps one SaveFile upload. A phone photo is a few MB; this is
-// room for a short screen recording without letting a client fill the disk
-// in one call.
-const maxSaveFile = 32 << 20
+// maxSaveFile caps one SaveFile upload and one ReadFile read; ReadBaseFile
+// shares it through the same filecap.Max.
+const maxSaveFile = filecap.Max
 
 // maxRequest caps one request's JSON: a largest SaveFile, base64-inflated
 // by 4/3, plus room for the rest of the envelope.
@@ -264,7 +262,7 @@ func saveFile(tmp, name string, data []byte) (string, error) {
 		return "", errors.New("SaveFile: empty file")
 	}
 	if len(data) > maxSaveFile {
-		return "", fmt.Errorf("SaveFile: %s MB is over the %d MB limit", mb(int64(len(data))), maxSaveFile>>20)
+		return "", fmt.Errorf("SaveFile: %w", filecap.TooBig(int64(len(data)), maxSaveFile))
 	}
 	safe := strings.Map(func(r rune) rune {
 		if r < 128 && (unicode.IsLetter(r) || unicode.IsDigit(r) || r == '.' || r == '_' || r == '-') {
@@ -308,13 +306,6 @@ func saveFile(tmp, name string, data []byte) (string, error) {
 // path: the ":42" and ":7" of "Foo.swift:42:7", or the bare ":" that
 // compilers and rg print after it ("main.go:12:5: undefined: x").
 var lineSuffix = regexp.MustCompile(`:\d*$`)
-
-// mb is n bytes in megabytes, rounded up to one decimal place, so a size
-// just over a limit never reads as equal to it: "32.1 MB is over the 32 MB
-// limit", not "32 MB".
-func mb(n int64) string {
-	return strconv.FormatFloat(math.Ceil(float64(n)*10/(1<<20))/10, 'f', -1, 64)
-}
 
 // stripLocation drops a compiler/grep location from a path that isn't
 // there, one piece at a time — trailing ":", then ":col", then ":line" —
@@ -431,7 +422,7 @@ func readFile(bases, roots []string, path string) (string, []byte, error) {
 	}
 	defer f.Close()
 	if info.Size() > maxSaveFile {
-		return "", nil, fmt.Errorf("%s MB is over the %d MB limit", mb(info.Size()), maxSaveFile>>20)
+		return "", nil, filecap.TooBig(info.Size(), maxSaveFile)
 	}
 	// Limited in case the file grows between the Stat and the read.
 	data, err := io.ReadAll(io.LimitReader(f, maxSaveFile+1))
@@ -439,7 +430,7 @@ func readFile(bases, roots []string, path string) (string, []byte, error) {
 		return "", nil, readErr(path, err)
 	}
 	if len(data) > maxSaveFile {
-		return "", nil, fmt.Errorf("%s MB is over the %d MB limit", mb(int64(len(data))), maxSaveFile>>20)
+		return "", nil, filecap.TooBig(int64(len(data)), maxSaveFile)
 	}
 	return filepath.Join(root.Name(), rel), data, nil
 }
@@ -703,7 +694,10 @@ func (s *Server) dispatch(method string, a Args) (Result, error) {
 		return Result{}, b.SelectWindow(a.ID, a.Delta)
 	case "Diff":
 		p, ok, err := b.Diff(a.ID)
-		return Result{Patch: p.Text, Base: p.Base, Truncated: p.Truncated, OK: ok}, err
+		return Result{Patch: p.Text, Base: p.Base, Commit: p.Commit, Truncated: p.Truncated, OK: ok}, err
+	case "ReadBaseFile":
+		data, commit, ok, err := b.ReadBaseFile(a.ID, a.Path, a.Commit)
+		return Result{Data: data, Commit: commit, OK: ok}, fileErr(method, err)
 	case "ChangeSummary":
 		files, commits, ok := b.ChangeSummary(a.ID)
 		return Result{Files: files, Commits: commits, OK: ok}, nil

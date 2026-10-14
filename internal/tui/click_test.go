@@ -249,6 +249,9 @@ func (f *fakeBackend) WorktreeStatus(id string) (dirty, unpushed, ok bool) {
 	return st.dirty, st.unpushed, st.ok
 }
 func (f *fakeBackend) Diff(string) (gitwt.Patch, bool, error) { return gitwt.Patch{}, false, nil }
+func (f *fakeBackend) ReadBaseFile(string, string, string) ([]byte, string, bool, error) {
+	return nil, "", false, nil
+}
 func (f *fakeBackend) ChangeSummary(id string) (filesChanged, unpushedCommits int, ok bool) {
 	f.changeSummaryCalls = append(f.changeSummaryCalls, id)
 	st, present := f.changeSummary[id]

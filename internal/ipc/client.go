@@ -323,7 +323,16 @@ func (c *Client) SelectWindow(id string, delta int) error {
 
 func (c *Client) Diff(id string) (gitwt.Patch, bool, error) {
 	r, err := c.call("Diff", Args{ID: id})
-	return gitwt.Patch{Text: r.Patch, Base: r.Base, Truncated: r.Truncated}, r.OK, err
+	return gitwt.Patch{Text: r.Patch, Base: r.Base, Commit: r.Commit, Truncated: r.Truncated}, r.OK, err
+}
+
+// ReadBaseFile fetches a repo-relative path's content at session id's diff
+// base: commit (a Diff's Patch.Commit), or the base resolved afresh when
+// it's empty. It answers the commit read; ok is false for a file the base
+// doesn't have.
+func (c *Client) ReadBaseFile(id, path, commit string) ([]byte, string, bool, error) {
+	r, err := c.call("ReadBaseFile", Args{ID: id, Path: path, Commit: commit})
+	return r.Data, r.Commit, r.OK, err
 }
 
 func (c *Client) SetSessionTags(id, ticket, pr string) (session.Session, error) {
