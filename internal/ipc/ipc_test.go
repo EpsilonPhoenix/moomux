@@ -104,7 +104,25 @@ func (f *fakeBackend) SelectWindow(id string, delta int) error {
 func (f *fakeBackend) WorktreeStatus(string) (bool, bool, bool) { return true, false, true }
 func (f *fakeBackend) ChangeSummary(string) (int, int, bool)    { return 7, 3, true }
 func (f *fakeBackend) Diff(string) (gitwt.Patch, bool, error) {
-	return gitwt.Patch{Text: "diff --git a/x b/x\n+<T>&\n", Base: "origin/main", Truncated: true}, true, nil
+	return gitwt.Patch{Text: "diff --git a/x b/x\n+<T>&\n", Base: "origin/main", Commit: "abc123", Truncated: true}, true, nil
+}
+
+// ReadBaseFile answers path's name as its content, except "new.md" (not in
+// the base) and "empty.md" (in it, empty); an empty commit resolves to
+// "resolved".
+func (f *fakeBackend) ReadBaseFile(id, path, commit string) ([]byte, string, bool, error) {
+	if commit == "" {
+		commit = "resolved"
+	}
+	switch path {
+	case "new.md":
+		return nil, commit, false, nil
+	case "empty.md":
+		return nil, commit, true, nil
+	case "boom.md":
+		return nil, "", false, errors.New("boom.md is a directory")
+	}
+	return []byte(path), commit, true, nil
 }
 func (f *fakeBackend) PRStatus(string) (prstatus.Info, bool) {
 	return prstatus.Info{State: "OPEN", Mergeable: "MERGEABLE", CI: "PASSING"}, true
@@ -436,9 +454,29 @@ func TestRoundTrip(t *testing.T) {
 		if files, commits, ok := c.ChangeSummary("moomux:a"); files != 7 || commits != 3 || !ok {
 			t.Fatalf("ChangeSummary = %d %d %v, want 7 3 true", files, commits, ok)
 		}
-		want := gitwt.Patch{Text: "diff --git a/x b/x\n+<T>&\n", Base: "origin/main", Truncated: true}
+		want := gitwt.Patch{Text: "diff --git a/x b/x\n+<T>&\n", Base: "origin/main", Commit: "abc123", Truncated: true}
 		if p, ok, err := c.Diff("moomux:a"); p != want || !ok || err != nil {
 			t.Fatalf("Diff = %+v %v %v, want %+v, ok", p, ok, err, want)
+		}
+		// Found, found-but-empty and not-in-base each come back apart:
+		// an empty file's data is omitted on the wire, so ok carries it.
+		for _, tc := range []struct {
+			path, commit, wantData, wantCommit string
+			wantOK                             bool
+		}{
+			{"README.md", "abc123", "README.md", "abc123", true},
+			{"README.md", "", "README.md", "resolved", true},
+			{"empty.md", "abc123", "", "abc123", true},
+			{"new.md", "abc123", "", "abc123", false},
+		} {
+			data, commit, ok, err := c.ReadBaseFile("moomux:a", tc.path, tc.commit)
+			if string(data) != tc.wantData || commit != tc.wantCommit || ok != tc.wantOK || err != nil {
+				t.Fatalf("ReadBaseFile(%q, %q) = %q %q %v %v, want %q %q %v", tc.path, tc.commit,
+					data, commit, ok, err, tc.wantData, tc.wantCommit, tc.wantOK)
+			}
+		}
+		if _, _, _, err := c.ReadBaseFile("moomux:a", "boom.md", ""); err == nil || err.Error() != "ReadBaseFile: boom.md is a directory" {
+			t.Fatalf("ReadBaseFile err = %v", err)
 		}
 	})
 
@@ -880,27 +918,37 @@ func TestWatchNudgeInTheSamePacketAsTheRequest(t *testing.T) {
 	t.Fatal("nudge sent alongside the request never reached the source")
 }
 
-// Diff's wire shape is a contract with the Swift client, which decodes
-// these exact keys — pinned on the raw bytes, not through Client, which
-// would round-trip a renamed tag without noticing. A patch is mostly code,
-// so <, > and & must go out as themselves, not as six-byte \u003c escapes.
+// Diff's and ReadBaseFile's wire shapes are a contract with the Swift
+// client, which decodes these exact keys — pinned on the raw bytes, not
+// through Client, which would round-trip a renamed tag without noticing. A
+// patch is mostly code, so <, > and & must go out as themselves, not as
+// six-byte \u003c escapes.
 func TestDiffWireShape(t *testing.T) {
 	c, _ := start(t, &fakeBackend{}, &config.Config{}, nil)
-	conn, err := net.Dial("unix", c.Socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	if _, err := conn.Write([]byte(`{"method":"Diff","args":{"id":"moomux:a"}}` + "\n")); err != nil {
-		t.Fatal(err)
-	}
-	line, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := `{"result":{"ok":true,"patch":"diff --git a/x b/x\n+<T>&\n","base":"origin/main","truncated":true}}` + "\n"
-	if line != want {
-		t.Fatalf("Diff response\n got: %s\nwant: %s", line, want)
+	for _, tc := range []struct{ req, want string }{
+		{`{"method":"Diff","args":{"id":"moomux:a"}}`,
+			`{"result":{"ok":true,"patch":"diff --git a/x b/x\n+<T>&\n","base":"origin/main","commit":"abc123","truncated":true}}`},
+		{`{"method":"ReadBaseFile","args":{"id":"moomux:a","path":"hi","commit":"abc123"}}`,
+			`{"result":{"ok":true,"data":"aGk=","commit":"abc123"}}`},
+		// Not in the base: no ok, and no error.
+		{`{"method":"ReadBaseFile","args":{"id":"moomux:a","path":"new.md","commit":"abc123"}}`,
+			`{"result":{"commit":"abc123"}}`},
+	} {
+		conn, err := net.Dial("unix", c.Socket)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := conn.Write([]byte(tc.req + "\n")); err != nil {
+			t.Fatal(err)
+		}
+		line, err := bufio.NewReader(conn).ReadString('\n')
+		conn.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if line != tc.want+"\n" {
+			t.Fatalf("%s\n got: %s\nwant: %s", tc.req, line, tc.want)
+		}
 	}
 }
 

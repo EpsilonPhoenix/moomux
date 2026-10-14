@@ -11,46 +11,17 @@ import (
 	"github.com/erickgnclvs/moomux/internal/tmux"
 )
 
-// A branch name is nearly unconstrained, and this string is handed to tmux
-// to run through a shell — an unquoted one ends the command and runs the
-// rest.
-func TestReviewScriptQuotesTheBaseRef(t *testing.T) {
-	got := ReviewScript("a'b; rm -rf /")
-	for _, want := range []string{
-		`--quiet 'origin/a'\''b; rm -rf /'`,
-		`--quiet 'a'\''b; rm -rf /'`,
-		"git diff HEAD",
-		"git status --short --branch",
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("script missing %q:\n%s", want, got)
-		}
+// The review window diffs exactly the commit Review resolved: no shell
+// fallbacks keyed on a diff's exit status, which a pager quit early (141)
+// used to trip into showing `git diff HEAD` as the review. The commit is
+// quoted anyway; the script goes through a shell.
+func TestReviewScriptDiffsTheResolvedCommit(t *testing.T) {
+	got := ReviewScript("3f9c")
+	if !strings.HasPrefix(got, "git diff 3f9c; git status --short --branch;") || strings.Contains(got, "||") {
+		t.Fatalf("script:\n%s", got)
 	}
-}
-
-// origin/ first because a local base branch goes stale in a worktree
-// checkout; the local one and a bare HEAD diff are the fallbacks.
-func TestReviewScriptFallbackOrder(t *testing.T) {
-	got := ReviewScript("main")
-	origin, local, head := strings.Index(got, "origin/main"), strings.Index(got, "--quiet main"), strings.Index(got, "git diff HEAD")
-	if !(origin >= 0 && origin < local && local < head) {
-		t.Fatalf("wrong fallback order: %s", got)
-	}
-}
-
-// The fallback must key off whether the ref exists, never off a diff's exit
-// status: git exits 141 when the user quits the pager early, so a `||` chain
-// between the diffs silently re-ran and ended up showing `git diff HEAD` —
-// uncommitted work only — as the review.
-func TestReviewScriptDoesNotChainDiffsOnExitStatus(t *testing.T) {
-	got := ReviewScript("main")
-	if strings.Count(got, "git diff --merge-base") != 1 {
-		t.Fatalf("more than one merge-base diff to fall between:\n%s", got)
-	}
-	for _, cmd := range []string{"git diff --merge-base", "git diff HEAD"} {
-		if i := strings.Index(got, cmd); strings.Contains(got[i+len(cmd):], "||") {
-			t.Fatalf("a diff falls through on its exit status:\n%s", got)
-		}
+	if got := ReviewScript("a'b; echo pwned"); !strings.HasPrefix(got, `git diff 'a'\''b; echo pwned';`) {
+		t.Fatalf("unquoted:\n%s", got)
 	}
 }
 
@@ -110,14 +81,24 @@ func TestCaptureKeysBySessionIDAndSkipsUnknownIDs(t *testing.T) {
 }
 
 // The session's own base is what its branch was cut from; the project's is
-// the fallback for a resumed branch that never recorded one.
+// the fallback for a resumed branch that never recorded one. Either way the
+// window diffs the commit Diff would: their merge base.
 func TestReviewPrefersTheSessionBaseThenTheProjects(t *testing.T) {
+	wt := diffBaseRepo(t)
 	fr := &fakeTmuxRunner{}
 	a := newReviewApp(t, fr,
-		session.Session{ID: "proj:a", Project: "proj", TmuxSession: "moomux-a", WorktreePath: "/wt/a", BaseBranch: "release"},
-		session.Session{ID: "proj:b", Project: "proj", TmuxSession: "moomux-b", WorktreePath: "/wt/b"},
+		session.Session{ID: "proj:a", Project: "proj", TmuxSession: "moomux-a", WorktreePath: wt, BaseBranch: "trunk"},
+		session.Session{ID: "proj:b", Project: "proj", TmuxSession: "moomux-b", WorktreePath: wt},
 	)
-	for id, want := range map[string]string{"proj:a": "origin/release", "proj:b": "origin/trunk"} {
+	a.Cfg.Projects["proj"] = config.Project{Repo: wt, BaseBranch: "main"}
+	sha := func(ref string) string {
+		out, err := runGit(wt, "rev-parse", ref)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return "git diff " + strings.TrimSpace(out) + ";"
+	}
+	for id, want := range map[string]string{"proj:a": sha("trunk"), "proj:b": sha("main")} {
 		fr.calls = nil
 		if _, err := a.Review(id); err != nil {
 			t.Fatalf("%s: %v", id, err)
@@ -280,6 +261,71 @@ func TestDiffOnANonRepoIsNotOK(t *testing.T) {
 		}
 	}
 	if _, _, err := a.Diff("proj:nope"); err == nil {
+		t.Fatal("unknown session should error")
+	}
+}
+
+// ReadBaseFile reads at the base Diff resolves — the session's, then the
+// project's, then main — and, pinned to a Diff's Commit, at that commit
+// whatever the base branch has done since. A parked session is read
+// without asking tmux anything.
+func TestReadBaseFileReadsDiffsBase(t *testing.T) {
+	wt := diffBaseRepo(t)
+	fr := &fakeTmuxRunner{failOn: map[string]bool{"has-session -t =moomux-a": true}}
+	a := newReviewApp(t, fr,
+		session.Session{ID: "p:a", Project: "p", TmuxSession: "moomux-a", WorktreePath: wt, BaseBranch: "trunk"},
+		session.Session{ID: "p:b", Project: "p", WorktreePath: wt})
+	a.Cfg.Projects["p"] = config.Project{Repo: wt}
+
+	// Against trunk, trunk.txt is in the base; against main it is new.
+	p, _, err := a.Diff("p:a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, commit, ok, err := a.ReadBaseFile("p:a", "trunk.txt", "")
+	if err != nil || !ok || string(data) != "trunk\n" || commit != p.Commit {
+		t.Fatalf("ReadBaseFile(trunk) = %q %q %v %v, want trunk.txt at %s", data, commit, ok, err, p.Commit)
+	}
+	if _, _, ok, err := a.ReadBaseFile("p:b", "trunk.txt", ""); ok || err != nil {
+		t.Fatalf("ReadBaseFile(main, trunk.txt): ok %v, err %v; want not in the base", ok, err)
+	}
+	if _, _, ok, err := a.ReadBaseFile("p:a", "feat.txt", ""); ok || err != nil {
+		t.Fatalf("ReadBaseFile(untracked feat.txt): ok %v, err %v; want not in the base", ok, err)
+	}
+
+	// trunk moves on (here, by taking feat's work); the pinned read
+	// doesn't follow it, a fresh one does.
+	if err := os.WriteFile(filepath.Join(wt, "trunk.txt"), []byte("moved\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	id := []string{"-c", "user.name=moomux", "-c", "user.email=moomux@localhost"}
+	mustGit(t, wt, append(id, "commit", "-am", "edit")...)
+	mustGit(t, wt, "branch", "-f", "trunk", "HEAD")
+	if data, _, _, err := a.ReadBaseFile("p:a", "trunk.txt", p.Commit); err != nil || string(data) != "trunk\n" {
+		t.Fatalf("pinned ReadBaseFile = %q, err %v; want the commit Diff answered", data, err)
+	}
+	if data, commit, _, err := a.ReadBaseFile("p:a", "trunk.txt", ""); err != nil || string(data) != "moved\n" || commit == p.Commit {
+		t.Fatalf("fresh ReadBaseFile = %q at %s, err %v; want the moved base", data, commit, err)
+	}
+	if len(fr.calls) != 0 {
+		t.Fatalf("ReadBaseFile must not touch tmux, called %v", fr.calls)
+	}
+}
+
+func TestReadBaseFileErrors(t *testing.T) {
+	a := newReviewApp(t, &fakeTmuxRunner{},
+		session.Session{ID: "notes:a", Project: "notes", WorktreePath: t.TempDir()},
+		session.Session{ID: "proj:gone", Project: "proj", Name: "gone", WorktreePath: filepath.Join(t.TempDir(), "missing")})
+	// Not ok=false, as Diff answers: here that would read as "new file".
+	for _, commit := range []string{"", strings.Repeat("a", 40)} {
+		if _, _, ok, err := a.ReadBaseFile("proj:gone", "x.md", commit); ok || err == nil || !strings.Contains(err.Error(), "gone has no git worktree") {
+			t.Fatalf("missing worktree, commit %q: ok %v, err %v", commit, ok, err)
+		}
+	}
+	if _, _, _, err := a.ReadBaseFile("notes:a", "x.md", ""); err == nil {
+		t.Fatal("a plain project has no base; want an error")
+	}
+	if _, _, _, err := a.ReadBaseFile("proj:nope", "x.md", ""); err == nil {
 		t.Fatal("unknown session should error")
 	}
 }

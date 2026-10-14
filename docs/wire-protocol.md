@@ -345,7 +345,8 @@ as plain folder" dialog.
 ### Methods
 
 **Read** — `Config`, `Sessions`, `AgentOptions`, `Themes`, `GhosttyConfig`,
-`SuggestedProject`, `WorktreeStatus`, `ChangeSummary`, `Capture`, `Diff`.
+`SuggestedProject`, `WorktreeStatus`, `ChangeSummary`, `Capture`, `Diff`,
+`ReadBaseFile`.
 
 **Session lifecycle** — `CreateSession`, `EnsureTmux`, `DeleteSession`,
 `KillTmux` (park), `Review`, `SelectWindow`, `ResizeAttach` (see `Attach` below).
@@ -447,12 +448,16 @@ one tmux process whichever way. The rows come back unsplit: truncating them
 to a tile's width is a rendering decision and belongs to the client.
 
 `Review` takes `args.id` and opens (or reuses) a tmux window named `review`
-in that session, running `git diff --merge-base <base>` plus `git status
---short --branch`. It returns a `hint`. A tmux window and not a patch the
+in that session, running `git diff <commit>` plus `git status
+--short --branch`, where `<commit>` is the one `Diff` would answer (see
+"What `commit` says" below), resolved by the core before the window opens.
+It returns a `hint`. A tmux window and not a patch the
 client renders: the output reaches a real tty, so git colours and pages it
 with the user's own pager — a configured `delta` is honoured — and the window
 is somewhere to run `git add -p` from afterwards. The base is the session's
-own `base_branch`, falling back to the project's, falling back to `main`.
+own `base_branch`, falling back to the project's, falling back to `main`,
+resolved exactly as `Diff` resolves it, so the window and a phone's patch
+never disagree.
 Reuse is `respawn-window -k` then `select-window`, with `new-window` only
 when there was nothing to reuse: killing the last window of a session kills
 the session. Because it selects that window, everything else the core does
@@ -482,11 +487,11 @@ pane. With a remapped prefix those keys landed in the agent's prompt.
 
 `Review` needs a tty to put the diff on, and a phone has none, so `Diff`
 serves the same diff as data. It takes `args.id` and answers `result.ok`,
-`result.patch`, `result.base` and `result.truncated`:
+`result.patch`, `result.base`, `result.commit` and `result.truncated`:
 
 ```jsonc
 {"method": "Diff", "args": {"id": "moomux:a"}}
-{"result": {"ok": true, "patch": "diff --git a/x.go b/x.go\n…", "base": "origin/main", "truncated": false}}
+{"result": {"ok": true, "patch": "diff --git a/x.go b/x.go\n…", "base": "origin/main", "commit": "3f9c…a1e0", "truncated": false}}
 ```
 
 **What is in `patch`.** Raw `git diff` text, `diff --git` headers included,
@@ -509,6 +514,13 @@ project's, then `main` — and tried as `origin/<base>`, then `<base>`. When
 neither exists, or neither shares history with the branch, the diff falls
 back to `HEAD` and `base` is `"HEAD"`: the patch is then uncommitted work
 only, and a client should say so rather than label it "vs main".
+
+**What `commit` says.** The full id of the commit the patch was taken
+against: the merge base of `base` and the session's branch, or `HEAD`'s own
+commit in the fallback. The diff runs against that id, not against `base`
+by name, so the two always agree. It is there for `ReadBaseFile` below: pass
+it back and the "before" side is read from the same commit, even if the base
+branch has moved since.
 
 **Untracked files never touch the agent's index.** They are marked
 intent-to-add (`git add -N`) in a throwaway copy of the worktree's index
@@ -542,9 +554,56 @@ that isn't (or is no longer) a git repo, matching `ChangeSummary`; an unknown
 session id is an error. It reads the worktree and nothing else, so a parked
 session diffs exactly like a live one and nothing is revived.
 
-All four result fields are `omitempty`, like the rest of `Result`: an absent
-`ok` or `truncated` is `false`, an absent `patch` or `base` is empty — a clean
-worktree answers `{"ok": true, "base": "origin/main"}` with no `patch` at all.
+All five result fields are `omitempty`, like the rest of `Result`: an absent
+`ok` or `truncated` is `false`, an absent `patch`, `base` or `commit` is empty
+— a clean worktree answers `{"ok": true, "base": "origin/main", "commit": "…"}`
+with no `patch` at all.
+
+### `ReadBaseFile`: the before side of a `Diff`
+
+`Diff` gives a client the patch, and `ReadFile` gives it a changed file as it
+is on disk now. A client that renders a file whole on both sides (a markdown
+preview, later an image) also needs the file as it was at the diff's base.
+`ReadBaseFile` serves that:
+
+```jsonc
+{"method": "ReadBaseFile", "args": {"id": "moomux:a", "path": "docs/guide.md", "commit": "3f9c…a1e0"}}
+{"result": {"ok": true, "data": "IyBHdWlkZQo=", "commit": "3f9c…a1e0"}}
+
+// not in the base: a new or untracked file
+{"result": {"commit": "3f9c…a1e0"}}
+```
+
+- **`path`** is repo-relative, as the patch names it (unquoted, prefix
+  stripped): the `a/` side, so a renamed file is read by its old path. No
+  `~`, no leading `/`, no `./` or `../`, no `:42` stripping. It is not `ReadFile`'s path, which is whatever a
+  pane printed, and that is why this is a separate method and not a revision
+  argument on `ReadFile`: the two would share an argument name and nothing of
+  its rules.
+- **`commit`** is the `commit` from `Diff`. Send it. Without it the core
+  resolves the base again, exactly as `Diff` does (the same
+  `gitwt.BaseCommit`), but the base branch can move between the two calls,
+  and then "before" belongs to a different patch. Only a full commit id is
+  accepted, never a ref name.
+- **`ok`** is true when the base has the file, and `data` is its content
+  (base64; absent for an empty file, so read `ok`, not `data`). `ok` absent,
+  with no error, means the base has no file at `path`: show "new file", not a
+  failure. `commit` names the commit read, in both cases.
+- **Errors** are worded to show the user as-is, prefixed `ReadBaseFile:`, like
+  `ReadFile`'s, and never carry git's argv: a directory, a submodule or a
+  path inside one, a file over 32 MB (judged by its size before it is read,
+  and worded as `ReadFile` and `SaveFile` word it), a malformed path or
+  commit, a commit the repo does not have, a plain project (it has no base),
+  a session whose worktree is missing or no longer a git repo, an unknown
+  session. The missing worktree is where this differs from `Diff`, which
+  answers `ok: false` there: here `ok: false` means "new file", which would
+  be wrong.
+- A symlink reads as its target, the way the patch shows it. A binary file
+  reads as its bytes.
+
+It reads git objects in the session's repo and nothing else: never the
+worktree, never its index, and never tmux, so a parked session works without
+reviving anything, as with `Diff`.
 
 ### `Attach`: the connection becomes the pty
 
@@ -918,6 +977,8 @@ stored it, so a spawned session showed no prompt in the list, ever.
 - **`Diff`** — the session's patch, fetched when someone opens it. It can be
   megabytes and costs a git run each time, so it is not streamed on every
   snapshot.
+- **`ReadBaseFile`** — one file's before side, fetched when someone opens that
+  file.
 
 ## Rules for adding to this
 
@@ -992,7 +1053,8 @@ nil. What changed:
 | `tmux capture-pane` run by the app, per session, every 5s | `Capture` — `args.ids` in, `result.screens` keyed by **session id** out, one tmux invocation for the set |
 | `tmux new-window`/`respawn-window` run by the app | `Review` — `args.id` in, a `hint` out |
 | `C-b n`/`C-b p` typed into the pane on a swipe | `SelectWindow` — `args.id` and `args.delta` (±1) in, empty result out; additive |
-| a phone had no way to see a session's diff | `Diff` — `args.id` in, `result.patch` / `base` / `truncated` / `ok` out; additive |
+| a phone had no way to see a session's diff | `Diff` — `args.id` in, `result.patch` / `base` / `commit` / `truncated` / `ok` out; additive |
+| a phone could read a changed file only as it is now | `ReadBaseFile` — `args.id` / `path` / `commit` in, `result.ok` / `data` / `commit` out; additive |
 | `tmux attach` via libghostty's `.exec` backend | `Attach` — the connection becomes the pty; there is no local process |
 | the unix socket was the only listener | plus an optional tailnet listener, `tailnet_listen` in `config.toml` |
 

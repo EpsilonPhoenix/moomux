@@ -302,7 +302,7 @@ var wantBackendMethods = []string{
 	"AddPlainProject", "AddProject", "Capture", "ChangeSummary", "ConfigSnapshot",
 	"CreateFolder", "CreateSession", "DeleteFolder", "DeleteSession",
 	"Diff", "EnsureTmux", "InitProjectAndAdd", "KillTmux", "MoveProject",
-	"OpenSession", "RemoveProject", "RenameFolder", "RenameSession", "Review", "SelectWindow",
+	"OpenSession", "ReadBaseFile", "RemoveProject", "RenameFolder", "RenameSession", "Review", "SelectWindow",
 	"ReorderFolders", "ReorderSessions", "Sessions",
 	"SetAutoSubmitDefault", "SetAutoTmux", "SetCompactDetail", "SetFolderCollapsed", "SetProjectCollapsed",
 	"SetSessionAgent", "SetSessionArchived", "SetSessionFolder",

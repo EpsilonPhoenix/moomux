@@ -87,6 +87,9 @@ type Args struct {
 	Rows int `json:"rows,omitempty"`
 	// Attach is ResizeAttach's token, from Attach's Result.Attach.
 	Attach string `json:"attach,omitempty"`
+	// Commit is ReadBaseFile's base commit, from Diff's Result.Commit;
+	// empty resolves the base afresh.
+	Commit string `json:"commit,omitempty"`
 	// Req is CreateSession's whole request. One field rather than a dozen
 	// flat ones, because creating a session is a transaction the core runs
 	// end to end — see session.CreateRequest.
@@ -143,14 +146,17 @@ type Result struct {
 	// absolute path that Data was read from; for ResolveFile, that path
 	// alone.
 	Path string `json:"path,omitempty"`
-	// Data is ReadFile's file contents, base64 on the wire like Args.Data.
+	// Data is ReadFile's and ReadBaseFile's file contents, base64 on the
+	// wire like Args.Data.
 	Data []byte `json:"data,omitempty"`
-	// Patch, Base and Truncated are Diff's answer: raw `git diff` text,
-	// headers and all; the ref it was taken against (HEAD means
-	// uncommitted work only); and whether it was cut at a file boundary to
-	// stay under the cap. See gitwt.Patch.
+	// Patch, Base, Commit and Truncated are Diff's answer: raw `git diff`
+	// text, headers and all; the ref it was taken against (HEAD means
+	// uncommitted work only); the commit it was taken against; and whether
+	// it was cut at a file boundary to stay under the cap. See gitwt.Patch.
+	// Commit is also the commit ReadBaseFile read.
 	Patch     string `json:"patch,omitempty"`
 	Base      string `json:"base,omitempty"`
+	Commit    string `json:"commit,omitempty"`
 	Truncated bool   `json:"truncated,omitempty"`
 }
 
