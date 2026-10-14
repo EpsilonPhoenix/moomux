@@ -192,6 +192,8 @@ type Watcher struct {
 type gitEntry struct {
 	dirty, unpushed, ok bool
 	checkedAt           time.Time
+	// parked is whether the session was parked when the check started.
+	parked bool
 }
 
 type prEntry struct {
@@ -535,11 +537,12 @@ var fetchSem = make(chan struct{}, maxConcurrentFetches)
 func (w *Watcher) schedule(ctx context.Context, results chan<- result) {
 	for _, s := range w.sessions {
 		if w.gitDue(s) {
+			parked := w.stateOf(s) == watcher.Parked
 			w.start(ctx, results, fetchKey{fetchGit, s.ID}, func() result {
 				dirty, unpushed, ok := w.Core.WorktreeStatus(s.ID)
 				return result{
 					key: fetchKey{fetchGit, s.ID},
-					git: gitEntry{dirty: dirty, unpushed: unpushed, ok: ok, checkedAt: time.Now()},
+					git: gitEntry{dirty: dirty, unpushed: unpushed, ok: ok, checkedAt: time.Now(), parked: parked},
 				}
 			})
 		}
@@ -583,10 +586,14 @@ func (w *Watcher) start(ctx context.Context, results chan<- result, key fetchKey
 
 // gitDue reports whether s's worktree status is worth re-checking.
 //
-// A parked session is checked once, like any session with nothing cached,
-// but is then left alone however stale it gets: no agent is running in that
-// worktree, so dirty/unpushed can't change on their own. It comes due again
-// the moment it stops being parked — checkedAt didn't advance while it was.
+// A parked session is checked once more after it parks, then left alone
+// however stale it gets: no agent is running in that worktree, so
+// dirty/unpushed can't change on their own. That one check matters: an agent
+// typically commits, pushes and parks within seconds, well inside
+// gitStaleAfter, so the last check taken while it was live predates the push
+// and would otherwise show dirty/unpushed for as long as the core runs. It
+// comes due again the moment it stops being parked — checkedAt didn't
+// advance while it was.
 func (w *Watcher) gitDue(s session.Session) bool {
 	if w.pending[fetchKey{fetchGit, s.ID}] {
 		return false
@@ -596,7 +603,7 @@ func (w *Watcher) gitDue(s session.Session) bool {
 		return true
 	}
 	if w.stateOf(s) == watcher.Parked {
-		return false
+		return !cur.parked
 	}
 	return time.Since(cur.checkedAt) > staleAfter(s.ID, gitStaleAfter)
 }
@@ -697,7 +704,7 @@ func Once(core Core, home string, states map[string]watcher.State) Snapshot {
 	now := time.Now()
 	for _, s := range core.Sessions() {
 		dirty, unpushed, ok := core.WorktreeStatus(s.ID)
-		w.git[s.ID] = gitEntry{dirty: dirty, unpushed: unpushed, ok: ok, checkedAt: now}
+		w.git[s.ID] = gitEntry{dirty: dirty, unpushed: unpushed, ok: ok, checkedAt: now, parked: w.stateOf(s) == watcher.Parked}
 		if s.PR != "" {
 			info, ok := core.PRStatus(s.ID)
 			w.pr[s.ID] = prEntry{info: info, ok: ok, checkedAt: now}
