@@ -144,7 +144,7 @@ var screens = map[string][]string{
 	// editProjectFocuses), seven tabs down from the repo it opens on.
 	"edit-project-emoji": append([]string{"/", "e"}, keys("tab", 7)...),
 	"confirm-delete":     {"d"},
-	// Same dialog, but caught mid-flight: the "d" press's fetchGitStatusCmd
+	// Same dialog, but caught mid-flight: the "d" press's fetchChangeSummaryCmd
 	// (the live re-check kicked off when the dialog opens) is deliberately
 	// left undrained by renderScreen, so this captures the "checking git
 	// status…" loading note before it resolves.
@@ -788,7 +788,7 @@ func renderScreen(screenName string, width, height int, theme, appearance string
 		msg := keyMsgFor(strings.ReplaceAll(k, "$HOME", home))
 		if screenName == "confirm-delete-checking" {
 			// Plain Update, not drive(): leaves the "d" press's
-			// fetchGitStatusCmd undrained so the dialog is caught showing
+			// fetchChangeSummaryCmd undrained so the dialog is caught showing
 			// its "checking git status…" note rather than the resolved
 			// result.
 			m.Update(msg)

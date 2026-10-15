@@ -675,23 +675,27 @@ func TestConfirmDeleteShowsChangeSummary(t *testing.T) {
 
 // TestConfirmDeleteOpensInstantlyThenUpdatesFromLiveCheck guards the whole
 // point of caching: the dialog must render immediately on whatever's already
-// in m.gitStatus (even nothing), not block on a fresh WorktreeStatus call —
-// but it also kicks off that fresh call in the background, shows a "checking"
-// note while it's in flight, and updates the warning for real once it
-// resolves. y is ignored until then, since acting on stale/missing info would
-// defeat the point of checking at all.
+// in m.gitStatus (even nothing), not block on a fresh check — but it also
+// kicks off that check in the background, shows a "checking" note while it's
+// in flight, and updates the warning for real once it resolves. y is ignored
+// until then, since acting on stale/missing info would defeat the point of
+// checking at all.
+//
+// The check is ChangeSummary, which is local git only. WorktreeStatus also
+// runs a `git fetch` (2-4s measured on real worktrees) the dialog spent
+// waiting on, and must not be called here.
 func TestConfirmDeleteOpensInstantlyThenUpdatesFromLiveCheck(t *testing.T) {
 	be := &fakeBackend{
-		sessions:       []session.Session{{ID: "demo:a", Project: "demo", Name: "a"}},
-		worktreeStatus: map[string]gitStatusInfo{"demo:a": {dirty: true, unpushed: true, ok: true}},
+		sessions:      []session.Session{{ID: "demo:a", Project: "demo", Name: "a"}},
+		changeSummary: map[string]changeSummary{"demo:a": {filesChanged: 1, unpushedCommits: 1, ok: true}},
 	}
 	m := newTestModel(be)
 	// Stale/absent cache on open: the dialog must not show a warning yet
 	// (nothing cached), only the "checking" note, and must not have called
 	// the backend synchronously.
 	_, cmd := m.Update(keyRune("d"))
-	if len(be.worktreeStatusCalls) != 0 {
-		t.Fatalf("opening the delete dialog must not call WorktreeStatus synchronously (it would pause the dialog), got calls = %v", be.worktreeStatusCalls)
+	if len(be.changeSummaryCalls) != 0 {
+		t.Fatalf("opening the delete dialog must not check git synchronously (it would pause the dialog), got calls = %v", be.changeSummaryCalls)
 	}
 	if v := m.View(); strings.Contains(v, "uncommitted changes") || !strings.Contains(v, "checking") {
 		t.Fatalf("confirm view before the check resolves:\n%s", v)
@@ -704,10 +708,10 @@ func TestConfirmDeleteOpensInstantlyThenUpdatesFromLiveCheck(t *testing.T) {
 
 	// The background check resolves.
 	drainAll(m, cmd)
-	if len(be.worktreeStatusCalls) != 1 || be.worktreeStatusCalls[0] != "demo:a" {
-		t.Fatalf("expected one WorktreeStatus call for demo:a, got %v", be.worktreeStatusCalls)
+	if len(be.worktreeStatusCalls) != 0 {
+		t.Fatalf("the delete dialog must not call WorktreeStatus (it fetches), got %v", be.worktreeStatusCalls)
 	}
-	if v := m.View(); !strings.Contains(v, "uncommitted changes") || !strings.Contains(v, "unpushed commits") || strings.Contains(v, "checking") {
+	if v := m.View(); !strings.Contains(v, "1 file changed") || !strings.Contains(v, "1 commit unpushed") || strings.Contains(v, "checking") {
 		t.Fatalf("confirm view after the check resolves:\n%s", v)
 	}
 

@@ -969,11 +969,14 @@ stored it, so a spawned session showed no prompt in the list, ever.
 - **`Sessions`** — the cold start, before the first snapshot, and the moment
   right after a mutation this client made, where the streamed list is a beat
   behind the store.
-- **`WorktreeStatus`** — the delete dialog's own check. The snapshot carries
-  a status, but it can be up to a minute old, and this is the guard before a
-  destructive action. It also refreshes the remote ref, which
-  `ChangeSummary` doesn't.
-- **`ChangeSummary`** — file and commit counts for that same dialog.
+- **`ChangeSummary`** — the delete dialog's own check: file and commit
+  counts, from which it also derives dirty/unpushed. The snapshot carries a
+  status, but it can be up to a minute old, and this is the guard before a
+  destructive action. It is local git only, on purpose.
+- **`WorktreeStatus`** — the same dirty/unpushed answer, but it also
+  refreshes the remote ref with a `git fetch` when due. The TUI's dialog
+  used it until that fetch (2-4s measured) proved to be most of the wait;
+  a stale remote ref can only over-report unpushed commits. Still served.
 - **`Diff`** — the session's patch, fetched when someone opens it. It can be
   megabytes and costs a git run each time, so it is not streamed on every
   snapshot.

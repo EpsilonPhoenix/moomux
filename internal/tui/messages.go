@@ -13,16 +13,9 @@ import (
 // state, not a delta.
 type StatusTickMsg struct{ Snap sessionview.Snapshot }
 
-// GitStatusMsg carries the delete dialog's on-demand git-status check for
-// one session, computed by fetchGitStatusCmd. Routine git status arrives on
-// StatusTickMsg instead.
-type GitStatusMsg struct {
-	ID     string
-	Status gitStatusInfo
-}
-
-// ChangeSummaryMsg carries the file/commit-count detail for one session's
-// delete-confirmation warning, computed by fetchChangeSummaryCmd. ID guards
+// ChangeSummaryMsg carries the delete dialog's fresh check for one session,
+// computed by fetchChangeSummaryCmd. Routine git status arrives on
+// StatusTickMsg instead. ID guards
 // against a stale result landing after the dialog moved on to another
 // session (or closed).
 type ChangeSummaryMsg struct {
