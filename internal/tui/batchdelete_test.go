@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -157,5 +158,40 @@ func TestBatchDeleteKeepsControlsVisibleWhenTall(t *testing.T) {
 	}
 	if h := lipgloss.Height(v); h > m.height {
 		t.Fatalf("view is %d rows on a %d-row terminal", h, m.height)
+	}
+}
+
+// The deletes run one after another in the background; the rows they
+// remove must not trickle out of the list with them. They go the moment
+// the delete is confirmed.
+func TestBatchDeleteHidesRowsAtOnce(t *testing.T) {
+	be := threeSessions()
+	m := newTestModel(be)
+	space(m)
+	space(m)
+	pressDelete(m)
+	_, cmd := m.Update(keyRune("y")) // the deletes haven't run yet
+	if len(be.deleteCalls) != 0 {
+		t.Fatalf("deletes ran synchronously: %v", be.deleteCalls)
+	}
+	if len(m.sessions) != 1 || m.sessions[0].ID != "demo:c" {
+		t.Fatalf("rows still listed while deleting: %v", m.sessions)
+	}
+	drainAll(m, cmd)
+	if len(m.sessions) != 1 || m.sessions[0].ID != "demo:c" {
+		t.Fatalf("after the batch: %v", m.sessions)
+	}
+}
+
+// A session that fails to delete is still there, so it comes back.
+func TestBatchDeleteFailureReappears(t *testing.T) {
+	be := threeSessions()
+	be.deleteErr = errors.New("boom")
+	m := newTestModel(be)
+	space(m)
+	pressDelete(m)
+	run(m, keyRune("y"))
+	if len(m.sessions) != 3 {
+		t.Fatalf("failed delete stayed hidden: %v", m.sessions)
 	}
 }
