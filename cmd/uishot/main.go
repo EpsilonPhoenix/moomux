@@ -144,6 +144,10 @@ var screens = map[string][]string{
 	// editProjectFocuses), seven tabs down from the repo it opens on.
 	"edit-project-emoji": append([]string{"/", "e"}, keys("tab", 7)...),
 	"confirm-delete":     {"d"},
+	// Batch delete: two rows marked with space (each steps the cursor down),
+	// then the list with its marks, and the one dialog d opens on them.
+	"list-marked":  {"space", "space"},
+	"batch-delete": {"space", "space", "d"},
 	// Same dialog, but caught mid-flight: the "d" press's fetchChangeSummaryCmd
 	// (the live re-check kicked off when the dialog opens) is deliberately
 	// left undrained by renderScreen, so this captures the "checking git
@@ -240,6 +244,7 @@ var namedKeys = map[string]tea.KeyType{
 	"shift+tab": tea.KeyShiftTab,
 	"enter":     tea.KeyEnter,
 	"esc":       tea.KeyEsc,
+	"space":     tea.KeySpace,
 	"up":        tea.KeyUp,
 	"down":      tea.KeyDown,
 	"left":      tea.KeyLeft,
@@ -698,7 +703,7 @@ func renderScreen(screenName string, width, height int, theme, appearance string
 	if screenName == "settings-save-error" {
 		be.terminalPaneErr = errors.New("unknown method SetTerminalPane")
 	}
-	if screenName == "confirm-delete" && len(sessions) > 0 {
+	if (screenName == "confirm-delete" || screenName == "batch-delete") && len(sessions) > 0 {
 		// Must be set before the initial drive() below: git status is
 		// fetched for every session up front (regardless of agent state —
 		// it's no longer gated on being parked), so this needs to be in

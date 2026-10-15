@@ -9,12 +9,12 @@
 │               projects)              │
 │    enter / o  open (attach tmux)     │
 │    x          park (kill tmux)       │
-│    d          delete worktree        │
-│    a          archive session        │
-│    A          show archived          │
-│    t          tag ticket / PR        │
-│    e          edit session           │
-│    D          diff tool              │
+│    d          delete (or all         │
+│               marked)                │
+│    space      mark to delete         │
+│    M          mark merged/closed     │
+│               PRs                    │
+│    esc        clear marks            │
 │                                      │
 │  ↑↓/jk/pg scroll  ?/esc close        │
 │                                      │
@@ -30,12 +30,15 @@
            │               projects)                shift+↑↓ / KJ      reorder session  │           
            │    enter / o  open (attach tmux)       tab / ] / →        next project     │           
            │    x          park (kill tmux)         shift+tab / [ / ←  prev project     │           
-           │    d          delete worktree          } / {              ...incl. empty   │           
-           │    a          archive session                             ones             │           
-           │    A          show archived            shift+←→ / HL      reorder project  │           
-           │    t          tag ticket / PR          R                  force-copy       │           
-           │    e          edit session                                ticket/PR        │           
-           │    D          diff tool                                   links: off       │           
+           │    d          delete (or all marked)   } / {              ...incl. empty   │           
+           │    space      mark to delete                              ones             │           
+           │    M          mark merged/closed PRs   shift+←→ / HL      reorder project  │           
+           │    esc        clear marks              R                  force-copy       │           
+           │    a          archive session                             ticket/PR        │           
+           │    A          show archived                               links: off       │           
+           │    t          tag ticket / PR                                              │           
+           │    e          edit session                                                 │           
+           │    D          diff tool                                                    │           
            │    g          file into a folder                                           │           
            │    z          collapse its folder                                          │           
            │    G          manage folders                                               │           
@@ -45,9 +48,6 @@
            │    /      pick project                 ?  toggle this help                 │           
            │    n/e/d  add/edit/remove (picker)     q  quit                             │           
            │                                        r  refresh                          │           
-           │                                        s  settings (theme, sort mode,      │           
-           │                                           auto-tmux, auto-submit, diff     │           
-           │                                           tool)                            │           
            │                                                                            │           
            │  ↑↓/jk/pg scroll  ?/esc close                                              │           
            │                                                                            │           
