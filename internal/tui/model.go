@@ -555,6 +555,16 @@ type Model struct {
 	// confirmSummary is the file/commit-count detail for the warning line in
 	// the delete dialog, from the same check that resolves confirmGit.
 	confirmSummary changeSummary
+	// marked is the batch-delete selection, by session id (see
+	// batchdelete.go). Ids rather than indexes, so marks survive switching
+	// projects and the list re-sorting under them. While it's non-empty, d
+	// opens the batch dialog instead of the single one.
+	marked map[string]bool
+	// batchIDs is what the open batch dialog will delete, and batchSummary
+	// their fresh checks. batchIDs is nil whenever ModeConfirmDelete is the
+	// single-session dialog, which is how the two tell themselves apart.
+	batchIDs     []string
+	batchSummary map[string]changeSummary
 	// themeCursor is an index into themeNames while ModeThemePicker is open.
 	// previewAppearance holds the appearance being live-previewed there
 	// ("", "light", or "dark") until Enter persists it or Esc reverts to

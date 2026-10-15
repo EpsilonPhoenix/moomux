@@ -600,7 +600,7 @@ func (m *Model) renderSessionPanel(proj string, lines []listLine, sessions []ses
 			rowWidth -= 2
 		}
 		rows = append(rows, rowHit{sessionID: s.ID, line: line})
-		row, iconHits := renderRow(s, m.viewFor(s.ID), rowWidth, selected, "")
+		row, iconHits := renderRow(s, m.viewFor(s.ID), rowWidth, selected, m.marked[s.ID], "")
 		colOffset := 1 + len(indent) // +1 for the row style's own left padding
 		for _, h := range iconHits {
 			h.sessionID = s.ID

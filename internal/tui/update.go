@@ -110,13 +110,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, listenStatus(m.statusCh)
 
+	case BatchSummaryMsg:
+		m.handleBatchSummary(msg)
+		return m, nil
+
+	case BatchDeletedMsg:
+		m.handleBatchDeleted(msg)
+		return m, nil
+
 	case ChangeSummaryMsg:
 		// The delete dialog's own check resolved. Routine git status rides
 		// the view stream; this only ever answers the dialog. Guarded on the
 		// mode — confirmChecking isn't cleared when the dialog is cancelled,
 		// so keying off it alone would let a late result write confirmGit
 		// for a dialog that's already closed.
-		if m.mode == ModeConfirmDelete && len(m.sessions) > 0 && m.sessions[m.cursor].ID == msg.ID {
+		if m.mode == ModeConfirmDelete && m.batchIDs == nil && len(m.sessions) > 0 && m.sessions[m.cursor].ID == msg.ID {
 			sum := msg.Summary
 			m.confirmSummary = sum
 			m.confirmGit = gitStatusInfo{dirty: sum.filesChanged > 0, unpushed: sum.unpushedCommits > 0, ok: sum.ok}
@@ -729,6 +737,9 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.busy {
 			return m.flashError(fmt.Errorf("still creating the previous session — wait for it to finish"))
 		}
+		if len(m.marked) > 0 {
+			return m.openBatchDelete()
+		}
 		if len(m.sessions) > 0 {
 			id := m.sessions[m.cursor].ID
 			// Opens instantly on the last snapshot's status so the dialog
@@ -749,6 +760,15 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// scrolled off-screen, leaving only "y to confirm" visible.
 			m.resetOverlayViewport()
 			return m, fetchChangeSummaryCmd(m.backend, id)
+		}
+	case key.Matches(msg, m.keys.Mark):
+		m.toggleMark()
+	case key.Matches(msg, m.keys.MarkFinished):
+		m.markFinished()
+	case key.Matches(msg, m.keys.Cancel):
+		if len(m.marked) > 0 {
+			m.marked = nil
+			m.setFlash("info", "marks cleared")
 		}
 	case key.Matches(msg, m.keys.Archive):
 		if m.busy {
@@ -1507,6 +1527,9 @@ func (m *Model) newFormFocusInput() {
 }
 
 func (m *Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.batchIDs != nil {
+		return m.updateBatchConfirm(msg)
+	}
 	switch {
 	case key.Matches(msg, m.keys.Confirm):
 		if len(m.sessions) == 0 {

@@ -253,6 +253,9 @@ func (f *fakeBackend) ReadBaseFile(string, string, string) ([]byte, string, bool
 	return nil, "", false, nil
 }
 func (f *fakeBackend) ChangeSummary(id string) (filesChanged, unpushedCommits int, ok bool) {
+	// The batch dialog calls this from several goroutines at once.
+	f.statusMu.Lock()
+	defer f.statusMu.Unlock()
 	f.changeSummaryCalls = append(f.changeSummaryCalls, id)
 	st, present := f.changeSummary[id]
 	if !present {

@@ -372,6 +372,10 @@ func (m *Model) View() string {
 		footer := m.formFooter(m.newFormFieldHint(), "tab/↑↓ fields  ←→ choose  enter  esc cancel", m.newFormErr)
 		return m.renderOverlay(content, footer, m.focusedOverlayLine(content))
 	case ModeConfirmDelete:
+		if m.batchIDs != nil {
+			content, footer := m.renderBatchConfirm()
+			return m.renderOverlay(content, footer, -1)
+		}
 		return m.renderOverlay(m.renderConfirm(), "", -1)
 	case ModeNewProject:
 		content := m.compactOverlayContent(m.renderNewProject())

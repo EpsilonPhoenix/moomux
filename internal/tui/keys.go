@@ -12,6 +12,8 @@ type KeyMap struct {
 	Open           key.Binding
 	New            key.Binding
 	Delete         key.Binding
+	Mark           key.Binding
+	MarkFinished   key.Binding
 	Archive        key.Binding
 	ShowArchived   key.Binding
 	Kill           key.Binding
@@ -124,6 +126,10 @@ func DefaultKeyMap() KeyMap {
 		// leftover — removing a project happens in the picker ("/" then
 		// "d"), which is the single entry point for every project action.
 		DiffTool: key.NewBinding(key.WithKeys("D"), key.WithHelp("D", "diff tool")),
-		Update:   key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "update & relaunch")),
+		// Batch delete: space marks the cursor's session, M every session
+		// whose PR merged or closed, and d then deletes all of them at once.
+		Mark:         key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "mark")),
+		MarkFinished: key.NewBinding(key.WithKeys("M"), key.WithHelp("M", "mark merged/closed")),
+		Update:       key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "update & relaunch")),
 	}
 }

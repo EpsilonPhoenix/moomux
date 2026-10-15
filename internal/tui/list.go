@@ -194,7 +194,7 @@ func (m *Model) renderList(width, height int) (string, []linkHit, []rowHit, []fo
 			rowWidth -= 2
 		}
 		rows = append(rows, rowHit{sessionID: s.ID, line: line})
-		row, iconHits := renderRow(s, m.viewFor(s.ID), rowWidth, selected, "")
+		row, iconHits := renderRow(s, m.viewFor(s.ID), rowWidth, selected, m.marked[s.ID], "")
 		colOffset := 1 + len(indent) // +1 for the row style's own left padding
 		for _, h := range iconHits {
 			h.sessionID = s.ID
@@ -285,7 +285,7 @@ func scrollHintLine(glyph string, width int) string {
 	return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(muteStyle.Render(glyph))
 }
 
-func renderRow(s session.Session, v sessionview.View, width int, selected bool, projectLabel string) (string, []linkHit) {
+func renderRow(s session.Session, v sessionview.View, width int, selected, marked bool, projectLabel string) (string, []linkHit) {
 	dotStyle := dotParkedStyle
 	switch v.State {
 	case watcher.Working:
@@ -303,6 +303,15 @@ func renderRow(s session.Session, v sessionview.View, width int, selected bool, 
 		gitWarnStyle = gitWarnStyle.Background(colSelBg)
 	}
 	dot := dotStyle.Render("⬤")
+	if marked {
+		// Marked for batch delete: the mark takes the state dot's place,
+		// since it's the one thing that matters about a row about to go.
+		markStyle := dangerStyle
+		if selected {
+			markStyle = markStyle.Background(colSelBg)
+		}
+		dot = markStyle.Render("✗")
+	}
 
 	// Candidate icons in priority order — ticket/PR are clickable links and
 	// stay longest; the git-status icons are the newest, lowest-priority
