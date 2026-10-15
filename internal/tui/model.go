@@ -565,6 +565,12 @@ type Model struct {
 	// single-session dialog, which is how the two tell themselves apart.
 	batchIDs     []string
 	batchSummary map[string]changeSummary
+	// deleting hides a confirmed batch from every list at once, while
+	// deleteBatchCmd works through it one session at a time — without it
+	// the rows trickle out as each delete lands. Cleared when the batch
+	// finishes; a session that failed to delete is still in the store, so
+	// it simply reappears.
+	deleting map[string]bool
 	// themeCursor is an index into themeNames while ModeThemePicker is open.
 	// previewAppearance holds the appearance being live-previewed there
 	// ("", "light", or "dark") until Enter persists it or Esc reverts to
@@ -944,6 +950,16 @@ func (m *Model) allSessions() []session.Session {
 		m.sessCache = m.snapSessions
 		if m.sessCache == nil {
 			m.sessCache = m.inLastServedOrder(m.backend.Sessions())
+		}
+		if len(m.deleting) > 0 {
+			// A filtered copy: sessCache may alias snapSessions.
+			kept := make([]session.Session, 0, len(m.sessCache))
+			for _, s := range m.sessCache {
+				if !m.deleting[s.ID] {
+					kept = append(kept, s)
+				}
+			}
+			m.sessCache = kept
 		}
 		m.sessCacheValid = true
 	}

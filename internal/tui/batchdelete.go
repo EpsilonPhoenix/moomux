@@ -164,6 +164,7 @@ func (m *Model) handleBatchDeleted(msg BatchDeletedMsg) {
 	default:
 		m.setFlash("info", "deleted "+pluralCount(msg.Deleted, "session", "sessions"))
 	}
+	m.deleting = nil
 	m.sessionsChanged()
 	m.refreshSessions()
 }
@@ -200,6 +201,14 @@ func (m *Model) updateBatchConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.batchIDs, m.batchSummary, m.marked = nil, nil, nil
 		m.mode = m.sessionDialogReturn
 		m.setFlash("info", "deleting "+pluralCount(len(ids), "session", "sessions")+"…")
+		if m.deleting == nil {
+			m.deleting = map[string]bool{}
+		}
+		for _, id := range ids {
+			m.deleting[id] = true
+		}
+		m.invalidateSessions()
+		m.refreshSessions()
 		return m, deleteBatchCmd(m.backend, ids)
 	case key.Matches(msg, m.keys.No), key.Matches(msg, m.keys.Cancel):
 		m.batchIDs, m.batchSummary = nil, nil
