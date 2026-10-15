@@ -210,8 +210,8 @@ func TestGitAndPRStatusRideTheSnapshot(t *testing.T) {
 
 // TestParkedGitStatusSkipsRoutineRefetch: a parked worktree has no agent
 // running in it, so dirty/unpushed can't change on their own. It's checked
-// once and then left alone, and comes due again the moment tmux comes back —
-// checkedAt didn't advance while it was parked.
+// once after parking and then left alone, and comes due again the moment tmux
+// comes back — checkedAt didn't advance while it was parked.
 func TestParkedGitStatusSkipsRoutineRefetch(t *testing.T) {
 	core := &fakeCore{sessions: []session.Session{sess("demo:a", "/wt/a")}}
 	w := newWatcher(core)
@@ -220,7 +220,7 @@ func TestParkedGitStatusSkipsRoutineRefetch(t *testing.T) {
 	if !w.gitDue(s) {
 		t.Fatal("a session with nothing cached must be checked once, parked or not")
 	}
-	w.git["demo:a"] = gitEntry{ok: true, checkedAt: time.Now().Add(-2 * gitStaleAfter)}
+	w.git["demo:a"] = gitEntry{ok: true, checkedAt: time.Now().Add(-2 * gitStaleAfter), parked: true}
 	if w.gitDue(s) {
 		t.Error("a parked session with a cached status must not be re-checked, however stale")
 	}
@@ -228,6 +228,36 @@ func TestParkedGitStatusSkipsRoutineRefetch(t *testing.T) {
 	w.alive["demo:a"] = true
 	if !w.gitDue(s) {
 		t.Error("must come due again as soon as the session stops being parked")
+	}
+}
+
+// TestGitStatusRecheckedOnceAfterParking: an agent commits, pushes and parks
+// within seconds, so the last check taken while it was live predates the
+// push. Without one more check after parking, the session showed dirty and
+// unpushed for as long as the core ran.
+func TestGitStatusRecheckedOnceAfterParking(t *testing.T) {
+	core := &fakeCore{sessions: []session.Session{sess("demo:a", "/wt/a")}}
+	w := newWatcher(core)
+	s := core.sessions[0]
+
+	w.git["demo:a"] = gitEntry{dirty: true, unpushed: true, ok: true, checkedAt: time.Now()}
+	if !w.gitDue(s) {
+		t.Fatal("a status checked before parking must be re-checked once parked, however fresh")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	results := make(chan result, 2)
+	w.build()
+	w.schedule(ctx, results)
+	for w.pending[fetchKey{fetchGit, "demo:a"}] {
+		w.apply(<-results)
+	}
+	if g := w.git["demo:a"]; g.dirty || g.unpushed {
+		t.Errorf("post-park check must replace the stale status, got %+v", g)
+	}
+	if w.gitDue(s) {
+		t.Error("once checked while parked, it must be left alone")
 	}
 }
 
