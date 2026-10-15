@@ -69,6 +69,10 @@ type App struct {
 	portMu        sync.Mutex
 	reservedPorts map[int]bool
 
+	// trashWG tracks moveToTrash's background removals, so a test can wait
+	// for one to finish rather than racing its TempDir cleanup.
+	trashWG sync.WaitGroup
+
 	// nameMu guards reservedNames, the session-id analogue of reservedPorts:
 	// CreateSession's existence check happens long before its Store.Put, so
 	// two concurrent calls for the same name/project can both pass the
@@ -2428,6 +2432,50 @@ func pathWithin(root, path string) bool {
 	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+// trashDir is where moveToTrash parks a checkout while it's being removed.
+func (a *App) trashDir() string { return filepath.Join(a.WorktreeRoot, ".trash") }
+
+// moveToTrash renames a linked worktree checkout out of its place and
+// removes it in the background, so DeleteSession doesn't wait on `git
+// worktree remove` unlinking every file in it — node_modules and build
+// output made that seconds per session. git still unregisters it afterwards:
+// `remove --force --force` accepts a checkout that's gone, locked or not.
+// EmptyTrash finishes any removal a process quit before completing.
+//
+// Only a linked worktree (.git is a file) under WorktreeRoot is moved. A
+// .git directory is a real repository, which RemoveWorktree refuses to
+// delete, and this must not route around that. Anything not moved is left
+// for RemoveWorktree's slower path.
+func (a *App) moveToTrash(wt string) {
+	if !pathWithin(a.WorktreeRoot, wt) {
+		return
+	}
+	if info, err := os.Lstat(filepath.Join(wt, ".git")); err != nil || info.IsDir() {
+		return
+	}
+	if err := os.MkdirAll(a.trashDir(), 0o755); err != nil {
+		return
+	}
+	dir, err := os.MkdirTemp(a.trashDir(), filepath.Base(wt)+"-")
+	if err != nil {
+		return
+	}
+	if err := os.Rename(wt, filepath.Join(dir, "wt")); err != nil {
+		slog.Warn("trash worktree", "path", wt, "err", err)
+		_ = os.Remove(dir)
+		return
+	}
+	a.trashWG.Add(1)
+	go func() {
+		defer a.trashWG.Done()
+		_ = os.RemoveAll(dir)
+	}()
+}
+
+// EmptyTrash removes whatever moveToTrash's background removals left behind
+// when the process running them exited first.
+func (a *App) EmptyTrash() { _ = os.RemoveAll(a.trashDir()) }
+
 // WorktreeStatus reports id's worktree as dirty (uncommitted changes) and/or
 // unpushed (commits missing from its upstream, including no upstream at all).
 // ok is false when status can't be determined (unknown session, or the
@@ -2553,6 +2601,7 @@ func (a *App) DeleteSession(id string) (string, error) {
 					hint = JoinHints(hint, w)
 				}
 			}
+			a.moveToTrash(s.WorktreePath)
 			if err := a.Git.RemoveWorktree(proj.Repo, s.WorktreePath); err != nil {
 				if cleanupErr == nil {
 					cleanupErr = fmt.Errorf("remove worktree: %w", err)

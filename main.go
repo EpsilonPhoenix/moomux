@@ -704,6 +704,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	go a.EmptyTrash()
 	cfg, cfgPath := a.Cfg, a.CfgPath
 	// Shared across both prompts: a fresh bufio.Reader per prompt can read
 	// ahead past its own newline, silently discarding a fast/pasted second
@@ -836,6 +837,7 @@ func runServe(args []string) error {
 	if err != nil {
 		return err
 	}
+	go a.EmptyTrash()
 	ln, err := ipc.Listen(*sock)
 	if err != nil {
 		return err

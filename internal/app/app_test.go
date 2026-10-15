@@ -2843,6 +2843,102 @@ func TestDeleteSessionWorktree(t *testing.T) {
 	}
 }
 
+// gitSpy wraps a fakeGitRunner with a hook that sees each call first, for
+// tests that care what the filesystem looked like when git was invoked.
+type gitSpy struct {
+	*fakeGitRunner
+	before func(args []string)
+}
+
+func (g gitSpy) Run(dir string, args ...string) (string, error) {
+	g.before(args)
+	return g.fakeGitRunner.Run(dir, args...)
+}
+
+// linkedWorktree lays out a checkout the way `git worktree add` does: a .git
+// *file* pointing back at the main repo, plus some content.
+func linkedWorktree(t *testing.T, wt string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(wt, "node_modules"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: /repo/.git/worktrees/feat\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, "node_modules", "x.js"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Deleting a session used to wait on `git worktree remove` unlinking every
+// file in the checkout — seconds per session once node_modules is in it.
+// The checkout is renamed aside first, so git only has to unregister it,
+// and the folder is emptied in the background.
+func TestDeleteSessionTrashesWorktreeBeforeGit(t *testing.T) {
+	a, git, _ := newTestApp(t, gitProject("/repo"))
+	wt := filepath.Join(a.WorktreeRoot, "demo", "feat")
+	linkedWorktree(t, wt)
+	checkoutAtRemove := false
+	a.Git = &gitwt.Client{Runner: gitSpy{git, func(args []string) {
+		if strings.Join(args, " ") == "worktree remove "+wt+" --force --force" {
+			_, err := os.Stat(wt)
+			checkoutAtRemove = err == nil
+		}
+	}}}
+	_ = a.Store.Put(session.Session{
+		ID: "demo:feat", Project: "demo", Name: "feat", Branch: "feat", NewBranch: true,
+		TmuxSession: "moomux-feat", WorktreePath: wt,
+	})
+
+	if _, err := a.DeleteSession("demo:feat"); err != nil {
+		t.Fatal(err)
+	}
+	if checkoutAtRemove {
+		t.Fatal("git worktree remove ran with the checkout still in place")
+	}
+	a.trashWG.Wait()
+	if _, err := os.Stat(wt); !os.IsNotExist(err) {
+		t.Fatalf("worktree still on disk: %v", err)
+	}
+	if left, _ := os.ReadDir(a.trashDir()); len(left) != 0 {
+		t.Fatalf("trash not emptied: %v", left)
+	}
+}
+
+// A .git directory is a real repository, not a linked worktree: git refuses
+// to remove one, and the trash shortcut must not route around that refusal.
+func TestDeleteSessionNeverTrashesARealRepo(t *testing.T) {
+	a, git, _ := newTestApp(t, gitProject("/repo"))
+	wt := filepath.Join(a.WorktreeRoot, "demo", "feat")
+	if err := os.MkdirAll(filepath.Join(wt, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git.failOn["worktree remove "+wt+" --force --force"] = true
+	_ = a.Store.Put(session.Session{
+		ID: "demo:feat", Project: "demo", Name: "feat", Branch: "feat",
+		TmuxSession: "moomux-feat", WorktreePath: wt,
+	})
+
+	if _, err := a.DeleteSession("demo:feat"); err == nil {
+		t.Fatal("expected git's refusal to surface")
+	}
+	a.trashWG.Wait()
+	if _, err := os.Stat(filepath.Join(wt, ".git")); err != nil {
+		t.Fatalf("real repo was touched: %v", err)
+	}
+}
+
+// A process that quits mid-removal leaves the rest in the trash for the
+// next start to finish.
+func TestEmptyTrash(t *testing.T) {
+	a, _, _ := newTestApp(t, nil)
+	linkedWorktree(t, filepath.Join(a.trashDir(), "feat-123", "wt"))
+	a.EmptyTrash()
+	if _, err := os.Stat(a.trashDir()); !os.IsNotExist(err) {
+		t.Fatalf("trash still there: %v", err)
+	}
+}
+
 // A worktree another session already deleted must not block this delete.
 func TestDeleteSessionMissingWorktree(t *testing.T) {
 	a, git, _ := newTestApp(t, gitProject("/repo"))
