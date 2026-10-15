@@ -556,11 +556,11 @@ func (w *Watcher) schedule(ctx context.Context, results chan<- result) {
 			})
 		}
 		if w.promptDue(s) {
-			agent, path := s.AgentName(), s.WorktreePath
+			agent, path, since := s.AgentName(), s.WorktreePath, s.CreatedAt
 			w.start(ctx, results, fetchKey{fetchPrompt, s.ID}, func() result {
 				return result{
 					key:    fetchKey{fetchPrompt, s.ID},
-					prompt: promptEntry{text: prompt.ForAgent(w.Home, agent, path), agent: agent, checkedAt: time.Now()},
+					prompt: promptEntry{text: prompt.ForAgent(w.Home, agent, path, since), agent: agent, checkedAt: time.Now()},
 				}
 			})
 		}
@@ -711,7 +711,7 @@ func Once(core Core, home string, states map[string]watcher.State) Snapshot {
 		}
 		if home != "" {
 			w.prompts[s.ID] = promptEntry{
-				text: prompt.ForAgent(home, s.AgentName(), s.WorktreePath), agent: s.AgentName(), checkedAt: now,
+				text: prompt.ForAgent(home, s.AgentName(), s.WorktreePath, s.CreatedAt), agent: s.AgentName(), checkedAt: now,
 			}
 		}
 	}

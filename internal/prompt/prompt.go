@@ -59,6 +59,7 @@ func EncodeCwd(p string) string {
 
 type entry struct {
 	Type      string          `json:"type"`
+	IsMeta    bool            `json:"isMeta"`
 	Message   json.RawMessage `json:"message"`
 	Timestamp string          `json:"timestamp"`
 }
@@ -69,8 +70,9 @@ type msg struct {
 }
 
 // ForAgent returns the first user prompt for a session, dispatching to the
-// right data source based on agent type.
-func ForAgent(home, agent, worktreePath string) string {
+// right data source based on agent type. since is the session's creation
+// time; see First.
+func ForAgent(home, agent, worktreePath string, since time.Time) string {
 	switch agent {
 	case "opencode":
 		return FirstOpenCode(home, worktreePath)
@@ -79,7 +81,7 @@ func ForAgent(home, agent, worktreePath string) string {
 	case "antigravity":
 		return FirstAntigravity(home, worktreePath)
 	default:
-		return First(home, worktreePath)
+		return First(home, worktreePath, since)
 	}
 }
 
@@ -172,7 +174,11 @@ func codexDBGlobs(home string) []string {
 // First returns the earliest non-banner user prompt across all jsonl
 // logs under ~/.claude/projects/<encoded-cwd>/, ranked by the in-file
 // timestamp so resumed sessions don't shadow the original opener.
-func First(home, worktreePath string) string {
+//
+// Prompts timestamped before since are ignored: a session whose worktree is
+// a shared directory (a project rooted at ~, say) shares that log dir with
+// every other Claude session ever started there. A zero since disables it.
+func First(home, worktreePath string, since time.Time) string {
 	dir := filepath.Join(home, ".claude", "projects", EncodeCwd(worktreePath))
 	files, err := jsonlFilesByMtime(dir)
 	if err != nil {
@@ -180,7 +186,7 @@ func First(home, worktreePath string) string {
 	}
 	var bestTS, bestPrompt string
 	for _, f := range files {
-		ts, p := firstInFile(f)
+		ts, p := firstInFile(f, since)
 		if p == "" {
 			continue
 		}
@@ -229,7 +235,7 @@ func jsonlFilesByMtime(dir string) ([]string, error) {
 	return paths, nil
 }
 
-func firstInFile(path string) (timestamp, text string) {
+func firstInFile(path string, since time.Time) (timestamp, text string) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", ""
@@ -243,7 +249,10 @@ func firstInFile(path string) (timestamp, text string) {
 		if err := json.Unmarshal(line, &e); err != nil {
 			continue
 		}
-		if e.Type != "user" || len(e.Message) == 0 {
+		if e.Type != "user" || e.IsMeta || len(e.Message) == 0 {
+			continue
+		}
+		if t, err := time.Parse(time.RFC3339Nano, e.Timestamp); err == nil && t.Before(since) {
 			continue
 		}
 		var m msg
@@ -258,7 +267,7 @@ func firstInFile(path string) (timestamp, text string) {
 			continue
 		}
 		s = strings.TrimSpace(s)
-		if s == "" || strings.HasPrefix(s, "╭") || strings.HasPrefix(s, "<command-") {
+		if s == "" || strings.HasPrefix(s, "╭") || strings.HasPrefix(s, "<command-") || strings.HasPrefix(s, "<local-command-") {
 			continue
 		}
 		return e.Timestamp, s
