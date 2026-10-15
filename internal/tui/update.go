@@ -110,21 +110,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, listenStatus(m.statusCh)
 
-	case GitStatusMsg:
+	case ChangeSummaryMsg:
 		// The delete dialog's own check resolved. Routine git status rides
 		// the view stream; this only ever answers the dialog. Guarded on the
-		// mode, like ChangeSummaryMsg below — confirmChecking isn't cleared
-		// when the dialog is cancelled, so keying off it alone would let a
-		// late result write confirmGit for a dialog that's already closed.
+		// mode — confirmChecking isn't cleared when the dialog is cancelled,
+		// so keying off it alone would let a late result write confirmGit
+		// for a dialog that's already closed.
 		if m.mode == ModeConfirmDelete && len(m.sessions) > 0 && m.sessions[m.cursor].ID == msg.ID {
-			m.confirmGit = msg.Status
+			sum := msg.Summary
+			m.confirmSummary = sum
+			m.confirmGit = gitStatusInfo{dirty: sum.filesChanged > 0, unpushed: sum.unpushedCommits > 0, ok: sum.ok}
 			m.confirmChecking = false
-		}
-		return m, nil
-
-	case ChangeSummaryMsg:
-		if m.mode == ModeConfirmDelete && len(m.sessions) > 0 && m.sessions[m.cursor].ID == msg.ID {
-			m.confirmSummary = msg.Summary
 		}
 		return m, nil
 
@@ -737,8 +733,8 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			id := m.sessions[m.cursor].ID
 			// Opens instantly on the last snapshot's status so the dialog
 			// never visibly pauses, then fires a check of its own —
-			// confirmChecking drives a small loading note until GitStatusMsg
-			// lands. Worth the extra call even though the snapshot carries a
+			// confirmChecking drives a small loading note until
+			// ChangeSummaryMsg lands. Worth the extra call even though the snapshot carries a
 			// status: this is the guard before a destructive action, and the
 			// streamed one can be up to a minute old (see
 			// sessionview.gitStaleAfter).
@@ -752,7 +748,7 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// offset and can open with the "what you're deleting" text
 			// scrolled off-screen, leaving only "y to confirm" visible.
 			m.resetOverlayViewport()
-			return m, tea.Batch(fetchGitStatusCmd(m.backend, id), fetchChangeSummaryCmd(m.backend, id))
+			return m, fetchChangeSummaryCmd(m.backend, id)
 		}
 	case key.Matches(msg, m.keys.Archive):
 		if m.busy {
@@ -1520,7 +1516,7 @@ func (m *Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.confirmChecking {
 			// The fresh check hasn't resolved yet — acting on whatever's
 			// cached (possibly nothing, possibly stale) would defeat the
-			// point of checking at all. Ignore y until GitStatusMsg lands.
+			// point of checking at all. Ignore y until ChangeSummaryMsg lands.
 			return m, nil
 		}
 		if m.confirmGit.ok && (m.confirmGit.dirty || m.confirmGit.unpushed) && !m.confirmAck {

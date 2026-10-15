@@ -50,16 +50,16 @@ type Backend interface {
 	// core's whole API, and that's what the socket serves.
 	EnsureTmux(id string) (hint string, err error)
 	DeleteSession(id string) (hint string, err error)
-	// WorktreeStatus reports id's worktree as dirty/unpushed; ok is false if
-	// status can't be determined (unknown session, or not a git repo). The
-	// routine per-session polling lives in the core now (see
-	// sessionview.Watcher) and arrives on the view stream — this is the
-	// on-demand path, for when a user action wants the freshest answer
-	// right now rather than whatever the last snapshot carried.
+	// WorktreeStatus reports id's worktree as dirty/unpushed, fetching the
+	// remote first when it's due; ok is false if status can't be determined.
+	// The TUI no longer calls it (the fetch is what made the delete dialog
+	// slow — see fetchChangeSummaryCmd), but the socket still serves it.
 	WorktreeStatus(id string) (dirty, unpushed, ok bool)
 	// ChangeSummary reports id's worktree change counts (files with
-	// uncommitted changes, commits unpushed) for the delete dialog's detail
-	// line; ok is false if it can't be determined.
+	// uncommitted changes, commits unpushed) for the delete dialog, checked
+	// fresh and local-only; ok is false if it can't be determined. Routine
+	// dirty/unpushed status rides the view stream instead (see
+	// sessionview.Watcher).
 	ChangeSummary(id string) (filesChanged, unpushedCommits int, ok bool)
 	// Capture returns the visible text of each session's active pane, keyed
 	// by session id, for a front end that draws a grid of live sessions.
@@ -544,19 +544,16 @@ type Model struct {
 	searchCursor  int
 	// confirmGit starts out as whatever the last snapshot said (possibly
 	// stale or empty) the instant ModeConfirmDelete opens, so the dialog
-	// never pauses. confirmChecking is true while a fresh fetchGitStatusCmd
-	// for the session is in flight; the dialog shows a small loading note
-	// until it resolves and confirmGit is updated for real (see GitStatusMsg
-	// in update.go). confirmAck becomes true once the user has pressed y
+	// never pauses. confirmChecking is true while a fresh
+	// fetchChangeSummaryCmd for the session is in flight; the dialog shows a
+	// small loading note until it resolves and confirmGit is updated for real
+	// (see ChangeSummaryMsg in update.go). confirmAck becomes true once the user has pressed y
 	// through a dirty/unpushed warning once; a second y then actually deletes.
 	confirmGit      gitStatusInfo
 	confirmChecking bool
 	confirmAck      bool
 	// confirmSummary is the file/commit-count detail for the warning line in
-	// the delete dialog, fetched alongside confirmGit by the same key press
-	// (see fetchChangeSummaryCmd). It has no "checking" gate of its own —
-	// confirmGit alone decides whether the dialog warns and whether a second
-	// y is required; this only enriches that warning's text once it arrives.
+	// the delete dialog, from the same check that resolves confirmGit.
 	confirmSummary changeSummary
 	// themeCursor is an index into themeNames while ModeThemePicker is open.
 	// previewAppearance holds the appearance being live-previewed there
@@ -1000,17 +997,6 @@ type gitStatusInfo struct {
 	dirty, unpushed, ok bool
 }
 
-// fetchGitStatusCmd computes id's git status off the event-loop goroutine,
-// for the delete dialog's on-demand check. The routine per-session polling
-// this used to fan out over every session now lives in the core (see
-// internal/sessionview) and arrives on the view stream.
-func fetchGitStatusCmd(backend Backend, id string) tea.Cmd {
-	return func() tea.Msg {
-		dirty, unpushed, ok := backend.WorktreeStatus(id)
-		return GitStatusMsg{ID: id, Status: gitStatusInfo{dirty: dirty, unpushed: unpushed, ok: ok}}
-	}
-}
-
 // changeSummary is the file/commit-count detail for one session's delete
 // dialog warning line. ok is false when it couldn't be determined, in which
 // case the counts are meaningless and the dialog falls back to its plain
@@ -1020,10 +1006,10 @@ type changeSummary struct {
 	ok                            bool
 }
 
-// fetchChangeSummaryCmd computes id's change summary off the event-loop
-// goroutine, for the delete dialog's on-demand detail line. Unlike
-// fetchGitStatusCmd's routine per-session polling, this only ever runs once
-// per delete-key-press for the one session being deleted.
+// fetchChangeSummaryCmd is the delete dialog's fresh check, run off the
+// event-loop goroutine once per delete-key-press. It is local git only: the
+// core's WorktreeStatus also fetches the remote, 2-4s the dialog used to sit
+// on. A stale remote ref can only over-report unpushed commits.
 func fetchChangeSummaryCmd(backend Backend, id string) tea.Cmd {
 	return func() tea.Msg {
 		files, commits, ok := backend.ChangeSummary(id)
