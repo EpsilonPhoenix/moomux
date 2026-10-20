@@ -595,3 +595,42 @@ func TestDiffOnANonRepoIsErrNotGitRepo(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotGitRepo", err)
 	}
 }
+
+// Only an upstream that is some other branch is a base. The branch's own
+// remote copy, after a push -u, would diff away the very work under review.
+func TestTrackedBase(t *testing.T) {
+	root := t.TempDir()
+	origin, clone := filepath.Join(root, "origin"), filepath.Join(root, "clone")
+	git := func(in string, args ...string) {
+		t.Helper()
+		args = append([]string{"-c", "user.name=moomux", "-c", "user.email=moomux@localhost"}, args...)
+		if out, err := ExecRunner().Run(in, args...); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+	}
+	if err := os.Mkdir(origin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(origin, "init", "-b", "main")
+	git(origin, "commit", "--allow-empty", "-m", "init")
+	git(origin, "branch", "release/202644")
+	git(root, "clone", "-q", origin, clone)
+	for _, tc := range []struct {
+		name  string
+		setup []string
+		want  string
+	}{
+		{"cut from a remote release", []string{"checkout", "-b", "a", "--track", "origin/release/202644"}, "release/202644"},
+		{"cut from a local branch", []string{"checkout", "-b", "b", "--track", "main"}, "main"},
+		{"no upstream", []string{"checkout", "-b", "c", "--no-track", "origin/main"}, ""},
+		{"its own remote copy", []string{"push", "-q", "-u", "origin", "c"}, ""},
+	} {
+		git(clone, tc.setup...)
+		if got := TrackedBase(clone); got != tc.want {
+			t.Errorf("%s: TrackedBase = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+	if got := TrackedBase(root); got != "" {
+		t.Errorf("not a repo: TrackedBase = %q, want empty", got)
+	}
+}

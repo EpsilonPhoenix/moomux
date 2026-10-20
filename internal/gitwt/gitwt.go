@@ -475,6 +475,30 @@ func BaseCommit(dir, base string) (ref, commit string, err error) {
 	return "HEAD", strings.TrimSpace(out), nil
 }
 
+// TrackedBase is the branch dir's checkout tracks, when that is some other
+// branch: `worktree add -b x origin/base` sets that up, and it lasts until a
+// `push -u` points the branch at its own remote copy. It answers empty for
+// no upstream, or for the branch's own copy, which would diff away exactly
+// the work being reviewed. The remote is dropped, so BaseCommit resolves
+// the answer like any other base.
+func TrackedBase(dir string) string {
+	out, _, err := gitStdout(dir, nil, 0, "rev-parse", "--symbolic-full-name", "HEAD", "HEAD@{upstream}")
+	if err != nil {
+		return ""
+	}
+	head, up, _ := strings.Cut(strings.TrimSpace(out), "\n")
+	base, local := strings.CutPrefix(up, "refs/heads/")
+	if !local {
+		// refs/remotes/<remote>/<branch>; a remote name with a slash in it
+		// would be cut wrong, and git allows one, but nobody names one so.
+		_, base, _ = strings.Cut(strings.TrimPrefix(up, "refs/remotes/"), "/")
+	}
+	if base == "" || "refs/heads/"+base == head {
+		return ""
+	}
+	return base
+}
+
 // commitID is a full commit id, SHA-1 or SHA-256. ReadAt takes nothing
 // looser: a ref name or an expression could start with "-" and read as an
 // option, and the only commit a client has to pass is one Diff gave it.

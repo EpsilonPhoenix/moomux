@@ -116,11 +116,17 @@ func (a *App) SelectWindow(id string, delta int) error {
 }
 
 // reviewBase is the branch a session's work is diffed against. The
-// session's own base is what its branch was actually cut from; the
-// project's is the fallback for a resumed branch that never recorded one.
+// session's own base is what its branch was actually cut from. A session
+// that never recorded one (a resumed branch, or one older than the field)
+// falls back to the branch its checkout tracks, when that is another
+// branch, and then to the project's — which moves on with each release, so
+// it is the weakest guess.
 func reviewBase(s session.Session, proj config.Project) string {
 	if s.BaseBranch != "" {
 		return s.BaseBranch
+	}
+	if base := gitwt.TrackedBase(s.WorktreePath); base != "" {
+		return base
 	}
 	if proj.BaseBranch != "" {
 		return proj.BaseBranch

@@ -200,7 +200,7 @@ func diffBaseRepo(t *testing.T) string {
 }
 
 // Diff resolves its base exactly as Review does: the session's, then the
-// project's, then main.
+// branch the checkout tracks, then the project's, then main.
 func TestDiffPrefersTheSessionBaseThenTheProjectsThenMain(t *testing.T) {
 	wt := diffBaseRepo(t)
 	for _, tc := range []struct {
@@ -209,9 +209,14 @@ func TestDiffPrefersTheSessionBaseThenTheProjectsThenMain(t *testing.T) {
 	}{
 		{"session base wins", "trunk", "main", "trunk", false},
 		{"project base is the fallback", "", "trunk", "trunk", false},
+		{"a tracked branch beats the project's", "", "main", "trunk", false},
 		{"main is the last resort", "", "", "main", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.name == "a tracked branch beats the project's" {
+				mustGit(t, wt, "branch", "--set-upstream-to=trunk", "feat")
+				defer mustGit(t, wt, "branch", "--unset-upstream", "feat")
+			}
 			a := newReviewApp(t, &fakeTmuxRunner{},
 				session.Session{ID: "p:a", Project: "p", WorktreePath: wt, BaseBranch: tc.sessionBase})
 			a.Cfg.Projects["p"] = config.Project{Repo: wt, BaseBranch: tc.projectBase}
