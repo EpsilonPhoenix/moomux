@@ -158,9 +158,10 @@ func TestLabelAndQuipMatchEffectiveState(t *testing.T) {
 	}
 }
 
-// TestPromptFallsBackToStored covers the recovery order: a prompt found in
-// the agent's own log wins, and the one captured at creation time is the
-// fallback. A client reads View.Prompt and never has to know there are two.
+// TestPromptFallsBackToStored covers the recovery order: the prompt captured
+// at creation wins, and one found in the agent's own log is the fallback. The
+// agent prunes old logs, so a recovered prompt can belong to a later
+// conversation. A client reads View.Prompt and never has to know there are two.
 func TestPromptFallsBackToStored(t *testing.T) {
 	s := sess("demo:a", "/wt/a")
 	s.Prompt = "stored prompt"
@@ -172,10 +173,18 @@ func TestPromptFallsBackToStored(t *testing.T) {
 	}
 
 	w := newWatcher(core)
-	w.prompts["demo:a"] = promptEntry{text: "recovered from the log", agent: "claude", checkedAt: time.Now()}
+	w.prompts["demo:a"] = promptEntry{text: "later conversation", agent: "claude", checkedAt: time.Now()}
 	snap, _ := w.build()
+	if got := snap.Views["demo:a"].Prompt; got != "stored prompt" {
+		t.Errorf("Prompt = %q, want the stored one to win over the log", got)
+	}
+
+	core.sessions[0].Prompt = ""
+	w = newWatcher(core)
+	w.prompts["demo:a"] = promptEntry{text: "recovered from the log", agent: "claude", checkedAt: time.Now()}
+	snap, _ = w.build()
 	if got := snap.Views["demo:a"].Prompt; got != "recovered from the log" {
-		t.Errorf("Prompt = %q, want the recovered one to win", got)
+		t.Errorf("Prompt = %q, want the recovered one when nothing is stored", got)
 	}
 }
 

@@ -1956,3 +1956,40 @@ func TestNewSessionPromptCtrlVPastesClipboardImagePath(t *testing.T) {
 		t.Fatal("no image: ctrl+v should fall through to the textarea's text paste")
 	}
 }
+
+// A draft whose create finished in the core while the TUI was gone (an SSH
+// drop mid-create) belongs to a session that exists. Reopening the form must
+// not hand that prior session's first prompt back as unsent text.
+func TestNewSessionDraftDroppedOnceItsSessionExists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "draft.txt")
+	if err := os.WriteFile(path, []byte("fix the login bug"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	be := &fakeBackend{sessions: []session.Session{{
+		ID: "demo:login", Project: "demo", Name: "login",
+		Prompt:    "think hard: fix the login bug\n\nTicket: T-1",
+		CreatedAt: time.Now().Add(time.Minute),
+	}}}
+	m := newTestModel(be)
+	m.draftPath = path
+
+	m.Update(keyRune("n"))
+	if got := m.promptInput.Value(); got != "" {
+		t.Fatalf("prompt = %q, want the consumed draft dropped", got)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("draft file still there: %v", err)
+	}
+
+	// A session older than the draft does not consume it.
+	if err := os.WriteFile(path, []byte("fix the login bug"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	be.sessions[0].CreatedAt = time.Now().Add(-time.Hour)
+	again := newTestModel(be)
+	again.draftPath = path
+	again.Update(keyRune("n"))
+	if got := again.promptInput.Value(); got != "fix the login bug" {
+		t.Fatalf("prompt = %q, want the unsent draft kept", got)
+	}
+}

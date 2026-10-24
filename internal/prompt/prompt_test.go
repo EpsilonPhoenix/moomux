@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -184,7 +185,7 @@ func TestFirstOpenCodeMissingDBLeavesNoStrayFile(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := FirstOpenCode(home, "/wt/x"); got != "" {
+	if got := FirstOpenCode(home, "/wt/x", time.Time{}); got != "" {
 		t.Fatalf("got %q", got)
 	}
 	if _, err := os.Stat(dbPath); err == nil {
@@ -221,7 +222,7 @@ func TestFirstOpenCodeRespectsQueryTimeout(t *testing.T) {
 	t.Cleanup(func() { queryTimeout = old })
 
 	start := time.Now()
-	got := FirstOpenCode(home, "/wt/x")
+	got := FirstOpenCode(home, "/wt/x", time.Time{})
 	elapsed := time.Since(start)
 	if got != "" {
 		t.Fatalf("got %q, want empty", got)
@@ -242,7 +243,7 @@ func TestFirstCodexScansGlobs(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "state_1.sqlite"), []byte("not a db"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := FirstCodex(home, "/wt/x"); got != "" {
+	if got := FirstCodex(home, "/wt/x", time.Time{}); got != "" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -296,7 +297,7 @@ func TestFirstAntigravity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := FirstAntigravity(home, wt); got != "First prompt from preview" {
+	if got := FirstAntigravity(home, wt, time.Time{}); got != "First prompt from preview" {
 		t.Fatalf("FirstAntigravity = %q, want %q", got, "First prompt from preview")
 	}
 
@@ -313,7 +314,7 @@ func TestFirstAntigravity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := FirstAntigravity(home, wt2); got != "Fallback title prompt" {
+	if got := FirstAntigravity(home, wt2, time.Time{}); got != "Fallback title prompt" {
 		t.Fatalf("FirstAntigravity fallback = %q, want %q", got, "Fallback title prompt")
 	}
 
@@ -330,7 +331,59 @@ func TestFirstAntigravity(t *testing.T) {
 	if err := exec.Command("sqlite3", dbPath, insert3).Run(); err != nil {
 		t.Fatal(err)
 	}
-	if got := FirstAntigravity(home, wt3); got != "Escaped path prompt" {
+	if got := FirstAntigravity(home, wt3, time.Time{}); got != "Escaped path prompt" {
 		t.Fatalf("FirstAntigravity escaped = %q, want %q", got, "Escaped path prompt")
+	}
+}
+
+// TestNonClaudeAgentsIgnorePriorSessionRows: a worktree path reused by a
+// recreated session must not surface the old session's prompt.
+func TestNonClaudeAgentsIgnorePriorSessionRows(t *testing.T) {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		t.Skip("sqlite3 not installed")
+	}
+	home := t.TempDir()
+	wt := "/wt/reused"
+	since := time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC)
+	before, after := since.Add(-time.Hour), since.Add(time.Hour)
+	run := func(db, sql string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(db), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := exec.Command("sqlite3", db, sql).CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+	}
+
+	run(filepath.Join(home, ".codex", "state_1.sqlite"), `
+CREATE TABLE threads (cwd text, first_user_message text, created_at integer);
+INSERT INTO threads VALUES ('`+wt+`', 'old codex', `+strconv.FormatInt(before.Unix(), 10)+`);
+INSERT INTO threads VALUES ('`+wt+`', 'new codex', `+strconv.FormatInt(after.Unix(), 10)+`);`)
+
+	run(filepath.Join(home, ".local", "share", "opencode", "opencode.db"), `
+CREATE TABLE session (id text, directory text);
+CREATE TABLE message (id text, session_id text, data text, time_created integer);
+CREATE TABLE part (id text, message_id text, data text, time_created integer);
+INSERT INTO session VALUES ('s1', '`+wt+`');
+INSERT INTO message VALUES ('m1', 's1', '{"role":"user"}', `+strconv.FormatInt(before.UnixMilli(), 10)+`);
+INSERT INTO message VALUES ('m2', 's1', '{"role":"user"}', `+strconv.FormatInt(after.UnixMilli(), 10)+`);
+INSERT INTO part VALUES ('p1', 'm1', '{"type":"text","text":"old opencode"}', 1);
+INSERT INTO part VALUES ('p2', 'm2', '{"type":"text","text":"new opencode"}', 2);`)
+
+	run(filepath.Join(home, ".gemini", "antigravity-cli", "conversation_summaries.db"), `
+CREATE TABLE conversation_summaries (conversation_id text, title text, preview text, last_modified_time datetime, workspace_uris text);
+INSERT INTO conversation_summaries VALUES ('c1', '', 'old agy', '`+before.Format("2006-01-02 15:04:05")+`+00:00', '["file://`+wt+`"]');
+INSERT INTO conversation_summaries VALUES ('c2', '', 'new agy', '`+after.Format("2006-01-02 15:04:05")+`+00:00', '["file://`+wt+`"]');`)
+
+	for agent, want := range map[string]string{"codex": "new codex", "opencode": "new opencode", "antigravity": "new agy"} {
+		if got := ForAgent(home, agent, wt, since); got != want {
+			t.Errorf("%s with since: got %q, want %q", agent, got, want)
+		}
+	}
+	for agent, want := range map[string]string{"codex": "old codex", "opencode": "old opencode", "antigravity": "old agy"} {
+		if got := ForAgent(home, agent, wt, time.Time{}); got != want {
+			t.Errorf("%s zero since: got %q, want %q", agent, got, want)
+		}
 	}
 }
