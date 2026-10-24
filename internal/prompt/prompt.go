@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -75,11 +76,11 @@ type msg struct {
 func ForAgent(home, agent, worktreePath string, since time.Time) string {
 	switch agent {
 	case "opencode":
-		return FirstOpenCode(home, worktreePath)
+		return FirstOpenCode(home, worktreePath, since)
 	case "codex":
-		return FirstCodex(home, worktreePath)
+		return FirstCodex(home, worktreePath, since)
 	case "antigravity":
-		return FirstAntigravity(home, worktreePath)
+		return FirstAntigravity(home, worktreePath, since)
 	default:
 		return First(home, worktreePath, since)
 	}
@@ -93,7 +94,7 @@ func ForAgent(home, agent, worktreePath string, since time.Time) string {
 // touched conversation. With two conversations in one worktree, resuming the
 // older one reorders them and the recovered prompt changes. last_user_input_time
 // has the same problem; there is no column that pins the original.
-func FirstAntigravity(home, worktreePath string) string {
+func FirstAntigravity(home, worktreePath string, since time.Time) string {
 	dbPath := filepath.Join(home, ".gemini", "antigravity-cli", "conversation_summaries.db")
 	if _, err := os.Stat(dbPath); err != nil {
 		return ""
@@ -109,15 +110,43 @@ func FirstAntigravity(home, worktreePath string) string {
 FROM conversation_summaries c, json_each(c.workspace_uris) j
 WHERE json_valid(c.workspace_uris)
   AND j.value IN (` + strings.Join(uris, ", ") + `)
-  AND COALESCE(NULLIF(c.preview, ''), c.title) != ''
+  AND COALESCE(NULLIF(c.preview, ''), c.title) != ''` + antigravitySince(since) + `
 ORDER BY c.last_modified_time ASC
 LIMIT 1`
 	return sqliteQuery(dbPath, query)
 }
 
+// The three *Since helpers drop a prior session's rows when a worktree path is
+// reused (a session deleted and recreated under the same name). Each is empty
+// for a zero since. See First.
+
+func antigravitySince(since time.Time) string {
+	if since.IsZero() {
+		return ""
+	}
+	return "\n  AND datetime(c.last_modified_time) >= datetime(" + sqlQuote(since.UTC().Format("2006-01-02 15:04:05")) + ")"
+}
+
+// openCodeSince compares time_created, which opencode stores in milliseconds.
+func openCodeSince(since time.Time) string {
+	if since.IsZero() {
+		return ""
+	}
+	return "\n  AND m.time_created >= " + strconv.FormatInt(since.UnixMilli(), 10)
+}
+
+// codexSince compares created_at in seconds. A column in milliseconds would
+// always pass, so the worst a wrong unit does is filter nothing.
+func codexSince(since time.Time) string {
+	if since.IsZero() {
+		return ""
+	}
+	return " AND created_at >= " + strconv.FormatInt(since.Unix(), 10)
+}
+
 // FirstOpenCode returns the first user text prompt for an OpenCode session
 // by querying ~/.local/share/opencode/opencode.db.
-func FirstOpenCode(home, worktreePath string) string {
+func FirstOpenCode(home, worktreePath string, since time.Time) string {
 	dbPath := filepath.Join(home, ".local", "share", "opencode", "opencode.db")
 	if _, err := os.Stat(dbPath); err != nil {
 		// sqlite3 creates an empty db file at dbPath if it doesn't exist,
@@ -131,7 +160,7 @@ JOIN message m ON p.message_id = m.id
 JOIN session s ON s.id = m.session_id
 WHERE s.directory = ` + sqlQuote(worktreePath) + `
   AND json_extract(m.data, '$.role') = 'user'
-  AND json_extract(p.data, '$.type') = 'text'
+  AND json_extract(p.data, '$.type') = 'text'` + openCodeSince(since) + `
 ORDER BY m.time_created ASC, p.time_created ASC
 LIMIT 1`
 	return sqliteQuery(dbPath, query)
@@ -139,10 +168,10 @@ LIMIT 1`
 
 // FirstCodex returns the first user prompt from a Codex CLI session by
 // querying the threads table in the state SQLite files.
-func FirstCodex(home, worktreePath string) string {
+func FirstCodex(home, worktreePath string, since time.Time) string {
 	query := "SELECT first_user_message FROM threads WHERE cwd = " +
 		sqlQuote(worktreePath) +
-		" AND first_user_message != '' ORDER BY created_at ASC LIMIT 1"
+		" AND first_user_message != ''" + codexSince(since) + " ORDER BY created_at ASC LIMIT 1"
 	for _, pattern := range codexDBGlobs(home) {
 		paths, err := filepath.Glob(pattern)
 		if err != nil {

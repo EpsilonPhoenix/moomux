@@ -427,14 +427,15 @@ func (w *Watcher) build() (Snapshot, map[string]watcher.State) {
 		live[s.ID] = true
 		st := w.stateOf(s)
 		v := View{ID: s.ID, State: st, Label: Label(st), Quip: Quip(s.ID, st)}
-		// A prompt recovered from the agent's own log wins over the one
-		// captured at creation: for a session resumed on an existing branch
-		// the stored one may be empty, and where both exist they're the
-		// same text anyway.
-		if p := w.prompts[s.ID]; p.text != "" && p.agent == s.AgentName() {
-			v.Prompt = p.text
-		} else {
+		// The prompt captured at creation wins: it is the session's real
+		// first prompt. The agent's log is only the fallback (a session
+		// made without a prompt, or resumed on an existing branch). The
+		// agent prunes old logs, and once the original conversation's log
+		// is gone the scan returns some later conversation's first prompt.
+		if s.Prompt != "" {
 			v.Prompt = s.Prompt
+		} else if p := w.prompts[s.ID]; p.text != "" && p.agent == s.AgentName() {
+			v.Prompt = p.text
 		}
 		if g, ok := w.git[s.ID]; ok {
 			v.GitOK, v.Dirty, v.Unpushed = g.ok, g.dirty, g.unpushed
@@ -639,7 +640,7 @@ func (w *Watcher) prDue(s session.Session) bool {
 // writes its log a moment after the session exists), hence a back-off
 // rather than giving up.
 func (w *Watcher) promptDue(s session.Session) bool {
-	if w.Home == "" || w.pending[fetchKey{fetchPrompt, s.ID}] {
+	if w.Home == "" || s.Prompt != "" || w.pending[fetchKey{fetchPrompt, s.ID}] {
 		return false
 	}
 	cur, ok := w.prompts[s.ID]

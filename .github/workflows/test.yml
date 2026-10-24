@@ -5,6 +5,11 @@ on:
   push:
     branches:
       - main
+  # Daily, so a new Go advisory turns `lint` red on its own instead of
+  # surfacing on whoever opens the next PR. Only `lint` runs on a schedule.
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
 
 concurrency:
   group: test-${{ github.workflow }}-${{ github.ref }}
@@ -16,6 +21,7 @@ jobs:
   # symlinks resolved, so every macOS worktree under a symlinked path looked
   # like a cwd mismatch (see samePath in internal/app/app.go).
   test:
+    if: github.event_name != 'schedule'
     strategy:
       fail-fast: false
       matrix:
@@ -57,6 +63,7 @@ jobs:
   # GOTOOLCHAIN=local, setup-go reads the `go` line instead of `toolchain`,
   # and go won't switch up to a newer toolchain on its own.
   min-go:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -104,21 +111,14 @@ jobs:
             exit 1
           fi
 
-      # staticcheck v0.8.1 can't read go1.27.2's export data ("export data
-      # version 5 is greater than maximum supported version 4"), so this one
-      # step runs on go1.27.1. Only this step: 1.27.2 is a security release,
-      # and govulncheck below must see the patched toolchain. Drop the pin
-      # once a staticcheck release supports 1.27.2.
       - name: staticcheck
-        env:
-          GOTOOLCHAIN: go1.27.1
-        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
 
       # Default (symbol-level) mode: flags only vulnerabilities the code
       # actually reaches, so an unreachable one in a required module doesn't
       # block every merge until an upstream release lands.
       - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
       # The version-bump logic that tags and ships every merge to main had a
       # test that nothing ever ran.

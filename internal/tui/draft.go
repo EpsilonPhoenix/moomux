@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/erickgnclvs/moomux/internal/config"
 )
@@ -50,6 +51,12 @@ func (m *Model) clearNewSessionDraft() {
 }
 
 // loadNewSessionDraft returns the saved prompt, or "" when there is none.
+//
+// A draft that a session has already consumed is dropped. The draft is saved
+// before the create runs, and SessionCreatedMsg is what clears it, so a TUI
+// that dies after the core finished (an SSH drop, a quit mid-create) leaves
+// the prompt of a session that exists. Reopening the form would then show
+// that prior session's first prompt as if it were unsent.
 func (m *Model) loadNewSessionDraft() string {
 	if m.draftPath == "" {
 		return ""
@@ -58,5 +65,23 @@ func (m *Model) loadNewSessionDraft() string {
 	if err != nil {
 		return ""
 	}
-	return string(b)
+	draft := string(b)
+	if info, err := os.Stat(m.draftPath); err == nil && m.draftConsumed(draft, info.ModTime()) {
+		m.clearNewSessionDraft()
+		return ""
+	}
+	return draft
+}
+
+// draftConsumed reports whether a session created since saved carries draft
+// in its stored first prompt. The stored prompt is the composed one (thinking
+// prefix, ticket and PR lines), so it contains the draft rather than equal it.
+func (m *Model) draftConsumed(draft string, saved time.Time) bool {
+	draft = strings.TrimSpace(draft)
+	for _, s := range m.allSessions() {
+		if !s.CreatedAt.Before(saved) && strings.Contains(s.Prompt, draft) {
+			return true
+		}
+	}
+	return false
 }
