@@ -156,3 +156,16 @@ func TestUsageSurvivesErrorOnlySnapshot(t *testing.T) {
 		t.Errorf("a real snapshot without usage should clear it, got %+v", m.usage)
 	}
 }
+
+// TestSnapshotUpdateAvailableSetsUpdateVersion: the footer's "v0.5.3 → v0.5.4"
+// comes from the core's snapshot, not a poll of the TUI's own.
+func TestSnapshotUpdateAvailableSetsUpdateVersion(t *testing.T) {
+	m := layoutTestModel(1)
+	m.Update(StatusTickMsg{Snap: sessionview.Snapshot{
+		Views:           map[string]sessionview.View{},
+		UpdateAvailable: &sessionview.UpdateInfo{Current: "0.5.3", Latest: "0.5.4"},
+	}})
+	if m.UpdateVersion != "0.5.4" {
+		t.Fatalf("UpdateVersion = %q, want 0.5.4", m.UpdateVersion)
+	}
+}

@@ -22,10 +22,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// One backend read per pass — see allSessions.
 	m.invalidateSessions()
 	switch msg := msg.(type) {
-	case UpdateAvailableMsg:
-		m.UpdateVersion = msg.Version
-		return m, nil
-
 	case UpdateCheckedMsg:
 		if msg.Err != nil || msg.Version == "" {
 			m.updating = false
@@ -39,9 +35,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.UpdateVersion = msg.Version
 		m.setFlash("info", "updating to v"+m.UpdateVersion+"…")
 		return m, runUpdateCmd()
-
-	case UpdateCheckTickMsg:
-		return m, tea.Batch(checkUpdateCmd(m.Version), tickUpdateCheck())
 
 	case UpdateAppliedMsg:
 		m.updating = false
@@ -82,6 +75,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.views = msg.Snap.Views
 			m.usage = msg.Snap.Usage
 			m.usageSetup = msg.Snap.UsageSetup
+			if u := msg.Snap.UpdateAvailable; u != nil {
+				m.UpdateVersion = u.Latest
+			}
 		}
 		if msg.Snap.Sessions != nil {
 			m.snapSessions = msg.Snap.Sessions

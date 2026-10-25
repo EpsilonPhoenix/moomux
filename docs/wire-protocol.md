@@ -151,6 +151,7 @@ the joined state, so a parked session's cow told the Mac app it was working).
   "cfg": { /* the whole config.Config: projects, folders, theme, settings */ },
   "usage": { /* Claude quota, optional — see below */ },
   "usage_setup": "not_installed",          // why usage is absent, optional — see below
+  "update_available": {"current": "0.5.3", "latest": "0.5.4"},  // optional — see below
   "poll_time": "2026-09-06T18:00:00Z",
   "err": ""                                // a scan failure, as text
 }
@@ -267,6 +268,20 @@ Countdown strings, spend and token counts are deliberately left out. A
 countdown changes every minute, so clients format `resets_at` themselves. The
 shape is shared with moomux-mac, whose `docs/usage-contract.md` is the
 cross-repo contract. Change it there first.
+
+### `update_available`: a newer moomux can be installed
+
+The core polls GitHub Releases at start-up and hourly, and puts the result on
+the snapshot so no client needs its own poll. Both versions are bare (no `v`).
+`current` is the version the core runs, which is the one `brew upgrade` would
+replace.
+
+- **Absent means nothing to draw.** The key is omitted when the core is up to
+  date, is a non-release build (`dev`), or has not heard from GitHub yet
+  (offline, rate-limited, first seconds after start). A failed check keeps the
+  last answer rather than clearing it. Old clients ignore the key.
+- The local TUI reads the same field for its footer; `u` still runs its own
+  on-demand check.
 
 ### `state` is a name, not an integer
 
