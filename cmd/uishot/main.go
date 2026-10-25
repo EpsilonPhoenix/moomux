@@ -28,6 +28,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/tui"
 	"github.com/erickgnclvs/moomux/internal/usage"
 	"github.com/erickgnclvs/moomux/internal/watcher"
+	"github.com/erickgnclvs/moomux/internal/whatsnew"
 )
 
 // screens maps a scenario name to the key sequence that drives a freshly
@@ -237,6 +238,8 @@ var screens = map[string][]string{
 	// the footer's "update available" notice (checkUpdateCmd never runs in
 	// this harness, since Init() is never called).
 	"update-available": {},
+	// Two unseen releases, so the version headings and both category styles show.
+	"whats-new": {},
 }
 
 var namedKeys = map[string]tea.KeyType{
@@ -761,6 +764,26 @@ func renderScreen(screenName string, width, height int, theme, appearance string
 	// open, empty channel.
 	statusCh := make(chan sessionview.Snapshot)
 	close(statusCh)
+	if screenName == "whats-new" {
+		// Opening the screen records the version as seen in client.toml;
+		// keep that off the real one.
+		dir, err := os.MkdirTemp("", "uishot-client")
+		if err != nil {
+			return "", err
+		}
+		defer os.RemoveAll(dir)
+		// Restored on return: TestScreens renders every screen in one process.
+		if prev, ok := os.LookupEnv("XDG_CONFIG_HOME"); ok {
+			defer os.Setenv("XDG_CONFIG_HOME", prev)
+		} else {
+			defer os.Unsetenv("XDG_CONFIG_HOME")
+		}
+		os.Setenv("XDG_CONFIG_HOME", dir)
+		// Upgrading from 0.6.64, so both releases show with their headings.
+		if err := config.SaveClient(config.ClientPath(), config.Client{WhatsNewSeen: "0.6.64"}); err != nil {
+			return "", err
+		}
+	}
 	tui.ApplySettings(cfg)
 	m := tui.New(cfg, be, (&app.App{}).AgentOptions(), statusCh, func() {})
 	m.Version = "dev"
@@ -787,6 +810,17 @@ func renderScreen(screenName string, width, height int, theme, appearance string
 	snap.Usage = screenUsage(screenName)
 	if screenName == "settings-usage-setup" {
 		snap.UsageSetup = usage.NotInstalled
+	}
+	if screenName == "whats-new" {
+		snap.WhatsNew = &whatsnew.Notes{Version: "0.6.66", Releases: []whatsnew.Release{
+			{Version: "0.6.66", Sections: []whatsnew.Section{
+				{Title: "New", Items: []string{"Show what's new after an upgrade, in the TUI and the Mac app"}},
+				{Title: "Fixed", Items: []string{"Keep a parked session's cow from reading as working", "Stop the footer clipping mid-word on narrow terminals"}},
+			}},
+			{Version: "0.6.65", Sections: []whatsnew.Section{
+				{Title: "Other changes", Items: []string{"Serve update_available on the Watch snapshot"}},
+			}},
+		}}
 	}
 	m.Update(tui.StatusTickMsg{Snap: snap})
 	for _, k := range keys {

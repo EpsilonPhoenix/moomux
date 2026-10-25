@@ -31,6 +31,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/updatecheck"
 	"github.com/erickgnclvs/moomux/internal/usage"
 	"github.com/erickgnclvs/moomux/internal/watcher"
+	"github.com/erickgnclvs/moomux/internal/whatsnew"
 )
 
 // View is everything about one session that isn't stored on the session
@@ -114,8 +115,11 @@ type Snapshot struct {
 	// the one this core runs; absent otherwise (up to date, a dev build, or
 	// the check hasn't answered yet), so absent means nothing to draw.
 	UpdateAvailable *UpdateInfo `json:"update_available,omitempty"`
-	PollTime        time.Time   `json:"poll_time"`
-	Err             string      `json:"err,omitempty"`
+	// WhatsNew is the release notes baked into this core's build; absent for
+	// a build without any. It never changes while the core runs.
+	WhatsNew *whatsnew.Notes `json:"whats_new,omitempty"`
+	PollTime time.Time       `json:"poll_time"`
+	Err      string          `json:"err,omitempty"`
 }
 
 // UpdateInfo is a pending update, both versions without the "v" prefix.
@@ -189,6 +193,9 @@ type Watcher struct {
 	Latest func(context.Context) (string, error)
 	// UpdateEvery defaults to updateCheckInterval.
 	UpdateEvery time.Duration
+
+	// WhatsNew is copied into every snapshot.
+	WhatsNew *whatsnew.Notes
 
 	// latest is the newest release tag seen, owned by the run loop.
 	latest string
@@ -541,6 +548,7 @@ func (w *Watcher) build() (Snapshot, map[string]watcher.State) {
 	}
 	snap := Snapshot{
 		UpdateAvailable: upd,
+		WhatsNew:        w.WhatsNew,
 		Usage:           u,
 		UsageSetup:      setup,
 		Sessions:        ordered,

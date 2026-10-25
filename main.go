@@ -32,6 +32,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/tui"
 	"github.com/erickgnclvs/moomux/internal/usage"
 	"github.com/erickgnclvs/moomux/internal/watcher"
+	"github.com/erickgnclvs/moomux/internal/whatsnew"
 )
 
 // set by goreleaser via ldflags
@@ -895,7 +896,7 @@ func buildSource(a *app.App, home string) *sessionview.Watcher {
 	return &sessionview.Watcher{
 		Core: a, Raw: buildWatcher(home), Home: home,
 		Usage:   &usage.Reader{Path: usage.DefaultPath(home)},
-		Version: version,
+		Version: version, WhatsNew: whatsnew.Load(version),
 	}
 }
 

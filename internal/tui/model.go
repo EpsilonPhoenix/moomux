@@ -23,6 +23,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/updatecheck"
 	"github.com/erickgnclvs/moomux/internal/usage"
 	"github.com/erickgnclvs/moomux/internal/watcher"
+	"github.com/erickgnclvs/moomux/internal/whatsnew"
 	"sort"
 )
 
@@ -196,6 +197,7 @@ const (
 	ModeFolderForm
 	ModeFolders
 	ModeConfirmDeleteFolder
+	ModeWhatsNew
 )
 
 // agentNames lists the agent CLIs a session/project can run, in the core's
@@ -445,6 +447,12 @@ type Model struct {
 	// UpdateVersion is the latest GitHub release, set from Snapshot.UpdateAvailable
 	// (or a u press); empty unless it's newer than Version.
 	UpdateVersion string
+	// whatsNew is the release notes ModeWhatsNew shows, picked once from the
+	// first snapshot that carries notes (see maybeShowWhatsNew).
+	whatsNew []whatsnew.Release
+	// whatsNewChecked is set once this run has compared the core's notes with
+	// client.WhatsNewSeen, so later snapshots don't ask again.
+	whatsNewChecked bool
 	// updating is true while runUpdateCmd's `brew upgrade` is in flight, so
 	// a repeat press of Update doesn't shell out twice concurrently.
 	updating bool

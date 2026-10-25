@@ -1,0 +1,21 @@
+# How the release workflow's generate-notes call groups merged PRs. Each PR's
+# title is its line in the release notes, both on GitHub and in the What's New
+# screen (internal/whatsnew); its label decides the heading. Dependabot and
+# docs PRs, and anything labelled `internal`, stay out of it.
+changelog:
+  exclude:
+    labels:
+      - internal
+      - documentation
+      - dependencies
+      - github_actions
+  categories:
+    - title: New
+      labels:
+        - enhancement
+    - title: Fixed
+      labels:
+        - bug
+    - title: Other changes
+      labels:
+        - "*"
