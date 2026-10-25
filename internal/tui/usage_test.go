@@ -1,15 +1,19 @@
 package tui
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/erickgnclvs/moomux/internal/config"
 	"github.com/erickgnclvs/moomux/internal/sessionview"
 	"github.com/erickgnclvs/moomux/internal/usage"
+	"github.com/erickgnclvs/moomux/internal/whatsnew"
 )
 
 func TestCountdown(t *testing.T) {
@@ -167,5 +171,76 @@ func TestSnapshotUpdateAvailableSetsUpdateVersion(t *testing.T) {
 	}})
 	if m.UpdateVersion != "0.5.4" {
 		t.Fatalf("UpdateVersion = %q, want 0.5.4", m.UpdateVersion)
+	}
+}
+
+func whatsNewSnap(version string) sessionview.Snapshot {
+	return sessionview.Snapshot{
+		Views: map[string]sessionview.View{},
+		WhatsNew: &whatsnew.Notes{Version: version, Releases: []whatsnew.Release{
+			{Version: "0.6.2", Sections: []whatsnew.Section{{Title: "New", Items: []string{"Two"}}}},
+			{Version: "0.6.1", Sections: []whatsnew.Section{{Title: "Fixed", Items: []string{"One"}}}},
+		}},
+	}
+}
+
+// TestWhatsNewShowsOncePerUpgrade: the first snapshot with unseen notes opens
+// the overlay and records the version; the same version never reopens it.
+func TestWhatsNewShowsOncePerUpgrade(t *testing.T) {
+	m := layoutTestModel(1)
+	m.clientPath = filepath.Join(t.TempDir(), "client.toml")
+	m.client.WhatsNewSeen = "0.6.1"
+
+	m.Update(StatusTickMsg{Snap: whatsNewSnap("0.6.2")})
+	if m.mode != ModeWhatsNew {
+		t.Fatalf("mode = %v, want ModeWhatsNew", m.mode)
+	}
+	if len(m.whatsNew) != 1 || m.whatsNew[0].Version != "0.6.2" {
+		t.Fatalf("shown releases = %+v, want only 0.6.2", m.whatsNew)
+	}
+	if got, _ := config.LoadClient(m.clientPath); got.WhatsNewSeen != "0.6.2" {
+		t.Fatalf("saved WhatsNewSeen = %q, want 0.6.2", got.WhatsNewSeen)
+	}
+
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != ModeList {
+		t.Fatalf("mode after enter = %v, want ModeList", m.mode)
+	}
+	m.Update(StatusTickMsg{Snap: whatsNewSnap("0.6.2")})
+	if m.mode != ModeList {
+		t.Fatalf("a seen version reopened the overlay")
+	}
+}
+
+// TestWhatsNewOpensFromMultiView: tui.New starts in multi-view, which is where
+// a real launch meets the first snapshot; closing must land back there.
+func TestWhatsNewOpensFromMultiView(t *testing.T) {
+	m := layoutTestModel(1)
+	m.clientPath = filepath.Join(t.TempDir(), "client.toml")
+	m.mode = ModeMultiView
+	m.Update(StatusTickMsg{Snap: whatsNewSnap("0.6.2")})
+	if m.mode != ModeWhatsNew {
+		t.Fatalf("mode = %v, want ModeWhatsNew", m.mode)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.mode != ModeMultiView {
+		t.Fatalf("mode after esc = %v, want ModeMultiView", m.mode)
+	}
+}
+
+// TestWhatsNewWaitsForTheList: a snapshot that lands while a form is open
+// must not yank it away, and must not use up the one chance to show.
+func TestWhatsNewWaitsForTheList(t *testing.T) {
+	m := layoutTestModel(1)
+	m.clientPath = filepath.Join(t.TempDir(), "client.toml")
+	m.mode = ModeNewForm
+	m.Update(StatusTickMsg{Snap: whatsNewSnap("0.6.2")})
+	if m.mode != ModeNewForm || m.client.WhatsNewSeen != "" {
+		t.Fatalf("mode = %v, seen = %q; want the form left alone and nothing marked seen", m.mode, m.client.WhatsNewSeen)
+	}
+	m.mode = ModeList
+	m.Update(StatusTickMsg{Snap: whatsNewSnap("0.6.2")})
+	if m.mode != ModeWhatsNew {
+		t.Fatalf("mode = %v, want ModeWhatsNew once back on the list", m.mode)
 	}
 }

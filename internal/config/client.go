@@ -23,6 +23,9 @@ type Client struct {
 	// argument and the command is started detached, so it has to open its
 	// own window. Empty means no tool configured.
 	DiffTool string `toml:"diff_tool,omitempty"`
+	// WhatsNewSeen is the last version whose release notes this front end
+	// showed. It is per machine: the Mac app keeps its own.
+	WhatsNewSeen string `toml:"whats_new_seen,omitempty"`
 }
 
 // ClientPath is the front end's own config file, alongside the core's.

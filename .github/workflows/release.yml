@@ -69,10 +69,22 @@ jobs:
           echo "SIGN_P12=$RUNNER_TEMP/sign.p12" >> "$GITHUB_ENV"
           echo "SIGN_PASS=$RUNNER_TEMP/sign.pass" >> "$GITHUB_ENV"
 
+      # The GitHub release's body, and the What's New baked into the binary
+      # (internal/whatsnew embeds data/whatsnew.md, which is gitignored so
+      # goreleaser's clean-tree check still passes). See scripts/release_notes.sh.
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          scripts/release_notes.sh "$TAG" "$RUNNER_TEMP"
+          cp "$RUNNER_TEMP/WhatsNew.md" internal/whatsnew/data/whatsnew.md
+          cat "$RUNNER_TEMP/WhatsNew.md"
+
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean --release-notes=${{ runner.temp }}/notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

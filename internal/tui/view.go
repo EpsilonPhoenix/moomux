@@ -167,6 +167,14 @@ func (m *Model) helpFooter() string {
 	return muteStyle.Render(controls)
 }
 
+func (m *Model) whatsNewFooter() string {
+	controls := "↑↓/jk/pg scroll  enter/esc close"
+	if m.overlayWidth(formHintWidth) < len(controls) {
+		controls = "enter/esc close"
+	}
+	return muteStyle.Render(controls)
+}
+
 // focusedOverlayLine returns the rendered line containing the active form
 // control. It is used to bring that control back into view after focus or
 // terminal-size changes without overriding subsequent manual scrolling.
@@ -399,6 +407,8 @@ func (m *Model) View() string {
 		return m.renderOverlay(content, m.foldersFooter(), m.focusedOverlayLine(content))
 	case ModeHelp:
 		return m.renderOverlay(m.renderHelp(), m.helpFooter(), -1)
+	case ModeWhatsNew:
+		return m.renderOverlay(m.renderWhatsNew(), m.whatsNewFooter(), -1)
 	case ModeEditSession:
 		content := m.compactOverlayContent(m.renderEditSession())
 		footer := m.formFooter(

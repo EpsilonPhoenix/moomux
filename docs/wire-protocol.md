@@ -152,6 +152,7 @@ the joined state, so a parked session's cow told the Mac app it was working).
   "usage": { /* Claude quota, optional — see below */ },
   "usage_setup": "not_installed",          // why usage is absent, optional — see below
   "update_available": {"current": "0.5.3", "latest": "0.5.4"},  // optional — see below
+  "whats_new": {"version": "0.5.4", "releases": [ /* ... */ ]},  // optional — see below
   "poll_time": "2026-09-06T18:00:00Z",
   "err": ""                                // a scan failure, as text
 }
@@ -282,6 +283,28 @@ replace.
   last answer rather than clearing it. Old clients ignore the key.
 - The local TUI reads the same field for its footer; `u` still runs its own
   on-demand check.
+
+### `whats_new`: the release notes baked into this core
+
+The release workflow bakes GitHub's generated notes for the last ten releases
+into the binary (`internal/whatsnew`). The core parses them and serves the
+result, so a client never parses markdown:
+
+```json
+{"version": "0.6.66",
+ "releases": [{"version": "0.6.66",
+               "sections": [{"title": "New", "items": ["..."]}]}]}
+```
+
+- `version` is the version the core runs. `releases` are newest first, bare
+  versions, and only the ones with something user-facing.
+- **Absent means nothing to show**: a `dev` build, or one built outside the
+  release workflow. It never changes while the core runs.
+- **"Seen" is the client's.** Each front end keeps its own last-seen version
+  (the TUI in `client.toml`, `whats_new_seen`) and shows the releases after it,
+  up to `version`. With nothing seen yet it shows the running release alone.
+  `whatsnew.After` is the Go implementation; the Mac app ports it.
+- `title` may be empty (a release from before the notes had categories).
 
 ### `state` is a name, not an integer
 

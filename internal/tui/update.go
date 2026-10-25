@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/gitwt"
 	"github.com/erickgnclvs/moomux/internal/session"
 	"github.com/erickgnclvs/moomux/internal/sessionview"
+	"github.com/erickgnclvs/moomux/internal/whatsnew"
 )
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -86,6 +88,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.snapOrder[s.ID] = i
 			}
 		}
+		m.maybeShowWhatsNew(msg.Snap.WhatsNew)
 		m.invalidateSessions()
 		// Re-filter the visible list out of the new snapshot's list right
 		// away. Deferring it would leave the list on the previous snapshot
@@ -521,6 +524,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateConfirmDeleteFolder(msg)
 		case ModeHelp:
 			return m.updateHelp(msg)
+		case ModeWhatsNew:
+			return m.updateWhatsNew(msg)
 		case ModeEditSession:
 			return m.updateEditSession(msg)
 		case ModeEditProject:
@@ -1255,6 +1260,42 @@ func (m *Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch {
 	case key.Matches(msg, m.keys.Help), key.Matches(msg, m.keys.Cancel), key.Matches(msg, m.keys.Quit):
+		m.mode = m.sessionDialogReturn
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.overlayViewport, cmd = m.overlayViewport.Update(msg)
+	return m, cmd
+}
+
+// maybeShowWhatsNew opens the release notes once per upgrade: when the core's
+// version differs from the one this machine last saw and has notes since. It
+// waits for the main view (never yanks a form from under the user's fingers) and
+// marks the version seen as it opens, so quitting with it up doesn't show it
+// again. A save failure only means it shows again next launch.
+func (m *Model) maybeShowWhatsNew(n *whatsnew.Notes) {
+	if m.whatsNewChecked || n == nil || (m.mode != ModeList && m.mode != ModeMultiView) {
+		return
+	}
+	m.whatsNewChecked = true
+	if n.Version == m.client.WhatsNewSeen {
+		return
+	}
+	m.whatsNew = whatsnew.After(n.Releases, m.client.WhatsNewSeen, n.Version)
+	m.client.WhatsNewSeen = n.Version
+	if err := config.SaveClient(m.clientPath, m.client); err != nil {
+		slog.Warn("save client config", "path", m.clientPath, "err", err)
+	}
+	if len(m.whatsNew) > 0 {
+		m.sessionDialogReturn = m.mode
+		m.mode = ModeWhatsNew
+		m.resetOverlayViewport()
+	}
+}
+
+func (m *Model) updateWhatsNew(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case msg.String() == "enter", key.Matches(msg, m.keys.Cancel), key.Matches(msg, m.keys.Quit):
 		m.mode = m.sessionDialogReturn
 		return m, nil
 	}
