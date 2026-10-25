@@ -894,7 +894,8 @@ func runRemote(args []string) error {
 func buildSource(a *app.App, home string) *sessionview.Watcher {
 	return &sessionview.Watcher{
 		Core: a, Raw: buildWatcher(home), Home: home,
-		Usage: &usage.Reader{Path: usage.DefaultPath(home)},
+		Usage:   &usage.Reader{Path: usage.DefaultPath(home)},
+		Version: version,
 	}
 }
 

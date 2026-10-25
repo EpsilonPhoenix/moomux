@@ -442,8 +442,8 @@ type Model struct {
 	// usageSetup is why usage is nil (Snapshot.UsageSetup), for the
 	// settings screen's Claude usage row.
 	usageSetup string
-	// UpdateVersion is the latest GitHub release, set by checkUpdateCmd once
-	// it resolves; empty unless it's newer than Version.
+	// UpdateVersion is the latest GitHub release, set from Snapshot.UpdateAvailable
+	// (or a u press); empty unless it's newer than Version.
 	UpdateVersion string
 	// updating is true while runUpdateCmd's `brew upgrade` is in flight, so
 	// a repeat press of Update doesn't shell out twice concurrently.
@@ -1316,30 +1316,11 @@ func (m *Model) refreshSessions() {
 }
 
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(listenStatus(m.statusCh), tickFlash(), checkUpdateCmd(m.Version), tickUpdateCheck())
+	return tea.Batch(listenStatus(m.statusCh), tickFlash())
 }
 
-// updateCheckInterval is how often a long-running session re-polls GitHub
-// Releases, so a session left open for days still notices new versions
-// instead of only checking once at startup.
-const updateCheckInterval = 1 * time.Hour
-
-// checkUpdateCmd asynchronously checks GitHub Releases for a version newer
-// than current. It's a background nicety, not a feature — any failure
-// (offline, GitHub down, rate-limited) or a "dev" build with no real
-// version to compare just means no message comes back.
-func checkUpdateCmd(current string) tea.Cmd {
-	return func() tea.Msg {
-		latest, err := updatecheck.Latest(context.Background())
-		if err != nil || !updatecheck.Newer(current, latest) {
-			return nil
-		}
-		return UpdateAvailableMsg{Version: strings.TrimPrefix(latest, "v")}
-	}
-}
-
-// recheckUpdateCmd is checkUpdateCmd for an explicit u press: it always
-// replies, so the user hears "up to date" or the error instead of silence.
+// recheckUpdateCmd is the explicit u press, on top of the core's own hourly
+// check (Snapshot.UpdateAvailable): it always replies, so the user hears "up to date" or the error instead of silence.
 func recheckUpdateCmd(current string) tea.Cmd {
 	return func() tea.Msg {
 		latest, err := updatecheck.Latest(context.Background())
@@ -1398,12 +1379,6 @@ func serviceStarted(list []byte) bool {
 		}
 	}
 	return false
-}
-
-// tickUpdateCheck schedules the next recheck; see UpdateCheckTickMsg handling
-// in Update() for what fires when it lands.
-func tickUpdateCheck() tea.Cmd {
-	return tea.Tick(updateCheckInterval, func(t time.Time) tea.Msg { return UpdateCheckTickMsg{} })
 }
 
 // listenStatus waits for the next snapshot, then folds in every other

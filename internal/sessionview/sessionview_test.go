@@ -3,6 +3,7 @@ package sessionview
 import (
 	"context"
 	"maps"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -745,5 +746,53 @@ func TestSnapshotCarriesConfig(t *testing.T) {
 	}
 	if !snap.Cfg.Folders["shipping"].Collapsed {
 		t.Errorf("served folders = %+v, want shipping collapsed", snap.Cfg.Folders)
+	}
+}
+
+// TestUpdateAvailableRidesTheSnapshot: the core runs the release check and
+// serves the result, absent unless the latest tag is newer than Version.
+func TestUpdateAvailableRidesTheSnapshot(t *testing.T) {
+	for _, c := range []struct {
+		name, version, latest string
+		want                  *UpdateInfo
+	}{
+		{"newer", "0.5.3", "v0.5.4", &UpdateInfo{Current: "0.5.3", Latest: "0.5.4"}},
+		{"current", "0.5.4", "v0.5.4", nil},
+		{"dev build", "dev", "v0.5.4", nil},
+		{"not answered yet", "0.5.3", "", nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			w := newWatcher(&fakeCore{})
+			w.Version, w.latest = c.version, c.latest
+			snap, _ := w.build()
+			if !reflect.DeepEqual(snap.UpdateAvailable, c.want) {
+				t.Fatalf("UpdateAvailable = %+v, want %+v", snap.UpdateAvailable, c.want)
+			}
+		})
+	}
+}
+
+// TestRunPollsLatestRelease: Run fetches the tag itself and emits a snapshot
+// carrying it, with no client involved.
+func TestRunPollsLatestRelease(t *testing.T) {
+	w := &Watcher{
+		Core: &fakeCore{}, Interval: time.Hour, Version: "0.5.3",
+		Latest: func(context.Context) (string, error) { return "v0.5.4", nil },
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan Snapshot, 8)
+	go w.Run(ctx, out)
+
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case snap := <-out:
+			if snap.UpdateAvailable != nil && snap.UpdateAvailable.Latest == "0.5.4" {
+				return
+			}
+		case <-deadline:
+			t.Fatal("no snapshot carried update_available")
+		}
 	}
 }

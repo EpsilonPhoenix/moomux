@@ -20,6 +20,7 @@ import (
 	"context"
 	"hash/fnv"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/erickgnclvs/moomux/internal/prompt"
 	"github.com/erickgnclvs/moomux/internal/prstatus"
 	"github.com/erickgnclvs/moomux/internal/session"
+	"github.com/erickgnclvs/moomux/internal/updatecheck"
 	"github.com/erickgnclvs/moomux/internal/usage"
 	"github.com/erickgnclvs/moomux/internal/watcher"
 )
@@ -107,10 +109,24 @@ type Snapshot struct {
 	Usage *usage.Usage `json:"usage,omitempty"`
 	// UsageSetup says why Usage is omitted (usage.NotInstalled et al.), so a
 	// client can tell the user how to turn it on; empty whenever Usage is set.
-	UsageSetup string    `json:"usage_setup,omitempty"`
-	PollTime   time.Time `json:"poll_time"`
-	Err        string    `json:"err,omitempty"`
+	UsageSetup string `json:"usage_setup,omitempty"`
+	// UpdateAvailable is set when GitHub Releases has a version newer than
+	// the one this core runs; absent otherwise (up to date, a dev build, or
+	// the check hasn't answered yet), so absent means nothing to draw.
+	UpdateAvailable *UpdateInfo `json:"update_available,omitempty"`
+	PollTime        time.Time   `json:"poll_time"`
+	Err             string      `json:"err,omitempty"`
 }
+
+// UpdateInfo is a pending update, both versions without the "v" prefix.
+type UpdateInfo struct {
+	Current string `json:"current"`
+	Latest  string `json:"latest"`
+}
+
+// updateCheckInterval is how often a long-running core re-polls GitHub
+// Releases, so one left up for days still notices new versions.
+const updateCheckInterval = 1 * time.Hour
 
 // Source is a stream of Snapshots. Implemented by Watcher (the real thing,
 // in-process) and by ipc.Client (the same stream, over a socket), so the TUI
@@ -166,6 +182,16 @@ type Watcher struct {
 	Interval time.Duration
 	// Usage, when set, is read into every snapshot. Owned by the run loop.
 	Usage *usage.Reader
+	// Version is the running binary's version. Empty disables the update
+	// check; a non-release value ("dev") never reports an update.
+	Version string
+	// Latest fetches the newest release tag; defaults to updatecheck.Latest.
+	Latest func(context.Context) (string, error)
+	// UpdateEvery defaults to updateCheckInterval.
+	UpdateEvery time.Duration
+
+	// latest is the newest release tag seen, owned by the run loop.
+	latest string
 
 	nudgeOnce sync.Once
 	nudgeCh   chan struct{}
@@ -273,6 +299,10 @@ func (w *Watcher) Run(ctx context.Context, out chan<- Snapshot) {
 	results := make(chan result, 32)
 	w.titleCh = make(chan map[string]watcher.State, 8)
 	go w.pushTitles(ctx)
+	latest := make(chan string, 1)
+	if w.Version != "" {
+		go w.pollLatest(ctx, latest)
+	}
 
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
@@ -309,6 +339,8 @@ func (w *Watcher) Run(ctx context.Context, out chan<- Snapshot) {
 		case <-nudge:
 			w.refreshAlive()
 			w.emit(ctx, out)
+		case w.latest = <-latest:
+			w.emit(ctx, out)
 		case r := <-results:
 			w.apply(r)
 			// Drain whatever else landed in the same instant, so a burst of
@@ -330,6 +362,35 @@ func (w *Watcher) Run(ctx context.Context, out chan<- Snapshot) {
 
 // pushTitles renames tmux windows in the order emit produced them, one at a
 // time. Renaming shells out, so it can't run on the run loop.
+// pollLatest reports the newest release tag now and then every UpdateEvery.
+// A failed check (offline, rate-limited) sends nothing; the last answer stands.
+func (w *Watcher) pollLatest(ctx context.Context, out chan<- string) {
+	fetch := w.Latest
+	if fetch == nil {
+		fetch = updatecheck.Latest
+	}
+	every := w.UpdateEvery
+	if every <= 0 {
+		every = updateCheckInterval
+	}
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		if tag, err := fetch(ctx); err == nil {
+			select {
+			case out <- tag:
+			case <-ctx.Done():
+				return
+			}
+		}
+		select {
+		case <-t.C:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 func (w *Watcher) pushTitles(ctx context.Context) {
 	for {
 		select {
@@ -471,16 +532,24 @@ func (w *Watcher) build() (Snapshot, map[string]watcher.State) {
 	if w.Usage != nil {
 		u, setup = w.Usage.Read(now)
 	}
+	var upd *UpdateInfo
+	if updatecheck.Newer(w.Version, w.latest) {
+		upd = &UpdateInfo{
+			Current: strings.TrimPrefix(w.Version, "v"),
+			Latest:  strings.TrimPrefix(w.latest, "v"),
+		}
+	}
 	snap := Snapshot{
-		Usage:      u,
-		UsageSetup: setup,
-		Sessions:   ordered,
-		Views:      views,
-		Rows:       rows,
-		FolderRows: BuildFolderRows(ordered, folders, projects),
-		Cfg:        &cfg,
-		PollTime:   now,
-		Err:        w.lastErr,
+		UpdateAvailable: upd,
+		Usage:           u,
+		UsageSetup:      setup,
+		Sessions:        ordered,
+		Views:           views,
+		Rows:            rows,
+		FolderRows:      BuildFolderRows(ordered, folders, projects),
+		Cfg:             &cfg,
+		PollTime:        now,
+		Err:             w.lastErr,
 	}
 	return snap, changedTitles
 }
