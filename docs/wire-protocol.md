@@ -824,14 +824,26 @@ ids and wezterm pane ids restart from zero with the process, so a remembered
 one can name a stranger's tab.
 
 **Session edits** — `SetSessionTags`, `SetSessionPrompt`, `SetSessionAgent`,
-`RenameSession`, `SetSessionArchived`, `ReorderSessions`.
+`RenameSession`, `SetSessionArchived`, `SetSessionPinned`, `ReorderSessions`.
+
+`SetSessionPinned` (`id`, `on`) is display only: a pinned session is listed
+first within its group — its project's loose sessions, or its folder's
+members — in both `Rows` and `FolderRows`, and its stored `Order` is left
+alone so unpinning puts it straight back. A folder is still anchored by its
+first *unpinned* member, so pinning a session inside a folder floats it to
+the top of that folder without dragging the folder to the top of the
+project.
 
 `ReorderSessions` takes the caller's fully-resolved final order (`ids`), not
 a session plus a delta. A front end already knows the exact order it is
 displaying, including the swap the user's keypress just made; re-deriving
 sibling order in the core meant guessing at a list the client had already
 filtered and sorted differently, and two rapid moves each carrying their own
-delta could complete out of order and revert one another. Sessions not named
+delta could complete out of order and revert one another. The one exception
+to "verbatim" is pinning: `ids` orders the pinned sessions among themselves
+and the unpinned ones among themselves, but each group keeps the stored
+slots it already held, so the pins' float to the top of the screen is never
+written into `Order`. Sessions not named
 in `ids` are untouched, and an id that no longer exists is skipped rather
 than failing the whole write.
 

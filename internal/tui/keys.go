@@ -15,6 +15,7 @@ type KeyMap struct {
 	Mark           key.Binding
 	MarkFinished   key.Binding
 	Archive        key.Binding
+	Pin            key.Binding
 	ShowArchived   key.Binding
 	Kill           key.Binding
 	Refresh        key.Binding
@@ -63,6 +64,7 @@ func DefaultKeyMap() KeyMap {
 		Delete:        key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
 		Archive:       key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "archive")),
 		ShowArchived:  key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "archived")),
+		Pin:           key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "pin")),
 		Kill:          key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "park")),
 		Refresh:       key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		Tab:           key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next project")),

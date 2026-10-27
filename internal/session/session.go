@@ -31,6 +31,7 @@ type Session struct {
 	Order        int64     `json:"order,omitempty"`       // manual sort position within a project; 0 = unset, falls back to CreatedAt
 	LastOpened   time.Time `json:"last_opened,omitempty"` // when OpenSession last attached to this session; zero if never opened
 	Archived     bool      `json:"archived,omitempty"`    // hidden from the default list, but not deleted
+	Pinned       bool      `json:"pinned,omitempty"`      // listed first within its project or folder; display only, Order is untouched
 	NewBranch    bool      `json:"new_branch,omitempty"`  // true if moomux created Branch fresh (vs. checking out an existing one); safe to delete on session delete
 	BaseBranch   string    `json:"base_branch,omitempty"` // the branch Branch was cut from, when NewBranch; empty for a resumed branch or a no-worktree project, where there is none to diff against
 	Prompt       string    `json:"prompt,omitempty"`      // first prompt typed into the agent at creation time, captured directly rather than relying on the agent's own log
@@ -163,6 +164,19 @@ func (s *Store) Delete(id string) error {
 // itself (worktree, tmux entry, metadata) is left untouched — archiving only
 // hides it from the default list.
 func (s *Store) SetArchived(id string, archived bool) (Session, error) {
+	return s.update(id, func(sess *Session) { sess.Archived = archived })
+}
+
+// SetPinned flips a session's Pinned flag and persists it. Like archiving,
+// it only changes where the session is listed (sessionview floats pinned
+// sessions to the top of their group); its Order is left alone, so
+// unpinning puts it back exactly where it was.
+func (s *Store) SetPinned(id string, pinned bool) (Session, error) {
+	return s.update(id, func(sess *Session) { sess.Pinned = pinned })
+}
+
+// update applies edit to the freshly reloaded session id and persists it.
+func (s *Store) update(id string, edit func(*Session)) (Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.reloadLocked(); err != nil {
@@ -172,7 +186,7 @@ func (s *Store) SetArchived(id string, archived bool) (Session, error) {
 	if !ok {
 		return Session{}, fmt.Errorf("unknown session %q", id)
 	}
-	sess.Archived = archived
+	edit(&sess)
 	s.sessions[id] = sess
 	if err := s.save(); err != nil {
 		return Session{}, err

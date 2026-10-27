@@ -1492,11 +1492,38 @@ func (a *App) pressEnterUntilSubmitted(tmuxSession, prompt string) error {
 // compute anything from a stale snapshot; internal/tui/update.go's
 // dispatchReorder closes the remaining race by never letting two of these
 // calls be in flight at once.
+//
+// The one thing it does work out is where pinned sessions go. ids is the
+// order on screen, where pins float to the top (see sessionview), and
+// persisting that verbatim would bake the float into Order — an unpinned
+// session would then stay at the top. So ids only decides the order *within*
+// the pinned and within the unpinned sessions; which slots of the stored
+// order each group holds is kept. A move across that boundary therefore
+// changes nothing, which is what the display already shows.
 func (a *App) ReorderSessions(ids []string) error {
-	sessions := make([]session.Session, 0, len(ids))
+	pinned := map[string]bool{}
+	var pins, rest []session.Session
 	for _, id := range ids {
-		if s, ok := a.Store.Get(id); ok {
-			sessions = append(sessions, s)
+		s, ok := a.Store.Get(id)
+		if !ok {
+			continue
+		}
+		pinned[id] = s.Pinned
+		if s.Pinned {
+			pins = append(pins, s)
+		} else {
+			rest = append(rest, s)
+		}
+	}
+	sessions := make([]session.Session, 0, len(pinned))
+	for _, s := range a.Store.All() {
+		p, named := pinned[s.ID]
+		switch {
+		case !named:
+		case p && len(pins) > 0:
+			sessions, pins = append(sessions, pins[0]), pins[1:]
+		case !p && len(rest) > 0:
+			sessions, rest = append(sessions, rest[0]), rest[1:]
 		}
 	}
 	return a.Store.Reorder(sessions)
@@ -1935,6 +1962,12 @@ func (a *App) SetSessionAgent(id, agent string, dangerous bool) (session.Session
 // DeleteSession, which is destructive.
 func (a *App) SetSessionArchived(id string, archived bool) (session.Session, error) {
 	return a.Store.SetArchived(id, archived)
+}
+
+// SetSessionPinned pins (or unpins) a session to the top of its project or
+// folder. Display only: see session.Store.SetPinned.
+func (a *App) SetSessionPinned(id string, pinned bool) (session.Session, error) {
+	return a.Store.SetPinned(id, pinned)
 }
 
 // repairAgentSupport re-runs s's agent installers on open, backfilling

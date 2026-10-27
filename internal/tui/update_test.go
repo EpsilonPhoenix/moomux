@@ -1993,3 +1993,17 @@ func TestNewSessionDraftDroppedOnceItsSessionExists(t *testing.T) {
 		t.Fatalf("prompt = %q, want the unsent draft kept", got)
 	}
 }
+
+func TestPinToggles(t *testing.T) {
+	be := &fakeBackend{sessions: []session.Session{{ID: "demo:a", Project: "demo", Name: "a"}}}
+	m := newTestModel(be)
+
+	run(m, keyRune("p"))
+	if !be.sessions[0].Pinned || m.flash != "pinned" {
+		t.Fatalf("pinned=%v flash=%q", be.sessions[0].Pinned, m.flash)
+	}
+	run(m, keyRune("p"))
+	if be.sessions[0].Pinned || m.flash != "unpinned" {
+		t.Fatalf("pinned=%v flash=%q", be.sessions[0].Pinned, m.flash)
+	}
+}

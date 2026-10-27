@@ -103,6 +103,9 @@ type Backend interface {
 	// SetSessionArchived hides (or restores) a session from the default
 	// list without touching its tmux session or worktree.
 	SetSessionArchived(id string, archived bool) (session.Session, error)
+	// SetSessionPinned lists a session first within its project or folder,
+	// or stops doing so. Display only — its manual order is untouched.
+	SetSessionPinned(id string, pinned bool) (session.Session, error)
 	// ReorderSessions persists ids, verbatim, as the new manual Order for
 	// exactly those sessions. The caller supplies the fully-resolved final
 	// order (not a delta) — see internal/app.App.ReorderSessions's doc.

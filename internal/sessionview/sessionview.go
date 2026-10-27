@@ -20,6 +20,7 @@ import (
 	"context"
 	"hash/fnv"
 	"math"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -476,20 +477,21 @@ func (w *Watcher) build() (Snapshot, map[string]watcher.State) {
 	live := make(map[string]bool, len(sessions))
 	changedTitles := map[string]watcher.State{}
 
-	// Live sessions first, each group keeping the order Sessions() gave it.
-	// Two passes rather than a sort: the input is already in base order, so
-	// this is just a stable partition.
-	ordered := make([]session.Session, 0, len(sessions))
-	for _, s := range sessions {
-		if w.stateOf(s) != watcher.Parked {
-			ordered = append(ordered, s)
+	// Pinned sessions first, then live before parked within each, every
+	// group keeping the order Sessions() gave it: the input is already in
+	// base order, so this is just a stable partition.
+	rank := func(s session.Session) int {
+		r := 0
+		if !s.Pinned {
+			r += 2
 		}
-	}
-	for _, s := range sessions {
 		if w.stateOf(s) == watcher.Parked {
-			ordered = append(ordered, s)
+			r++
 		}
+		return r
 	}
+	ordered := slices.Clone(sessions)
+	slices.SortStableFunc(ordered, func(a, b session.Session) int { return rank(a) - rank(b) })
 
 	for _, s := range sessions {
 		live[s.ID] = true

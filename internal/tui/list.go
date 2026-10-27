@@ -327,6 +327,9 @@ func renderRow(s session.Session, v sessionview.View, width int, selected, marke
 		glyph, url string
 	}
 	var candidates []iconCandidate
+	if s.Pinned {
+		candidates = append(candidates, iconCandidate{iconTicketStyle, "📌", ""})
+	}
 	if s.Ticket != "" {
 		candidates = append(candidates, iconCandidate{iconTicketStyle, "🎫", s.Ticket})
 	}

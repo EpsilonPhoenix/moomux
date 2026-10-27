@@ -355,6 +355,10 @@ func (c *Client) SetSessionArchived(id string, archived bool) (session.Session, 
 	return c.sess("SetSessionArchived", Args{ID: id, On: archived})
 }
 
+func (c *Client) SetSessionPinned(id string, pinned bool) (session.Session, error) {
+	return c.sess("SetSessionPinned", Args{ID: id, On: pinned})
+}
+
 func (c *Client) ReorderSessions(ids []string) error {
 	return c.err0("ReorderSessions", Args{IDs: ids})
 }

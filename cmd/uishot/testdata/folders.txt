@@ -3,7 +3,7 @@
  _/(--)  out to pasture                 
   \(__)                                 
 ┌──────────────────────────────────────┐
-│  ⬤  feature-auth                 🎫  │
+│  ⬤  feature-auth              📌 🎫  │
 │ ▸ legacy (1)                         │
 │  ⬤  bugfix-timeout               🔀  │
 │ ▾ auth (2)                           │
@@ -26,7 +26,7 @@
 ┌──────────────────────────────────────────┐┌──────────────────────────────────────────────────────┐
 │ SESSIONS¹                                ││                                                      │
 │                                          ││                                                      │
-│  ⬤  feature-auth                     🎫  ││ project:   demo                                      │
+│  ⬤  feature-auth                  📌 🎫  ││ project:   demo                                      │
 │ ▸ legacy (1)                             ││ status:    ⬤  in the barn                            │
 │  ⬤  bugfix-timeout                   🔀  ││ name:      feature-auth                              │
 │ ▾ auth (2)                               ││ agent:     claude                                    │

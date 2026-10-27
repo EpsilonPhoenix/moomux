@@ -225,6 +225,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshSessionsFocusing(msg.NextID)
 		return m, nil
 
+	case SessionPinnedMsg:
+		if msg.Err != nil {
+			m.setError(msg.Err)
+			return m, nil
+		}
+		if msg.Pinned {
+			m.setFlash("info", "pinned")
+		} else {
+			m.setFlash("info", "unpinned")
+		}
+		m.sessionsChanged()
+		m.refreshSessionsFocusing(msg.ID)
+		return m, nil
+
 	case SessionTaggedMsg:
 		m.setFlash("info", "tagged "+msg.Session.Name)
 		m.sessionsChanged()
@@ -782,6 +796,14 @@ func (m *Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg {
 				_, err := m.backend.SetSessionArchived(id, archive)
 				return SessionArchivedMsg{ID: id, Archived: archive, NextID: nextID, Err: err}
+			}
+		}
+	case key.Matches(msg, m.keys.Pin):
+		if len(m.sessions) > 0 {
+			s := m.sessions[m.cursor]
+			return m, func() tea.Msg {
+				_, err := m.backend.SetSessionPinned(s.ID, !s.Pinned)
+				return SessionPinnedMsg{ID: s.ID, Pinned: !s.Pinned, Err: err}
 			}
 		}
 	case key.Matches(msg, m.keys.ShowArchived):
