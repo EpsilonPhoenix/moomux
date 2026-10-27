@@ -99,6 +99,31 @@ func TestLoadMissingFileReturnsEmpty(t *testing.T) {
 	}
 }
 
+// TestAutoSubmitDefaultsOnAndKeepsExplicitOff guards both halves of the
+// default: an unset key loads as on, and a saved off survives a reload
+// rather than being dropped and read back as on.
+func TestAutoSubmitDefaultsOnAndKeepsExplicitOff(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.AutoSubmitDefault {
+		t.Fatal("AutoSubmitDefault should start on")
+	}
+	cfg.AutoSubmitDefault = false
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AutoSubmitDefault {
+		t.Fatal("explicit off was lost on reload")
+	}
+}
+
 func TestSaveRoundtrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "out.toml")

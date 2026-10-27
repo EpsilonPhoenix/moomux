@@ -512,7 +512,7 @@ type Model struct {
 	newFormDangerous        bool // whether to run the chosen agent with its permission-skipping flag; off by default
 	newFormProjIdx          int  // project selector in the new-session form; index into m.projects
 	newFormOpenInBackground bool // whether to skip opening a terminal window for the new session; off by default
-	newFormAutoSubmit       bool // whether to press Enter after typing the first prompt into the pane; off by default
+	newFormAutoSubmit       bool // whether to press Enter after typing the first prompt into the pane; seeded from cfg.AutoSubmitDefault
 	projForm                projectForm
 	sessionForm             sessionForm
 	editProjectName         string

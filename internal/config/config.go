@@ -240,7 +240,9 @@ type Config struct {
 	Appearance string `toml:"appearance,omitempty" json:"appearance,omitempty"`
 	// AutoSubmitDefault is the initial state of the new-session form's
 	// auto-submit toggle, remembered from whatever the user last set it to.
-	AutoSubmitDefault bool `toml:"auto_submit_default,omitempty" json:"auto_submit_default,omitempty"`
+	// On until set: Load seeds it true before decoding, so it has no
+	// omitempty — an explicit false has to reach the file and the wire.
+	AutoSubmitDefault bool `toml:"auto_submit_default" json:"auto_submit_default"`
 	// SortRecentFirst, when true, lists sessions most-recently-opened first
 	// instead of the manual Order set by shift+↑↓. The two don't compose —
 	// manual reordering is disabled while this is on, since every open would
@@ -297,7 +299,7 @@ func (c Config) Clone() Config {
 }
 
 func Load(path string) (*Config, error) {
-	cfg := &Config{Projects: map[string]Project{}}
+	cfg := &Config{Projects: map[string]Project{}, AutoSubmitDefault: true}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
