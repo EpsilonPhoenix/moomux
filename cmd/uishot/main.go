@@ -400,6 +400,9 @@ func (f *fakeBackend) SetSessionPrompt(id, prompt string) (session.Session, erro
 func (f *fakeBackend) SetSessionArchived(id string, archived bool) (session.Session, error) {
 	return session.Session{}, nil
 }
+func (f *fakeBackend) SetSessionPinned(id string, pinned bool) (session.Session, error) {
+	return session.Session{}, nil
+}
 
 // TmuxAliveAll reports every sample session as alive so the core's
 // state join doesn't force them all to "parked" — that would hide whatever
@@ -500,6 +503,7 @@ func sampleSessions() []session.Session {
 			CreatedAt:    now,
 			Agent:        "claude",
 			Ticket:       "https://tracker.example/TICK-123",
+			Pinned:       true,
 			Prompt:       "add JWT-based auth to the login flow, including refresh token rotation, session revocation on logout, and rate limiting on the token endpoint so we don't get hammered by retries",
 		},
 		{

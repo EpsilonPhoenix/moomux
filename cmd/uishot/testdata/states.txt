@@ -3,7 +3,7 @@
  _/(**)  no time to graze               
   \(__)                                 
 ┌──────────────────────────────────────┐
-│  ⬤  feature-auth                 🎫  │
+│  ⬤  feature-auth              📌 🎫  │
 │  ⬤  bugfix-timeout           🔀 ± ↑  │
 │  ⬤  review-copy                      │
 │  ⬤  stale-idea                       │
@@ -26,7 +26,7 @@
 ┌──────────────────────────────────────────┐┌──────────────────────────────────────────────────────┐
 │ SESSIONS                                 ││                                                      │
 │                                          ││                                                      │
-│  ⬤  feature-auth                     🎫  ││ project:   demo                                      │
+│  ⬤  feature-auth                  📌 🎫  ││ project:   demo                                      │
 │  ⬤  bugfix-timeout               🔀 ± ↑  ││ status:    ⬤  grazing                                │
 │  ⬤  review-copy                          ││ name:      feature-auth                              │
 │  ⬤  stale-idea                           ││ agent:     claude                                    │

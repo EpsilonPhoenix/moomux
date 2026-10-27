@@ -1937,6 +1937,12 @@ func (a *App) SetSessionArchived(id string, archived bool) (session.Session, err
 	return a.Store.SetArchived(id, archived)
 }
 
+// SetSessionPinned pins (or unpins) a session to the top of its project or
+// folder. Display only: see session.Store.SetPinned.
+func (a *App) SetSessionPinned(id string, pinned bool) (session.Session, error) {
+	return a.Store.SetPinned(id, pinned)
+}
+
 // repairAgentSupport re-runs s's agent installers on open, backfilling
 // sessions created before a given integration existed. See
 // installAgentSupport — this only adds the "still a known project" guard.

@@ -712,6 +712,8 @@ func (s *Server) dispatch(method string, a Args) (Result, error) {
 		return sessionResult(b.RenameSession(a.ID, a.Name))
 	case "SetSessionArchived":
 		return sessionResult(b.SetSessionArchived(a.ID, a.On))
+	case "SetSessionPinned":
+		return sessionResult(b.SetSessionPinned(a.ID, a.On))
 	case "ReorderSessions":
 		return Result{}, b.ReorderSessions(a.IDs)
 	case "MoveSession":

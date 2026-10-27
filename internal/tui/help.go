@@ -52,6 +52,7 @@ func (m *Model) helpGroups() []helpGroup {
 				{"esc", "clear marks"},
 				{"a", archiveDesc},
 				{"A", archivedDesc},
+				{"p", "pin to top / unpin"},
 				{"t", "tag ticket / PR"},
 				{"e", "edit session"},
 				{"D", "diff tool"},

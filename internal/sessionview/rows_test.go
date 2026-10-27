@@ -250,3 +250,26 @@ func TestBuildServesRowsForAProjectWithNoSessions(t *testing.T) {
 		t.Errorf("Rows = %v, want an entry for the sessionless project", snap.Rows)
 	}
 }
+
+// Pinning a folder member floats it to the top of its folder, not the folder
+// to the top of the project: the header stays where its first unpinned
+// member puts it. A folder whose members are all pinned has nowhere else to
+// sit, so it goes with them.
+func TestBuildRowsPinnedMemberStaysInsideItsFolder(t *testing.T) {
+	pin := func(s session.Session) session.Session { s.Pinned = true; return s }
+	// Display order as Snapshot.Sessions serves it: pinned first.
+	sessions := []session.Session{
+		pin(rowSess("c", "auth")),
+		pin(rowSess("e", "")),
+		rowSess("a", ""),
+		rowSess("b", "auth"),
+		rowSess("d", ""),
+	}
+	if got, want := layout(BuildRows(sessions, folderMetas("auth"), "demo")), "e a [auth] c b d"; got != want {
+		t.Errorf("layout = %q, want %q", got, want)
+	}
+	sessions[3] = pin(sessions[3])
+	if got, want := layout(BuildRows(sessions, folderMetas("auth"), "demo")), "[auth] c b e a d"; got != want {
+		t.Errorf("all-pinned layout = %q, want %q", got, want)
+	}
+}

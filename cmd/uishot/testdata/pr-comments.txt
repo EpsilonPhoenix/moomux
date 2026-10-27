@@ -3,7 +3,7 @@
  _/(--)  on a moo-ratorium              
   \(__)                                 
 ┌──────────────────────────────────────┐
-│  ⬤  feature-auth                 🎫  │
+│  ⬤  feature-auth              📌 🎫  │
 │  ⬤  bugfix-timeout               💬  │
 │                                      │
 │                                      │
@@ -26,7 +26,7 @@
 ┌──────────────────────────────────────────┐┌──────────────────────────────────────────────────────┐
 │ SESSIONS¹                                ││                                                      │
 │                                          ││                                                      │
-│  ⬤  feature-auth                     🎫  ││ project:   demo                                      │
+│  ⬤  feature-auth                  📌 🎫  ││ project:   demo                                      │
 │  ⬤  bugfix-timeout                   💬  ││ status:    ⬤  in the barn                            │
 │                                          ││ name:      bugfix-timeout                            │
 │                                          ││ agent:     codex                                     │

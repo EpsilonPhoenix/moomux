@@ -175,6 +175,29 @@ func TestSetArchivedTogglesAndPersists(t *testing.T) {
 	}
 }
 
+// Pinning is display only: it persists, and leaves Order alone so that
+// unpinning returns the session to exactly where it was.
+func TestSetPinnedPersistsAndKeepsOrder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions.json")
+	s := &Store{Path: path}
+	_ = s.Load()
+	_ = s.Put(Session{ID: "a", Project: "p", Name: "a", Order: 3, CreatedAt: time.Now()})
+
+	if _, err := s.SetPinned("a", true); err != nil {
+		t.Fatal(err)
+	}
+	s2 := &Store{Path: path}
+	if err := s2.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s2.Get("a"); !got.Pinned || got.Order != 3 {
+		t.Fatalf("after reload: pinned=%v order=%d, want true/3", got.Pinned, got.Order)
+	}
+	if _, err := s2.SetPinned("missing", true); err == nil {
+		t.Fatalf("expected error for unknown session")
+	}
+}
+
 func TestAllSortedByCreatedDesc(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sessions.json")

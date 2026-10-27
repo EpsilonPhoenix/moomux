@@ -3,7 +3,7 @@
  _/(!!)  can't budge without a moo-ti…  
   \(__)                                 
 ┌──────────────────────────────────────┐
-│  ⬤  feature-auth                 🎫  │
+│  ⬤  feature-auth              📌 🎫  │
 │  ⬤  bugfix-timeout               🔀  │
 │                                      │
 │                                      │
@@ -26,7 +26,7 @@
 ┌──────────────────────────────────────────┐┌──────────────────────────────────────────────────────┐
 │ SESSIONS¹                                ││                                                      │
 │                                          ││                                                      │
-│  ⬤  feature-auth                     🎫  ││ project:   demo                                      │
+│  ⬤  feature-auth                  📌 🎫  ││ project:   demo                                      │
 │  ⬤  bugfix-timeout                   🔀  ││ status:    ⬤  mooing for you                         │
 │                                          ││ name:      feature-auth                              │
 │                                          ││ agent:     claude                                    │

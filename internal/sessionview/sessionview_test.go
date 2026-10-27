@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -794,5 +795,27 @@ func TestRunPollsLatestRelease(t *testing.T) {
 		case <-deadline:
 			t.Fatal("no snapshot carried update_available")
 		}
+	}
+}
+
+// TestPinnedSessionsServedFirst: pinning lists a session ahead of every
+// unpinned one, live or not, and the live-first rule still orders the pinned
+// group among itself.
+func TestPinnedSessionsServedFirst(t *testing.T) {
+	pinned := func(id string) session.Session {
+		s := sess(id, "/wt/"+id)
+		s.Pinned = true
+		return s
+	}
+	core := &fakeCore{
+		sessions: []session.Session{sess("a", "/wt/a"), pinned("b"), sess("c", "/wt/c"), pinned("d")},
+		alive:    map[string]bool{"a": true, "d": true},
+	}
+	var got []string
+	for _, s := range Once(core, "", nil).Sessions {
+		got = append(got, s.ID)
+	}
+	if want := []string{"d", "b", "a", "c"}; !slices.Equal(got, want) {
+		t.Fatalf("order = %v, want %v", got, want)
 	}
 }

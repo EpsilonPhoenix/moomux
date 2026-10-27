@@ -86,6 +86,13 @@ type SessionDeletedMsg struct {
 	Hint   string
 }
 
+// SessionPinnedMsg is the result of an async pin/unpin toggle.
+type SessionPinnedMsg struct {
+	ID     string
+	Pinned bool
+	Err    error
+}
+
 // SessionArchivedMsg is the result of an async archive/restore toggle.
 // Archived reflects the state applied (true = archived, false = restored).
 // NextID mirrors SessionDeletedMsg's — pinned before the toggle fires, for

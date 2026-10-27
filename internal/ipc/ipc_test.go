@@ -144,6 +144,9 @@ func (f *fakeBackend) RenameSession(id, name string) (session.Session, error) {
 func (f *fakeBackend) SetSessionArchived(id string, on bool) (session.Session, error) {
 	return session.Session{ID: id, Archived: on}, nil
 }
+func (f *fakeBackend) SetSessionPinned(id string, on bool) (session.Session, error) {
+	return session.Session{ID: id, Pinned: on}, nil
+}
 func (f *fakeBackend) ReorderSessions(ids []string) error {
 	f.reordered = ids
 	return nil

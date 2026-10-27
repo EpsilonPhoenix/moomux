@@ -66,6 +66,11 @@ func (r Row) IsFolder() bool { return r.ID == "" }
 // enumerates config directly — so the folder-first layout (BuildFolderRows)
 // is where a memberless folder belongs, and it is listed there.
 //
+// A folder is anchored at its first *unpinned* member, though, when it has
+// one. Pinned sessions arrive first (Snapshot.Sessions floats them), and
+// anchoring on one would drag its whole folder to the top of the project
+// when all the user asked for was the top of the folder.
+//
 // sessions must already be in display order (Snapshot.Sessions is); this
 // only groups, it never sorts. Sessions from other projects are ignored,
 // and so is the archived split: both views share one layout, and the
@@ -73,9 +78,13 @@ func (r Row) IsFolder() bool { return r.ID == "" }
 func BuildRows(sessions []session.Session, folders map[string]config.FolderMeta, project string) []Row {
 	counts := map[string]int{}
 	archived := map[string]int{}
+	anchor := map[string]session.Session{}
 	for _, s := range sessions {
 		if s.Project != project || s.Folder == "" {
 			continue
+		}
+		if a, ok := anchor[s.Folder]; !ok || a.Pinned && !s.Pinned {
+			anchor[s.Folder] = s
 		}
 		if s.Archived {
 			archived[s.Folder]++
@@ -102,7 +111,7 @@ func BuildRows(sessions []session.Session, folders map[string]config.FolderMeta,
 			rows = append(rows, Row{ID: s.ID})
 			continue
 		}
-		if seen[s.Folder] {
+		if seen[s.Folder] || anchor[s.Folder].ID != s.ID {
 			continue
 		}
 		seen[s.Folder] = true

@@ -824,7 +824,15 @@ ids and wezterm pane ids restart from zero with the process, so a remembered
 one can name a stranger's tab.
 
 **Session edits** — `SetSessionTags`, `SetSessionPrompt`, `SetSessionAgent`,
-`RenameSession`, `SetSessionArchived`, `ReorderSessions`.
+`RenameSession`, `SetSessionArchived`, `SetSessionPinned`, `ReorderSessions`.
+
+`SetSessionPinned` (`id`, `on`) is display only: a pinned session is listed
+first within its group — its project's loose sessions, or its folder's
+members — in both `Rows` and `FolderRows`, and its stored `Order` is left
+alone so unpinning puts it straight back. A folder is still anchored by its
+first *unpinned* member, so pinning a session inside a folder floats it to
+the top of that folder without dragging the folder to the top of the
+project.
 
 `ReorderSessions` takes the caller's fully-resolved final order (`ids`), not
 a session plus a delta. A front end already knows the exact order it is

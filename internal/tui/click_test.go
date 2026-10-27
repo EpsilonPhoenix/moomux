@@ -371,6 +371,15 @@ func (f *fakeBackend) SetSessionArchived(id string, archived bool) (session.Sess
 	}
 	return session.Session{ID: id, Archived: archived}, nil
 }
+func (f *fakeBackend) SetSessionPinned(id string, pinned bool) (session.Session, error) {
+	for i, s := range f.sessions {
+		if s.ID == id {
+			f.sessions[i].Pinned = pinned
+			return f.sessions[i], nil
+		}
+	}
+	return session.Session{ID: id, Pinned: pinned}, nil
+}
 func (f *fakeBackend) ReorderSessions(ids []string) error {
 	f.reorderSessionsCalls = append(f.reorderSessionsCalls, reorderSessionsCall{ids: ids})
 	return f.reorderSessionsErr
