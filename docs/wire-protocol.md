@@ -839,7 +839,11 @@ a session plus a delta. A front end already knows the exact order it is
 displaying, including the swap the user's keypress just made; re-deriving
 sibling order in the core meant guessing at a list the client had already
 filtered and sorted differently, and two rapid moves each carrying their own
-delta could complete out of order and revert one another. Sessions not named
+delta could complete out of order and revert one another. The one exception
+to "verbatim" is pinning: `ids` orders the pinned sessions among themselves
+and the unpinned ones among themselves, but each group keeps the stored
+slots it already held, so the pins' float to the top of the screen is never
+written into `Order`. Sessions not named
 in `ids` are untouched, and an id that no longer exists is skipped rather
 than failing the whole write.
 

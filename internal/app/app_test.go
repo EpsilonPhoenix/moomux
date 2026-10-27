@@ -1732,6 +1732,40 @@ func TestReorderSessionsPersistsGivenOrder(t *testing.T) {
 	}
 }
 
+// A reorder sends the order on screen, pins floated to the top. Persisting
+// that verbatim would leave a session at the top after it is unpinned, so
+// the pinned and unpinned groups keep the stored slots they had and ids
+// only orders each group within its own slots.
+func TestReorderSessionsKeepsPinsOutOfOrder(t *testing.T) {
+	a, _, _ := newTestApp(t, gitProject("/repo"))
+	for i, id := range []string{"a", "b", "c", "d"} {
+		_ = a.Store.Put(session.Session{ID: "demo:" + id, Project: "demo", Name: id, Order: int64(i + 1),
+			Pinned: id == "b" || id == "d"})
+	}
+	order := func() string {
+		var got []string
+		for _, s := range a.Store.ByProject("demo") {
+			got = append(got, strings.TrimPrefix(s.ID, "demo:"))
+		}
+		return strings.Join(got, " ")
+	}
+
+	// On screen: b d a c. Moving d above b swaps the two pins' slots.
+	if err := a.ReorderSessions([]string{"demo:d", "demo:b", "demo:a", "demo:c"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := order(), "a d c b"; got != want {
+		t.Fatalf("after moving a pin: order = %q, want %q", got, want)
+	}
+	// On screen: d b a c. Moving c above a swaps the unpinned slots only.
+	if err := a.ReorderSessions([]string{"demo:d", "demo:b", "demo:c", "demo:a"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := order(), "c d a b"; got != want {
+		t.Fatalf("after moving an unpinned session: order = %q, want %q", got, want)
+	}
+}
+
 // TestReorderSessionsSkipsUnknownIDs guards against an unknown id (e.g. a
 // session deleted by another moomux process between the TUI reading its
 // displayed order and this call landing) aborting the whole reorder — it
